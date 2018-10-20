@@ -7,15 +7,21 @@ import numpy as np
 import cv2
 
 # 获取下载的所有图片
-files = list(os.walk('img'))[0][-1]
+pic_path = 'img/temp'
+files = list(os.walk(pic_path))[0][-1]
+try:
+    files.remove("cache.pkl")
+except:
+    pass
 
 # 结果图片的大小和网格数量
+
 img_size = (100, 100)
 result_grid = (35, 14)
 
 for i in range(result_grid[1]):
     try:
-        img_f = cv2.imread('img/'+files[i * result_grid[0]])
+        img_f = cv2.imread(os.path.join(pic_path, files[i * result_grid[0]]))
         # 下载下来的图片大小不同，拼接之前需要统一分辨率
         img_f = cv2.resize(img_f, img_size, interpolation=cv2.INTER_CUBIC)
     except:
@@ -23,7 +29,7 @@ for i in range(result_grid[1]):
         img_f = np.zeros((img_size[0], img_size[1], 3), dtype=np.uint8)
     for j in range(1, result_grid[0]):
         try:
-            img_t = cv2.imread('img/'+files[i * result_grid[0] + j])
+            img_t = cv2.imread(os.path.join(pic_path, files[i * result_grid[0] + j]))
             img_t = cv2.resize(img_t, img_size, interpolation=cv2.INTER_CUBIC)
         except:
             img_t = np.zeros((img_size[0], img_size[1], 3), dtype=np.uint8)
