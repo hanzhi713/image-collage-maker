@@ -19,7 +19,7 @@
 pip3 install itchat opencv-python tqdm scikit-learn
 ```
 
-NumPy 和 SciPy会作为Dependency自动安装
+NumPy和SciPy会作为Dependency自动安装
 
 ## 使用方法
 
@@ -35,6 +35,9 @@ python3 extract_img.py
 python3 make_img.py --sort pca_lab --pic_size 100
 ```
 
+使用```--ratio w h```可修改横纵比，默认16:9。
+如```--ratio 21 9```可改为21:9。
+
 使用```python3 make_img.py --help```来查看更多选项
 
 ## 部分排序方法展示
@@ -46,6 +49,10 @@ python3 make_img.py --sort pca_lab --pic_size 100
 BGR值求和并排序
 
 ![bgr_sum](result-bgr_sum.png)
+
+平均Saturation排序
+
+![sat](result-av_sat.png)
 
 LAB颜色空间排序
 

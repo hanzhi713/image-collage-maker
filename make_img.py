@@ -27,6 +27,11 @@ def av_hue(img):
     return np.mean(hsv[:, :, 0])
 
 
+def av_sat(img):
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    return np.mean(hsv[:, :, 1])
+
+
 def hsv(img):
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     return np.mean(hsv[:, :, 0]), np.mean(hsv[:, :, 1]), np.mean(hsv[:, :, 2])
@@ -52,8 +57,8 @@ if __name__ == "__main__":
     parser.add_argument("--size", help="Size of each image in pixels", type=int, default=100)
     parser.add_argument("--ratio", help="Aspect ratio", nargs='+', type=int, default=[16, 9])
     parser.add_argument("--sort", help="Sort method",
-                        choices=["bgr", "bgr_sum", "av_hue", "lum", "lab", "rand", "pca_bgr", "pca_hsv",
-                                 "pca_lab"],
+                        choices=["bgr", "bgr_sum", "av_hue", "av_sat", "lum", "lab", "rand",
+                                 "pca_bgr", "pca_hsv", "pca_lab"],
                         type=str, default="bgr_sum")
     parser.add_argument("--rev_row", help="Whether to use the S-shaped alignment", type=bool, default=True)
 
