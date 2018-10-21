@@ -32,7 +32,7 @@ python3 extract_img.py
 再使用[make_img.py](make_img.py)合成
 
 ```bash
-python3 make_img.py --sort pca_lab --pic_size 100
+python3 make_img.py --sort pca_lab --size 100
 ```
 
 使用```--ratio w h```可修改横纵比，默认16:9。
@@ -61,6 +61,10 @@ LAB颜色空间排序
 Luminosity排序
 
 ![lum](result-lum.png)
+
+BGR排序
+
+![BGR](result_bgr.png)
 
 PCA-平均BGR排序
 
