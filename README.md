@@ -64,7 +64,7 @@ Luminosity排序
 
 BGR排序
 
-![BGR](result_bgr.png)
+![BGR](result-bgr.png)
 
 PCA-平均BGR排序
 
