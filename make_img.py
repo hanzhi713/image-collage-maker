@@ -38,7 +38,7 @@ def hsv(img):
 
 
 def lum(img):
-    return np.mean(np.sqrt(0.241 * img[:, :, 0] + .691 * img[:, :, 1] + .068 * img[:, :, 2]))
+    return np.mean(np.sqrt(0.241 * img[:, :, 0] + 0.691 * img[:, :, 1] + 0.068 * img[:, :, 2]))
 
 
 def lab(img):
@@ -57,7 +57,7 @@ if __name__ == "__main__":
     parser.add_argument("--size", help="Size of each image in pixels", type=int, default=100)
     parser.add_argument("--ratio", help="Aspect ratio", nargs='+', type=int, default=[16, 9])
     parser.add_argument("--sort", help="Sort method",
-                        choices=["none", "bgr", "bgr_sum", "av_hue", "av_sat", "lum", "lab", "rand",
+                        choices=["none", "bgr_sum", "av_hue", "av_sat", "lum", "lab", "rand",
                                  "pca_bgr", "pca_hsv", "pca_lab"],
                         type=str, default="bgr_sum")
     parser.add_argument("--rev_row", help="Whether to use the S-shaped alignment", action="store_true")
@@ -112,7 +112,10 @@ if __name__ == "__main__":
         img_keys = np.array(list(range(0, num_friends)))
     else:
         sort_function = eval(args.sort)
-        img_keys = np.array(list(map(sort_function, imgs)))
+        img_keys = list(map(sort_function, imgs))
+        if type(img_keys[0]) == tuple:
+            img_keys = list(map(lambda x: x[0], img_keys))
+        img_keys = np.array(img_keys)
 
     sorted_imgs = np.array(imgs)[np.argsort(img_keys)]
     if args.rev_sort:
