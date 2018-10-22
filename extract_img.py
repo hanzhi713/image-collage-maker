@@ -10,28 +10,72 @@ import concurrent.futures
 import time
 from tqdm import tqdm
 from math import ceil
+import argparse
 
 
-def download(args):
-    user_name, image_id = args
-    itchat.get_head_img(userName=user_name, picDir='img/%d.png' % image_id)
+def download_friend(args):
+    user_name, image_id, download_dir = args
+    itchat.get_head_img(userName=user_name, picDir=os.path.join(download_dir, '%d.png' % image_id))
     return args
 
 
+def download_chatroom_member(args):
+    global chatroom
+    user_name, image_id, download_dir = args
+    itchat.get_head_img(userName=user_name, chatroomUserName=chatroom['UserName'],
+                        picDir=os.path.join(download_dir, '%d.png' % image_id))
+    return args
+
+
+def get_chatroom_by_name(name, chatrooms):
+    for chatroom in chatrooms:
+        if chatroom['NickName'] == name:
+            return chatroom
+
+
 if __name__ == "__main__":
-    # 登陆
-    print("Logging in...")
-    itchat.auto_login(hotReload=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dir", default="img", type=str, help="Folder to store the downloaded images")
+    parser.add_argument("--type", type=str, choices=["self", "chatroom"], default="self")
+    parser.add_argument("--name", type=str, help="Specify the chatroom name if type=chatroom")
 
-    # 获取通讯录列表
-    print("Loading contact...")
-    friends = itchat.get_friends(update=True)
+    args = parser.parse_args()
+    download_dir = args.dir
 
-    if not os.path.isdir('img'):
-        os.mkdir('img')
+    if args.type == "self":
+        print("Logging in...")
+        itchat.auto_login(hotReload=True)
 
-    if os.path.isfile("img/cache.pkl"):
-        downloaded = pickle.load(open("img/cache.pkl", "rb"))
+        print("Loading contact...")
+        friends = itchat.get_friends(update=True)
+        download = download_friend
+
+    elif args.type == "chatroom":
+        assert len(args.name) > 0, "You must provide a chatroom name!"
+        print("Logging in...")
+        itchat.auto_login(hotReload=True)
+
+        print("Getting chatrooms...")
+        chatrooms = itchat.get_chatrooms(update=True)
+        chatroom = get_chatroom_by_name(args.name, chatrooms)
+        assert chatroom is not None, "Chatroom \"{}\" not found".format(args.name)
+
+        print("Updating chatroom...")
+        itchat.update_chatroom(chatroom['UserName'], True)
+
+        # fetch the chatroom data again
+        chatroom = get_chatroom_by_name(args.name, itchat.get_chatrooms())
+
+        friends = chatroom['MemberList']
+        download = download_chatroom_member
+    else:
+        raise Exception("Invalid argument")
+
+    if not os.path.isdir(download_dir):
+        os.mkdir(download_dir)
+
+    if os.path.isfile(os.path.join(download_dir, "cache.pkl")):
+        downloaded = pickle.load(open(os.path.join(download_dir, "cache.pkl"), "rb"))
         assert type(downloaded) == dict
     else:
         downloaded = {}
@@ -52,16 +96,16 @@ if __name__ == "__main__":
         counter = 0
         for friend in friends:
             if not friend['UserName'] in downloaded:
-                f.append(pool.submit(download, (friend['UserName'], available_numbers[counter])))
+                f.append(pool.submit(download, (friend['UserName'], available_numbers[counter], download_dir)))
                 counter += 1
 
         start_time = time.clock()
         for i, future in tqdm(enumerate(f), total=len(f), desc="[Downloading images]", unit="imgs"):
             try:
                 if time.clock() - start_time > max_wait_time:
-                    user_name, idx = future.result(0)
+                    user_name, idx, _ = future.result(0)
                 else:
-                    user_name, idx = future.result(ceil(max_wait_time - time.clock() + start_time))
+                    user_name, idx, _ = future.result(ceil(max_wait_time - time.clock() + start_time))
                 downloaded[user_name] = idx
             except concurrent.futures.TimeoutError:
                 print("\nTimeout when downloading the head image of", friends[available_numbers[i]]['NickName'])
@@ -70,7 +114,7 @@ if __name__ == "__main__":
             print("Warning: Failed to downlodad some of the images")
             print("Retrying...")
 
-        pickle.dump(downloaded, open("img/cache.pkl", "wb"))
+        pickle.dump(downloaded, open(os.path.join(download_dir, "cache.pkl"), "wb"))
 
     print("Success")
     exit(0)
