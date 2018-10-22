@@ -25,14 +25,19 @@ NumPy和SciPy会作为Dependency自动安装
 
 首先使用[extract_img.py](extract_img.py)下载图片
 
+下载自己所有好友的头像（--dir的参数是下载目录）：
 ```bash
-python3 extract_img.py
+python3 extract_img.py --dir img --type self
+```
+下载某个群聊里所有成员的头像（请把```name```换成群聊的名字并保留双引号）：
+```bash
+python3 extract_img.py --dir img2 --type chatroom --name "name"
 ```
 
 再使用[make_img.py](make_img.py)合成
 
 ```bash
-python3 make_img.py --sort pca_lab --size 100
+python3 make_img.py --path img --sort pca_lab --size 100
 ```
 
 使用```--ratio w h```可修改横纵比，默认16:9。
