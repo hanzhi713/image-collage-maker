@@ -20,7 +20,7 @@ def download(args):
     return args
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     # 登陆
     print("Logging in...")
     itchat.auto_login(hotReload=True)
