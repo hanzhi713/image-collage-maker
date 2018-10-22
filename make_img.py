@@ -1,7 +1,7 @@
-'''
+"""
 make_img.py
 read all the images and combine into a single one. 
-'''
+"""
 import os
 import numpy as np
 import cv2
@@ -51,7 +51,6 @@ def rand(img):
 
 
 if __name__ == "__main__":
-    # 获取下载的所有图片
     parser = argparse.ArgumentParser()
     parser.add_argument("--pic_path", help="Path to the downloaded head images", default="img", type=str)
     parser.add_argument("--size", help="Size of each image in pixels", type=int, default=100)
@@ -72,7 +71,7 @@ if __name__ == "__main__":
     files = list(os.walk(pic_path))[0][-1]
     try:
         files.remove("cache.pkl")
-    except:
+    except ValueError:
         pass
 
     num_friends = len(files)

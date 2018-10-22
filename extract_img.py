@@ -1,7 +1,7 @@
-'''
+"""
 extract_img.py
 get images from WeChat friends list.
-'''
+"""
 import itchat
 import os
 import pickle
@@ -10,13 +10,11 @@ import concurrent.futures
 import time
 from tqdm import tqdm
 from math import ceil
-import sys
 
 
 def download(args):
     user_name, image_id = args
-    itchat.get_head_img(userName=user_name,
-                        picDir='img/%d.png' % image_id)
+    itchat.get_head_img(userName=user_name, picDir='img/%d.png' % image_id)
     return args
 
 
@@ -40,7 +38,6 @@ if __name__ == "__main__":
 
     num_friends = len(friends)
     max_wait_time = 60
-    # numbers = sorted(list(downloaded.values()))
 
     while len(downloaded) < len(friends):
         available_numbers = [i for i in range(num_friends) if i not in downloaded.values()]
@@ -58,7 +55,6 @@ if __name__ == "__main__":
                 f.append(pool.submit(download, (friend['UserName'], available_numbers[counter])))
                 counter += 1
 
-        # progress_bar = tqdm(total=len(f), desc="[Downloading images]", unit="imgs")
         start_time = time.clock()
         for i, future in tqdm(enumerate(f), total=len(f), desc="[Downloading images]", unit="imgs"):
             try:
@@ -77,4 +73,4 @@ if __name__ == "__main__":
         pickle.dump(downloaded, open("img/cache.pkl", "wb"))
 
     print("Success")
-    sys.exit(0)
+    exit(0)
