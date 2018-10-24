@@ -84,10 +84,16 @@ if __name__ == "__main__":
                                  "umap_bgr", "umap_hsv", "umap_lab", "umap_gray", "umap_lum", "umap_sat", "umap_hue",
                                  ],
                         type=str, default="bgr_sum")
-    parser.add_argument("--collage", type=str, default="")
-    parser.add_argument("--copt", type=str, default="hsv", choices=["hsv", "bgr", "lab", "lum"])
-    parser.add_argument("--rev_row", help="Whether to use the S-shaped alignment", action="store_true")
-    parser.add_argument("--rev_sort", help="Sort in the reverse direction", action="store_true")
+    parser.add_argument("--collage", type=str, default="",
+                        help="If you want to fit an image, specify the image path here")
+    parser.add_argument("--copt", type=str, default="hsv", choices=["hsv", "bgr", "lab"],
+                        help="Methods to use when fitting an image")
+    parser.add_argument("--rev_row",
+                        help="Whether to use the S-shaped alignment. Do NOT use this option when fitting an image using the --collage option",
+                        action="store_true")
+    parser.add_argument("--rev_sort",
+                        help="Sort in the reverse direction. Do NOT use this option when fitting an image using the --collage option",
+                        action="store_true")
     parser.add_argument("--dup", type=int, default=1, help="Duplicate the set of images by how many times")
     parser.add_argument("--ctype", type=str, default="float16",
                         help="Type of the cost matrix. Usually float16 is sufficient",
