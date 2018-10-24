@@ -185,7 +185,7 @@ if __name__ == "__main__":
         result_grid = best_wh
 
         print("Calculated grid size based on your aspect ratio:", best_wh)
-        print("Note", num_imgs - best_wh[0] * best_wh[1], "images will be thrown away from the collage")
+        print("Note:", num_imgs - best_wh[0] * best_wh[1], "images will be thrown away from the collage")
 
         # it's VERY important to remove redundant images
         # this makes sure that cost_matrix is a square

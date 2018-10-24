@@ -57,7 +57,7 @@ Result:
 python3 make_img.py --path img --collage img/0.png --size 25 --dup 4 --out collage.png
 ```
 
-```--dup4``` allows each image to be used four times. Increase that number if you don't have enough friends or you want a better fitting result. Note that a large number of images may result in long computational time.
+```--dup 4``` allows each image to be used four times. Increase that number if you don't have enough friends or you want a better fitting result. Note that a large number of images may result in long computational time.
 
 Result: 
 ![collage.png](collage.png)
