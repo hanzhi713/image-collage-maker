@@ -18,6 +18,7 @@ def download_friend(args):
     itchat.get_head_img(userName=user_name, picDir=os.path.join(download_dir, '%d.png' % image_id))
     return args
 
+
 def download_chatroom_member(args):
     global chatroom
     user_name, image_id, download_dir = args
@@ -116,4 +117,4 @@ if __name__ == "__main__":
         pickle.dump(downloaded, open(os.path.join(download_dir, "cache.pkl"), "wb"))
 
     print("Success")
-    sys.exit(0)
+    exit(0)

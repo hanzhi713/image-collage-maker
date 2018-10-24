@@ -18,9 +18,9 @@ Open the terminal and type
 pip3 install itchat opencv-python tqdm scikit-learn lap
 ```
 
-If lap cannot be successfully installed, try to install lapsolver
+If lap cannot be successfully installed, try to install lapsolver instead.
  
-Because SciPy's linear sum assignment is implemented in Python，it is slow. So I chose lap/lapsolver whose kernels are implemented in C++
+Because SciPy's linear sum assignment is implemented in Python, it is slow. So I chose lap/lapsolver whose kernels are implemented in C++
 
 ## How to use
 
@@ -54,7 +54,7 @@ Result:
 #### Option 2: Fit a particular image
 
 ```bash
-python3 make_img.py --path img --collage img/0.png --size 25 --dup 4
+python3 make_img.py --path img --collage img/0.png --size 25 --dup 4 --out collage.png
 ```
 
 ```--dup4``` allows each image to be used four times. Increase that number of you don't have enough friends or want a better fitting result. Note that a large number of images may result in long computational time.
