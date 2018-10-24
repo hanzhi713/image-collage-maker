@@ -1,81 +1,70 @@
-# 你的微信好友都长啥样？
+# Image Collage Maker
 
 ![](result-rand.png)
 
 
-## 系统要求
+## System Requirements
 
 - Python >= 3.5
-- 一个微信账号
+- A WeChat account with a lot of friends
 
+Note: The collage maker can be applied to any folder which contains sufficient images
 
-## 安装 itchat, OpenCV, tqdm 和 scikit-learn
+### Install itchat, OpenCV, tqdm and scikit-learn
 
-使用 Python 的 pip 指令安装
-
-按 `Windows + R` 键打开命令行窗口，输入
+Open the terminal and type
 
 ```
-pip3 install itchat opencv-python tqdm scikit-learn
+pip3 install itchat opencv-python tqdm scikit-learn lap
 ```
 
-NumPy和SciPy会作为Dependency自动安装
+If lap cannot be successfully installed, try to install lapsolver
+ 
+Because SciPy's linear sum assignment is implemented in Python，it is slow. So I chose lap/lapsolver whose kernels are implemented in C++
 
-## 使用方法
+## How to use
 
-首先使用[extract_img.py](extract_img.py)下载图片
+1\. Use [extract_img.py](extract_img.py) to download head images of your friends
 
-下载自己所有好友的头像（--dir的参数是下载目录）：
+Download all your friends' head images(--dir specifies the directory to store these images):
 ```bash
 python3 extract_img.py --dir img --type self
 ```
-下载某个群聊里所有成员的头像（请把```name```换成群聊的名字并保留双引号）：
+
+Or, download the group members' images in a group chat(replace ```name``` with the group chat's name and keep the double quotes):
 ```bash
 python3 extract_img.py --dir img2 --type chatroom --name "name"
 ```
 
-再使用[make_img.py](make_img.py)合成
+2\. Use [make_img.py](make_img.py) to make the collage
+
+#### Option 1: Sorting
 
 ```bash
 python3 make_img.py --path img --sort pca_lab --size 100
 ```
 
-使用```--ratio w h```可修改横纵比，默认16:9。
-如```--ratio 21 9```可改为21:9。
+Use ```--ratio w h``` to change the aspect ratio, whose default is 16:9
 
-使用```python3 make_img.py --help```来查看更多选项
+Example: use ```--ratio 21 9``` to change aspect ratio to 21:9
 
-## 部分排序方法展示
+Result:
+![PCA-LAB](result-tsne_bgr.png)
 
-平均Hue排序
+#### Option 2: Fit a particular image
 
-![av_hue](result-av_hue.png)
+```bash
+python3 make_img.py --path img --collage img/0.png --size 25 --dup 4
+```
 
-BGR值求和并排序
+```--dup4``` allows each image to be used four times. Increase that number of you don't have enough friends or want a better fitting result. Note that a large number of images may result in long computational time.
 
-![bgr_sum](result-bgr_sum.png)
+Result: 
+![collage.png](collage.png)
 
-平均Saturation排序
+#### Other options
 
-![sat](result-av_sat.png)
+Use ```python3 make_img.py --help``` to get other optional arguments
 
-LAB颜色空间排序
 
-![lab](result-lab.png)
-
-Luminosity排序
-
-![lum](result-lum.png)
-
-PCA-平均BGR排序
-
-![PCA-BGR](result-pca_bgr.png)
-
-PCA-平均HSV排序
-
-![PCA-HSV](result-pca_hsv.png)
-
-PCA-平均LAB排序
-
-![PCA-LAB](result-pca_lab.png)
 
