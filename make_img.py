@@ -1,7 +1,3 @@
-"""
-make_img.py
-read all the images and combine into a single one. 
-"""
 import os
 from os.path import *
 import numpy as np
