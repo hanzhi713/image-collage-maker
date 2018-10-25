@@ -8,17 +8,17 @@
 - Python >= 3.5
 - A WeChat account with a lot of friends
 
-Note: The collage maker can be applied to any folder which contains sufficient images
+Note: The collage maker can be applied to any folder which contains a sufficient amount of images
 
-### Install itchat, OpenCV, tqdm and scikit-learn
+### Install itchat, opencv, tqdm, umap, scikit-learn and lap
 
 Open the terminal and type
 
 ```
-pip3 install itchat opencv-python tqdm scikit-learn lap
+pip3 install itchat opencv-python tqdm umap-learn scikit-learn lap
 ```
 
-If lap cannot be successfully installed, try to install lapsolver instead.
+If lap cannot be successfully installed, try lapsolver instead.
  
 Because SciPy's linear sum assignment is implemented in Python, it is slow. So I chose lap/lapsolver whose kernels are implemented in C++
 
@@ -26,12 +26,12 @@ Because SciPy's linear sum assignment is implemented in Python, it is slow. So I
 
 1\. Use [extract_img.py](extract_img.py) to download head images of your friends
 
-Download all your friends' head images(--dir specifies the directory to store these images):
+Download all your friends' head images (--dir specifies the directory to store these images):
 ```bash
 python3 extract_img.py --dir img --type self
 ```
 
-Or, download the group members' images in a group chat(replace ```name``` with the group chat's name and keep the double quotes):
+Or, download the group members' images in a group chat (replace ```name``` with the group chat's name and keep the double quotes):
 ```bash
 python3 extract_img.py --dir img2 --type chatroom --name "name"
 ```

@@ -164,7 +164,6 @@ if __name__ == "__main__":
     else:
         assert isfile(args.collage)
         from scipy.spatial.distance import cdist
-        import lap
 
         collage = cv2.imread(args.collage)
         rh, rw, _ = collage.shape
@@ -241,9 +240,9 @@ if __name__ == "__main__":
 
         print("Computing optimal pairing on a {}x{} matrix...".format(cost_matrix.shape[0], cost_matrix.shape[1]))
         try:
-            import lap
+            from lap import lapjv
 
-            _, _, cols = lap.lapjv(cost_matrix)
+            _, _, cols = lapjv(cost_matrix)
         except ImportError:
             import lapsolver
 
