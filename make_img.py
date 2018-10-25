@@ -82,7 +82,7 @@ if __name__ == "__main__":
                         type=str, default="bgr_sum")
     parser.add_argument("--collage", type=str, default="",
                         help="If you want to fit an image, specify the image path here")
-    parser.add_argument("--copt", type=str, default="hsv", choices=["hsv", "bgr", "lab"],
+    parser.add_argument("--copt", type=str, default="lab", choices=["hsv", "bgr", "lab"],
                         help="Methods to use when fitting an image")
     parser.add_argument("--rev_row",
                         help="Whether to use the S-shaped alignment. Do NOT use this option when fitting an image using the --collage option",
