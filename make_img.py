@@ -193,6 +193,17 @@ def calculate_collage(collage_file: str, imgs: list, dup: int = 1, copt="lab", c
 
         return f
 
+    def chl_mean_hsl(weights):
+        ratio = weights.shape[0] * weights.shape[1] / np.sum(weights)
+
+        def f(img):
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
+            return ratio * np.average(img[:, :, 0], weights=weights), \
+                   ratio * np.average(img[:, :, 1], weights=weights), \
+                   ratio * np.average(img[:, :, 2], weights=weights)
+
+        return f
+
     def chl_mean_bgr(weights):
         ratio = weights.shape[0] * weights.shape[1] / np.sum(weights)
 
@@ -220,6 +231,9 @@ def calculate_collage(collage_file: str, imgs: list, dup: int = 1, copt="lab", c
     if copt == "hsv":
         img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))
         collage = cv2.cvtColor(collage, cv2.COLOR_BGR2HSV)
+    elif copt == "hsl":
+        img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))
+        collage = cv2.cvtColor(collage, cv2.COLOR_BGR2HLS)
     elif copt == "bgr":
         img_keys = np.array(list(map(chl_mean_bgr(weights), imgs)))
     elif copt == "lab":
@@ -273,7 +287,7 @@ if __name__ == "__main__":
                         "tsne_bgr", "tsne_hsv", "tsne_lab", "tsne_gray", "tsne_lum", "tsne_sat", "tsne_hue",
                         "umap_bgr", "umap_hsv", "umap_lab", "umap_gray", "umap_lum", "umap_sat", "umap_hue",
                         ]
-    all_color_spaces = ["hsv", "bgr", "lab"]
+    all_color_spaces = ["hsv", "hsl", "bgr", "lab"]
     all_sigmas = np.concatenate((np.arange(-1, -0.45, 0.05), np.arange(0.5, 1.05, 0.05)))
 
     parser = argparse.ArgumentParser()
@@ -354,6 +368,7 @@ if __name__ == "__main__":
             save_img(make_collage(result_grid, sorted_imgs, args.rev_row, v), args.out, args.sort, v)
     else:
         if args.exp:
+            from mpl_toolkits.mplot3d import Axes3D
             import matplotlib.pyplot as plt
 
             pool = con.ProcessPoolExecutor(4)
