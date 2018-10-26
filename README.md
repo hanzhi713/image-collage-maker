@@ -18,9 +18,7 @@ Open the terminal and type
 pip3 install itchat opencv-python tqdm umap-learn scikit-learn lap
 ```
 
-If lap cannot be successfully installed, try lapsolver instead.
- 
-Because SciPy's linear sum assignment is implemented in Python, it is slow. So I chose lap/lapsolver whose kernels are implemented in C++
+Because SciPy's linear sum assignment is implemented in Python, it is slow. So I chose lap whose kernel is implemented in C++
 
 ## How to use
 

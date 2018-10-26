@@ -1,13 +1,9 @@
 import os
 from os.path import *
-from typing import Any, Union
-
 import numpy as np
 import cv2
 import argparse
 import random
-
-from numpy.core.multiarray import ndarray
 from tqdm import tqdm
 import concurrent.futures as con
 
@@ -302,7 +298,8 @@ if __name__ == "__main__":
                         action="store_true")
     parser.add_argument("--dup", type=int, default=1, help="Duplicate the set of images by how many times")
     parser.add_argument("--ctype", type=str, default="float16",
-                        help="Type of the cost matrix. Usually float16 is sufficient",
+                        help="Type of the cost matrix. "
+                             "Float16 is a good compromise between computational time and accuracy",
                         choices=["float16", "float32", "float64", "int16", "int32"])
     parser.add_argument("--sigma", type=float, default=1)
     parser.add_argument("--exp", action="store_true")
@@ -332,7 +329,7 @@ if __name__ == "__main__":
     if len(args.collage) == 0:
         if args.exp:
 
-            pool = con.ProcessPoolExecutor(8)
+            pool = con.ProcessPoolExecutor(4)
             futures = []
 
 
@@ -359,7 +356,7 @@ if __name__ == "__main__":
         if args.exp:
             import matplotlib.pyplot as plt
 
-            pool = con.ProcessPoolExecutor(6)
+            pool = con.ProcessPoolExecutor(4)
             futures = []
 
 

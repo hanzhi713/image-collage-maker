@@ -9,21 +9,19 @@
 - 一个微信账号
 
 
-## 安装 itchat, OpenCV, tqdm 和 scikit-learn
+## 安装 itchat, opencv, tqdm, umap, scikit-learn 和 lap
 
 使用 Python 的 pip 指令安装
 
 按 `Windows + R` 键打开命令行窗口，输入
 
 ```
-pip3 install itchat opencv-python tqdm scikit-learn lap
+pip3 install itchat opencv-python tqdm umap-learn scikit-learn lap
 ```
 
 NumPy和SciPy会作为Dependency自动安装
 
-注：若lap安装不成功，请尝试安装lapsolver。 
-
-scipy解二分图匹配的方法是纯Python写的，速度远远不能满足需求，所以我选择lap和lapsolver。
+由于SciPy解二分图匹配的方法是纯Python写的，速度远远不能满足需求，所以我选择底层是C++的lap。
 
 ## 使用方法
 
