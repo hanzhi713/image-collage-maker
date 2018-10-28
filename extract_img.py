@@ -47,6 +47,7 @@ if __name__ == "__main__":
         itchat.auto_login(hotReload=True)
 
         print("Loading contact...")
+        itchat.get_friends(update=True)
         friends = itchat.get_friends(update=True)
         download = download_friend
 
@@ -111,7 +112,7 @@ if __name__ == "__main__":
                 print("\nTimeout when downloading the head image of", friends[available_numbers[i]]['NickName'])
 
         if len(downloaded) < len(friends):
-            print("Warning: Failed to downlodad some of the images")
+            print("Warning: Failed to download some of the images")
             print("Retrying...")
 
         pickle.dump(downloaded, open(os.path.join(download_dir, "cache.pkl"), "wb"))

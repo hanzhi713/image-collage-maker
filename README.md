@@ -2,7 +2,6 @@
 
 ![](result-rand.png)
 
-
 ## System Requirements
 
 - Python >= 3.5
@@ -10,15 +9,15 @@
 
 Note: The collage maker can be applied to any folder which contains a sufficient amount of images
 
-### Install itchat, opencv, tqdm, umap, scikit-learn and lap
+### Install itchat, opencv, tqdm, umap, scikit-learn, matplotlib and lap
 
 Open the terminal and type
 
 ```
-pip3 install itchat opencv-python tqdm umap-learn scikit-learn lap
+pip3 install itchat opencv-python tqdm umap-learn scikit-learn matplotlib lap
 ```
 
-Because SciPy's linear sum assignment is implemented in Python, it is slow. So I chose lap whose kernel is implemented in C++
+Because SciPy's linear sum assignment is implemented in Python, it is slow. So, I chose lap whose kernel is implemented in C++
 
 ## How to use
 
@@ -36,7 +35,7 @@ python3 extract_img.py --dir img2 --type chatroom --name "name"
 
 2\. Use [make_img.py](make_img.py) to make the collage
 
-#### Option 1: Sorting
+### Option 1: Sorting
 
 ```bash
 python3 make_img.py --path img --sort pca_lab --size 100
@@ -49,20 +48,46 @@ Example: use ```--ratio 21 9``` to change aspect ratio to 21:9
 Result:
 ![PCA-LAB](result-tsne_bgr.png)
 
-#### Option 2: Fit a particular image
+### Option 2: Fit a particular image
+
+#### Option 2.1: Give a fair chance to each image
+
+This fitting option ensures that each image is used the same amount of times.
 
 ```bash
-python3 make_img.py --path img --collage img/0.png --size 25 --dup 4 --out collage.png
+python3 make_img.py --path img --collage img/1.png --size 25 --dup 10 --out collage.png
 ```
 
 ```--dup 4``` allows each image to be used four times. Increase that number if you don't have enough friends or you want a better fitting result. Note that a large number of images may result in long computational time.
 
-Result: 
-![collage.png](collage.png)
+| Original | Fitting Result |
+| --- | --- |
+| <img src="dest.png" width="400px"> | <img src="collage.png" width="400px"> |
 
-#### Other options
+
+#### Option 2.2: Best fit
+
+This fitting option just selects the best subset of images you provided to approximate your destination images.
+
+```bash
+python3 make_img.py --path img --out collage-best-fit.png --collage img/1.png --size 25 --uneven
+```
+
+| Original | Fitting Result |
+| --- | --- |
+| <img src="dest.png" width="400px"> | <img src="collage-best-fit_bgr_-1.0.png" width="400px"> |
+
+
+### Other options
 
 Use ```python3 make_img.py --help``` to get other optional arguments
 
+### Mechanism
+
+see [here](Mechanism.md)
+
+## TODO
+
+Make a GUI
 
 
