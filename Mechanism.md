@@ -35,7 +35,12 @@ result_grid = calculate_grid_size(rw, rh, num_imgs, v)
 # This makes sure that each image in the list of images corresponds to a pixel of the destination image
 dest_img = cv2.resize(dest_img, result_grid, cv2.INTER_CUBIC)
 
-# Each pixel of the destination image is represented as 3-D vector [a, b, c] where the numerical values of a, b and c depend on the color space used. We need to map each image, which is an array of shape (h, w, 3), to also 3-D vector [a, b, c], so we can compute the distance between them.
+"""
+Each pixel of the destination image is represented as 3-D vector [a, b, c] 
+where the numerical values of a, b and c depend on the color space used. 
+We need to map each image, which is an array of shape (h, w, 3), 
+to also 3-D vector [a, b, c], so we can compute the distance between them.
+"""
 
 # Currently, this mapping function is just a channel-wise weighted average of the color space used
 def chl_mean_lab(weights):
@@ -69,7 +74,8 @@ An image can be better fitted if we don't restrict the number of times that each
 ```python
 dest_img = cv2.imread(dest_img_path)
 
-# Because we don't have a fixed total amount of images as we can used a single image for arbitrary amount of times, we need user to specify the maximum width in order to determine the grid size.
+# Because we don't have a fixed total amount of images as we can used a single image for 
+# arbitrary amount of times, we need user to specify the maximum width in order to determine the grid size.
 rh, rw, _ = dest_img.shape
 rh = round(rh * max_width / rw)
 result_grid = (max_width, rh)
