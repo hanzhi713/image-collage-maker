@@ -7,6 +7,7 @@ import random
 from tqdm import tqdm
 import concurrent.futures as con
 import io
+import sys
 
 
 def bgr_chl_sum(img: np.ndarray) -> [float, float, float]:
@@ -68,16 +69,18 @@ def rand(img: np.ndarray) -> float:
     return random.random()
 
 
-class OutputWrapper:
+class OutputWrapper(io.TextIOWrapper):
     def __init__(self, v=False):
+        super().__init__(sys.stdout.buffer, encoding="utf-8")
         self.v = v
 
     def write(self, s):
         if self.v:
-            print(s)
+            super().write(s)
+            self.flush()
 
     def flush(self):
-        pass
+        super().flush()
 
 
 def calculate_grid_size(rw: int, rh: int, num_imgs: int, v: OutputWrapper = OutputWrapper()) -> tuple:

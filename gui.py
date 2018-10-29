@@ -9,6 +9,7 @@ import make_img
 from multiprocessing.pool import ThreadPool
 from multiprocessing import Queue
 import math
+import io
 
 
 def limit_wh(w: int, h: int, max_width: int, max_height: int) -> [int, int, float]:
@@ -88,6 +89,7 @@ scroll.grid(row=1, column=1)
 class OutputWrapper:
     def __init__(self, cmd_log: SafeText):
         self.cmd_log = cmd_log
+        self.encoding = "utf-8"
 
     def write(self, s):
         self.cmd_log.write(s)
