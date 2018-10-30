@@ -5,4 +5,7 @@ uva.png
 tests
 sort_comp
 out
+build
+dist
+gui.spec
 __pycache__
