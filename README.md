@@ -21,7 +21,7 @@ Because SciPy's linear sum assignment is implemented in Python, it is slow. So, 
 
 ## How to use
 
-1\. Use [extract_img.py](extract_img.py) to download head images of your friends
+### 1\. Use [extract_img.py](extract_img.py) to download head images of your friends
 
 Download all your friends' head images (--dir specifies the directory to store these images):
 
@@ -41,7 +41,7 @@ Sometimes the download may fail (especially the program is running for the first
 python3 extract_img.py --dir img --clean
 ```
 
-2\. Use [make_img.py](make_img.py) to make the collage
+### 2\. Use [make_img.py](make_img.py) to make the collage
 
 You can run the GUI (experimental) to make the collage. Simply type
 
@@ -51,7 +51,7 @@ python3 gui.py
 
 Or, read the following part for the usage of the command-line tool.
 
-### Option 1: Sorting
+#### Option 1: Sorting
 
 ```bash
 python3 make_img.py --path img --sort pca_lab --size 100
@@ -64,9 +64,9 @@ Example: use ```--ratio 21 9``` to change aspect ratio to 21:9
 Result:
 ![PCA-LAB](result-tsne_bgr.png)
 
-### Option 2: Fit a particular image
+#### Option 2: Fit a particular image
 
-#### Option 2.1: Give a fair chance to each image
+##### Option 2.1: Give a fair chance to each image
 
 This fitting option ensures that each image is used the same amount of times.
 
@@ -81,7 +81,7 @@ python3 make_img.py --path img --collage img/1.png --size 25 --dup 10 --out coll
 | <img src="dest.png" width="400px"> | <img src="collage.png" width="400px"> |
 
 
-#### Option 2.2: Best fit
+##### Option 2.2: Best fit
 
 This fitting option just selects the best subset of images you provided to approximate your destination images. Each image in that subset will be used for arbitrary amount of times.
 
@@ -94,11 +94,11 @@ python3 make_img.py --path img --out collage-best-fit.png --collage img/1.png --
 | <img src="dest.png" width="400px"> | <img src="collage-best-fit_bgr_-1.0.png" width="400px"> |
 
 
-### Other options
+#### Other options
 
 Use ```python3 make_img.py --help``` to get other optional arguments
 
-### Mechanism
+## Mechanism
 
 A brief description of the mechanism is available [here](Mechanism.md)
 
