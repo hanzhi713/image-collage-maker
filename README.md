@@ -9,15 +9,13 @@
 
 Note: The collage maker can be applied to any folder which contains a sufficient amount of images
 
-### Install itchat, opencv, tqdm, umap, scikit-learn, matplotlib and lap
+### Install dependencies
 
 Open the terminal and type
 
 ```bash
-pip3 install itchat opencv-python tqdm umap-learn scikit-learn matplotlib lap
+pip3 install itchat pillow opencv-python tqdm umap-learn scikit-learn matplotlib lap
 ```
-
-Because SciPy's linear sum assignment is implemented in Python, it is slow. So, I chose lap whose kernel is implemented in C++
 
 ## How to use
 
@@ -26,7 +24,7 @@ Because SciPy's linear sum assignment is implemented in Python, it is slow. So, 
 Download all your friends' head images (--dir specifies the directory to store these images):
 
 ```bash
-python3 extract_img.py --dir img 
+python3 extract_img.py --dir img
 ```
 
 Or, download the group members' images in a group chat (replace ```name``` with the group chat's name and keep the double quotes):
@@ -35,7 +33,7 @@ Or, download the group members' images in a group chat (replace ```name``` with 
 python3 extract_img.py --dir img2 --type chatroom --name "name"
 ```
 
-Sometimes the download may fail (especially the program is running for the first time). In such case, you need to rerun program with an additional ```--clean``` flag
+Sometimes the download may fail, especially when the program is running for the first time. In such case, you need to rerun program with an additional ```--clean``` flag
 
 ```bash
 python3 extract_img.py --dir img --clean
