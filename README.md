@@ -19,9 +19,9 @@ pip3 install itchat pillow opencv-python tqdm umap-learn scikit-learn matplotlib
 
 ## How to use
 
-### 1\. Use [extract_img.py](extract_img.py) to download head images of your friends
+### 1\. Use [extract_img.py](extract_img.py) to download profile pictures of your WeChat friends
 
-Download all your friends' head images (--dir specifies the directory to store these images):
+Download all your friends' profile pictures (--dir specifies the directory to store these images):
 
 ```bash
 python3 extract_img.py --dir img
@@ -72,7 +72,7 @@ This fitting option ensures that each image is used the same amount of times.
 python3 make_img.py --path img --collage img/1.png --size 25 --dup 10 --out collage.png
 ```
 
-```--dup 4``` allows each image to be used four times. Increase that number if you don't have enough source images or you want a better fitting result. Note that a large number of images may result in long computational time.
+```--dup 10``` allows each source image to be used 10 times. Increase that number if you don't have enough source images or you want a better fitting result. Note that a large number of images may result in long computational time.
 
 | Original                           | Fitting Result                        |
 | ---------------------------------- | ------------------------------------- |
