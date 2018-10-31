@@ -135,9 +135,6 @@ def calculate_decay_weights_normal(shape: tuple, sigma: float = 1) -> np.ndarray
     with mean=0 and sigma=sigma
 
     Generate an "upside-down" bivariate normal if sigma is negative.
-    :param shape:
-    :param sigma:
-    :return:
     """
     assert sigma != 0
     from scipy.stats import truncnorm

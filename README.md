@@ -100,3 +100,10 @@ Use ```python3 make_img.py --help``` to get other optional arguments
 
 A brief description of the mechanism is available [here](Mechanism.md)
 
+## Credits (Names in alphabetical order)
+
+Hanzhi Zhou ([hanzhi713](https://github.com/hanzhi713/)) : Main algorithm and GUI implementation
+
+Xinyue Lin : Idea for the "Uneven distribution (best-fit)"
+
+Yufeng Chi ([T-K](https://github.com/T-K-233/)) : Initial Idea, crawler
