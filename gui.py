@@ -27,16 +27,16 @@ def limit_wh(w: int, h: int, max_width: int, max_height: int) -> [int, int, floa
 root = Tk()
 left_panel = PanedWindow(root)
 left_panel.grid(row=0, column=0)
+Separator(root, orient="vertical").grid(
+    row=0, column=1, sticky="nsew", padx=(5, 5))
 right_panel = PanedWindow(root)
-right_panel.grid(row=0, column=1)
+right_panel.grid(row=0, column=2)
 
 cmd_log = StringVar()
 cmd_log.set("")
 
-Separator(root, orient="horizontal").grid(row=1, column=0, sticky="NW")
-
-log_panel = PanedWindow(root)
-log_panel.grid(row=2, column=0, columnspan=2, sticky="W")
+Separator(root, orient="horizontal").grid(
+    row=1, columnspan=2, sticky="nsew", pady=(5, 5))
 
 
 # adapted from
@@ -75,12 +75,14 @@ class SafeText(Text):
         self.after(50, self.update_me)
 
 
-Label(log_panel, text="Log:").grid(row=0, column=0, sticky="W")
-log_entry = SafeText(log_panel, width=100, height=4, bd=0)
-log_entry.grid(row=1, column=0)
-scroll = Scrollbar(log_panel, orient="vertical", command=log_entry.xview)
-log_entry.config(xscrollcommand=scroll.set)
-scroll.grid(row=1, column=1)
+log_panel = PanedWindow(root)
+log_panel.grid(row=2, column=0, columnspan=3, sticky="WE")
+log_panel.grid_columnconfigure(0, weight=1)
+log_entry = SafeText(log_panel, height=5, bd=0)
+log_entry.grid(row=1, column=0, sticky="nsew")
+scroll = Scrollbar(log_panel, orient="vertical", command=log_entry.yview)
+log_entry.config(yscrollcommand=scroll.set)
+scroll.grid(row=1, column=1, sticky="nsew")
 
 
 class OutputWrapper:
@@ -343,6 +345,7 @@ def generate_collage():
                         messagebox.showerror("Error", traceback.format_exc())
             else:
                 assert max_width.get() > 0, "Max width must be a positive number"
+
                 def action():
                     try:
                         result_grid, sorted_imgs, cost = make_img.calculate_collage_dup(dest_img_path.get(), imgs,
