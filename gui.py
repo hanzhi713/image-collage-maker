@@ -390,8 +390,8 @@ def save_img():
         messagebox.showerror("Error", "You don't have any image to save yet!")
     else:
         fp = filedialog.asksaveasfilename(initialdir=os.path.dirname(__file__), title="Save your collage",
-                                          filetypes=(("images", "*.jpg"), ("images", "*.png"), ("images", "*.gif"),
-                                                     ("all files", "*.*")))
+                                          filetypes=(("images", "*.jpg"), ("images", "*.png")), 
+                                          defaultextension=".png", initialfile="result.png")
         if fp is not None and len(fp) >= 0 and os.path.isdir(os.path.dirname(fp)):
             print("Image saved to", fp, file=out_wrapper)
             cv2.imwrite(fp, result_img)
