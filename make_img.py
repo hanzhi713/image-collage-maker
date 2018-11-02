@@ -70,9 +70,10 @@ def rand(img: np.ndarray) -> float:
 
 
 class OutputWrapper(io.TextIOWrapper):
-    def __init__(self, v=False):
+    def __init__(self, v=False, width=None):
         super().__init__(sys.stdout.buffer, encoding="utf-8")
         self.v = v
+        self.width = width
 
     def write(self, s):
         if self.v:
@@ -106,7 +107,7 @@ def make_collage(grid: tuple, sorted_imgs: list or np.ndarray, rev: False,
     :param v: verbose
     :return: a collage
     """
-    for i in tqdm(range(grid[1]), desc="[Merging]", unit="row", file=v):
+    for i in tqdm(range(grid[1]), desc="[Merging]", unit="row", file=v, ncols=v.width):
         if rev and i % 2 == 1:
             img_row = sorted_imgs[(i + 1) * grid[0] - 1]
             for j in range(grid[0] - 2, -1, -1):
@@ -206,8 +207,8 @@ def chl_mean_hsv(weights: np.ndarray) -> "function":
     def f(img: np.ndarray) -> [float, float, float]:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         return np.average(img[:, :, 0], weights=weights), \
-            np.average(img[:, :, 1], weights=weights), \
-            np.average(img[:, :, 2], weights=weights)
+               np.average(img[:, :, 1], weights=weights), \
+               np.average(img[:, :, 2], weights=weights)
 
     return f
 
@@ -216,8 +217,8 @@ def chl_mean_hsl(weights: np.ndarray) -> "function":
     def f(img: np.ndarray) -> [float, float, float]:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
         return np.average(img[:, :, 0], weights=weights), \
-            np.average(img[:, :, 1], weights=weights), \
-            np.average(img[:, :, 2], weights=weights)
+               np.average(img[:, :, 1], weights=weights), \
+               np.average(img[:, :, 2], weights=weights)
 
     return f
 
@@ -225,8 +226,8 @@ def chl_mean_hsl(weights: np.ndarray) -> "function":
 def chl_mean_bgr(weights: np.ndarray) -> "function":
     def f(img: np.ndarray) -> [float, float, float]:
         return np.average(img[:, :, 0], weights=weights), \
-            np.average(img[:, :, 1], weights=weights), \
-            np.average(img[:, :, 2], weights=weights)
+               np.average(img[:, :, 1], weights=weights), \
+               np.average(img[:, :, 2], weights=weights)
 
     return f
 
@@ -235,8 +236,8 @@ def chl_mean_lab(weights: np.ndarray) -> "function":
     def f(img: np.ndarray) -> [float, float, float]:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2Lab)
         return np.average(img[:, :, 0], weights=weights), \
-            np.average(img[:, :, 1], weights=weights), \
-            np.average(img[:, :, 2], weights=weights)
+               np.average(img[:, :, 1], weights=weights), \
+               np.average(img[:, :, 2], weights=weights)
 
     return f
 
@@ -373,7 +374,7 @@ def calculate_collage_dup(dest_img_path: str, imgs: list, max_width: int = 50, c
     sorted_imgs = []
     cost = 0
     for pixel in tqdm(dest_img, desc="[Computing assignments]", unit="pixel", unit_divisor=1000, unit_scale=True,
-                      file=v):
+                      file=v, ncols=v.width):
         # Compute the distance between the current pixel and each image in the set
         dist = cdist(img_keys, np.array([pixel]), metric="euclidean")[:, 0]
 
@@ -417,21 +418,29 @@ def sc_dup_wrapper(a):
     return calculate_collage_dup(*a)
 
 
-def read_images(pic_path: str, img_size: tuple, v: OutputWrapper) -> list:
-    files = list(os.walk(pic_path))[0][-1]
+def read_images(pic_path: str, img_size: tuple, recursive=False, v: OutputWrapper = OutputWrapper()) -> list:
+    files = []
+    if recursive:
+        for root, subfolder, file_list in os.walk(pic_path):
+            for f in file_list:
+                files.append(os.path.join(root, f))
+    else:
+        files = list(os.walk(pic_path))[0][-1]
+
     try:
-        files.remove("cache.pkl")
+        while True:
+            files.remove("cache.pkl")
     except ValueError:
         pass
 
     imgs = []
-    for i, img_file in tqdm(enumerate(files), total=len(files), desc="[Reading images]", unit="imgs", file=v):
+    for i, img_file in tqdm(enumerate(files), total=len(files), desc="[Reading files]", unit="file", file=v,
+                            ncols=v.width):
         try:
             imgs.append(cv2.resize(cv2.imread(join(pic_path, img_file)),
                                    img_size, interpolation=cv2.INTER_CUBIC))
         except:
-            imgs.append(
-                np.zeros((img_size[0], img_size[1], 3), dtype=np.uint8))
+            pass
     return imgs
 
 
@@ -451,6 +460,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--path", help="Path to the downloaded head images",
                         default=join(dirname(__file__), "img"), type=str)
+    parser.add_argument("--recursive", "-r", action="store_true")
     parser.add_argument(
         "--out", help="The name of the output image", default="", type=str)
     parser.add_argument(
@@ -488,7 +498,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     v = OutputWrapper(args.verbose)
 
-    imgs = read_images(args.path, (args.size, args.size,), v)
+    imgs = read_images(args.path, (args.size, args.size,), args.recursive, v)
 
     if len(args.collage) == 0:
         if args.exp:
@@ -496,12 +506,14 @@ if __name__ == "__main__":
             pool = con.ProcessPoolExecutor(4)
             futures = []
 
+
             def callback(x, out, rev_row, suffix, pbar, v: OutputWrapper = OutputWrapper()):
                 result_grid, sorted_imgs = x.result()
                 combined_img = make_collage(
                     result_grid, sorted_imgs, rev_row, v)
                 save_img(combined_img, out, suffix, v)
                 pbar.update()
+
 
             pbar = tqdm(total=len(all_sort_methods),
                         desc="[Experimenting]", unit="exps")

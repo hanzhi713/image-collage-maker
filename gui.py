@@ -9,7 +9,6 @@ import make_img
 from multiprocessing.pool import ThreadPool
 from multiprocessing import Queue
 import math
-import io
 
 
 def limit_wh(w: int, h: int, max_width: int, max_height: int) -> [int, int, float]:
@@ -86,9 +85,10 @@ scroll.grid(row=1, column=1, sticky="nsew")
 
 
 class OutputWrapper:
-    def __init__(self, cmd_log: SafeText):
+    def __init__(self, cmd_log: SafeText, width=100):
         self.cmd_log = cmd_log
         self.encoding = "utf-8"
+        self.width = width
 
     def write(self, s: str):
         self.cmd_log.write(s)
@@ -119,7 +119,6 @@ def show_img(img):
 left_panel.add(canvas)
 
 right_top_panel = PanedWindow(right_panel)
-right_top_panel.grid(row=0, column=0, pady=10, sticky="W")
 
 file_path = StringVar()
 file_path.set("N/A")
@@ -132,9 +131,12 @@ opt = StringVar()
 opt.set("sort")
 img_size = IntVar()
 img_size.set(50)
-Label(right_top_panel, text="Image size: ").grid(row=2, column=0, pady=5)
+Label(right_top_panel, text="Image size: ").grid(row=2, column=0, pady=(5, 2))
 Entry(right_top_panel, width=5, textvariable=img_size).grid(
-    row=2, column=1, sticky="W")
+    row=2, column=1, sticky="W", pady=(5, 2))
+recursive = BooleanVar()
+recursive.set(False)
+Checkbutton(right_top_panel, text="Read sub-folders", variable=recursive).grid(row=3, columnspan=2, sticky="W")
 
 imgs = None
 current_image = None
@@ -155,8 +157,8 @@ def load_images():
 
         def action():
             global imgs
-            imgs = make_img.read_images(fp, (size, size), out_wrapper)
-            w, h = 16, 9
+            imgs = make_img.read_images(fp, (size, size), recursive.get(), out_wrapper)
+            w, h = 16, 10
             grid = make_img.calculate_grid_size(w, h, len(imgs), out_wrapper)
             return make_img.make_collage(grid, imgs, out_wrapper)
 
@@ -170,7 +172,9 @@ def load_images():
 
 
 Button(right_top_panel, text=" Load images ", command=load_images).grid(
-    row=3, column=0, columnspan=2, pady=(0, 5))
+    row=4, column=0, columnspan=2, pady=(0, 5))
+
+right_top_panel.grid(row=0, column=0, pady=10, sticky="W")
 
 Separator(right_panel, orient="horizontal").grid(
     row=1, columnspan=2, sticky="we")
@@ -182,8 +186,7 @@ sort_method = StringVar()
 sort_method.set("bgr_sum")
 Label(right_sort_opt_panel, text="Sort methods:").grid(
     row=0, column=0, pady=5, sticky="W")
-OptionMenu(right_sort_opt_panel, sort_method, "", *
-           make_img.all_sort_methods).grid(row=0, column=1)
+OptionMenu(right_sort_opt_panel, sort_method, "", *make_img.all_sort_methods).grid(row=0, column=1)
 
 Label(right_sort_opt_panel, text="Aspect ratio:").grid(
     row=1, column=0, sticky="W")
@@ -197,12 +200,12 @@ Entry(aspect_ratio_panel, width=3, textvariable=rw).grid(row=0, column=0)
 Label(aspect_ratio_panel, text=":").grid(row=0, column=1)
 Entry(aspect_ratio_panel, width=3, textvariable=rh).grid(row=0, column=2)
 
-rev_row = IntVar()
-rev_sort = IntVar()
+rev_row = BooleanVar()
+rev_sort = BooleanVar()
 Checkbutton(right_sort_opt_panel, variable=rev_row,
             text="Reverse consecutive row").grid(row=2, columnspan=2, sticky="W")
 Checkbutton(right_sort_opt_panel, variable=rev_sort,
-            text="Reverse sort direction").grid(row=3, columnspan=2, sticky="W")
+            text="Reverse sort order").grid(row=3, columnspan=2, sticky="W")
 
 
 def generate_sorted_image():
@@ -272,7 +275,7 @@ Entry(right_collage_opt_panel, textvariable=sigma, width=8).grid(
 Label(right_collage_opt_panel, text="Color space: ").grid(
     row=4, column=0, sticky="W")
 OptionMenu(right_collage_opt_panel, color_space, "", *
-           make_img.all_color_spaces).grid(row=4, column=1, sticky="W")
+make_img.all_color_spaces).grid(row=4, column=1, sticky="W")
 
 Separator(right_collage_opt_panel, orient="horizontal").grid(
     row=6, columnspan=2, sticky="we", pady=(5, 5))
@@ -285,7 +288,7 @@ dup.set(1)
 collage_even_panel = PanedWindow(right_collage_opt_panel)
 Label(collage_even_panel, text="C Types: ").grid(row=0, column=0, sticky="W")
 OptionMenu(collage_even_panel, ctype, "", *
-           make_img.all_ctypes).grid(row=0, column=1, sticky="W")
+make_img.all_ctypes).grid(row=0, column=1, sticky="W")
 Label(collage_even_panel, text="Duplicates: ").grid(
     row=1, column=0, sticky="W")
 Entry(collage_even_panel, textvariable=dup,
@@ -337,8 +340,10 @@ def generate_collage():
                 def action():
                     try:
                         result_grid, sorted_imgs, cost = make_img.calculate_collage_bipartite(dest_img_path.get(), imgs,
-                                                                                              dup.get(), color_space.get(),
-                                                                                              ctype.get(), float(sigma.get()),
+                                                                                              dup.get(),
+                                                                                              color_space.get(),
+                                                                                              ctype.get(),
+                                                                                              float(sigma.get()),
                                                                                               out_wrapper)
                         return make_img.make_collage(result_grid, sorted_imgs, False, out_wrapper)
                     except:
@@ -377,9 +382,9 @@ def attach_collage():
 
 
 Radiobutton(right_top_panel, text="Sort", value="sort", variable=opt,
-            state=ACTIVE, command=attach_sort).grid(row=4, column=0, sticky="W")
+            state=ACTIVE, command=attach_sort).grid(row=5, column=0, sticky="W")
 Radiobutton(right_top_panel, text="Collage", value="collage", variable=opt,
-            command=attach_collage).grid(row=4, column=1, sticky="W")
+            command=attach_collage).grid(row=5, column=1, sticky="W")
 
 Separator(right_panel, orient="horizontal").grid(
     row=3, columnspan=2, sticky="we", pady=(0, 10))
@@ -390,7 +395,7 @@ def save_img():
         messagebox.showerror("Error", "You don't have any image to save yet!")
     else:
         fp = filedialog.asksaveasfilename(initialdir=os.path.dirname(__file__), title="Save your collage",
-                                          filetypes=(("images", "*.jpg"), ("images", "*.png")), 
+                                          filetypes=(("images", "*.jpg"), ("images", "*.png")),
                                           defaultextension=".png", initialfile="result.png")
         if fp is not None and len(fp) >= 0 and os.path.isdir(os.path.dirname(fp)):
             print("Image saved to", fp, file=out_wrapper)

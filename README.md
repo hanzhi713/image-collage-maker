@@ -52,7 +52,7 @@ Or, read the following part for the usage of the command-line tool.
 #### Option 1: Sorting
 
 ```bash
-python3 make_img.py --path img --sort pca_lab --size 100
+python3 make_img.py --path img --sort pca_bgr --size 100
 ```
 
 Use ```--ratio w h``` to change the aspect ratio, whose default is 16:9
@@ -82,6 +82,8 @@ python3 make_img.py --path img --collage img/1.png --size 25 --dup 10 --out coll
 ##### Option 2.2: Best fit
 
 This fitting option just selects the best subset of images you provided to approximate your destination images. Each image in that subset will be used for arbitrary amount of times.
+
+Add ```--uneven``` flag to enable this option. You can also specity ```--max_width``` to change the side length of the grid. Default is 50.
 
 ```bash
 python3 make_img.py --path img --out collage-best-fit.png --collage img/1.png --size 25 --uneven
