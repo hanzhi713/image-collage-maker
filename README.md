@@ -14,7 +14,7 @@ Note: The collage maker can be applied to any folder which contains a sufficient
 Open the terminal and type
 
 ```bash
-pip3 install itchat pillow opencv-python tqdm umap-learn scikit-learn matplotlib lap
+pip3 install itchat pillow opencv-python tqdm scikit-learn matplotlib lap
 ```
 
 ## How to use
@@ -60,7 +60,7 @@ Use ```--ratio w h``` to change the aspect ratio, whose default is 16:9
 Example: use ```--ratio 21 9``` to change aspect ratio to 21:9
 
 Result:
-![PCA-LAB](result-tsne_bgr.png)
+![PCA-LAB](result-pca_bgr.png)
 
 #### Option 2: Fit a particular image
 

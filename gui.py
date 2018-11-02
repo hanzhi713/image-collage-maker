@@ -143,7 +143,7 @@ current_image = None
 def load_images():
     global imgs, current_image
     fp = filedialog.askdirectory(
-        initialdir=os.path.dirname(__file__), title="Select folder")
+        initialdir=os.path.dirname(__file__), title="Select folder of source images")
     if fp is not None and len(fp) >= 0 and os.path.isdir(fp):
         file_path.set(fp)
     else:
@@ -179,7 +179,7 @@ right_sort_opt_panel = PanedWindow(right_panel)
 right_sort_opt_panel.grid(row=2, column=0, pady=10, sticky="W")
 
 sort_method = StringVar()
-sort_method.set("pca_lab")
+sort_method.set("bgr_sum")
 Label(right_sort_opt_panel, text="Sort methods:").grid(
     row=0, column=0, pady=5, sticky="W")
 OptionMenu(right_sort_opt_panel, sort_method, "", *
@@ -247,7 +247,7 @@ def load_dest_img():
     if imgs is None:
         messagebox.showerror("Empty set", "Please first load images")
     else:
-        fp = filedialog.askopenfilename(initialdir=os.path.dirname(__file__), title="Select file",
+        fp = filedialog.askopenfilename(initialdir=os.path.dirname(__file__), title="Select destination image",
                                         filetypes=(("images", "*.jpg"), ("images", "*.png"), ("images", "*.gif"),
                                                    ("all files", "*.*")))
         if fp is not None and len(fp) >= 0 and os.path.isfile(fp):
@@ -389,7 +389,7 @@ def save_img():
     if result_img is None:
         messagebox.showerror("Error", "You don't have any image to save yet!")
     else:
-        fp = filedialog.asksaveasfilename(initialdir=os.path.dirname(__file__), title="Select file",
+        fp = filedialog.asksaveasfilename(initialdir=os.path.dirname(__file__), title="Save your collage",
                                           filetypes=(("images", "*.jpg"), ("images", "*.png"), ("images", "*.gif"),
                                                      ("all files", "*.*")))
         if fp is not None and len(fp) >= 0 and os.path.isdir(os.path.dirname(fp)):

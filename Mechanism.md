@@ -32,7 +32,7 @@ sorted_imgs = np.array(imgs)[np.argsort(img_keys)]
 
 ### Dimensionality reduction
 
-The dimensionality reduction techniques available to use include [Principal Component Analysis (PCA)](https://en.wikipedia.org/wiki/Principal_component_analysis), [t-Distributed Stochastic Neighbor Embedding (t-SNE)](https://lvdmaaten.github.io/tsne/) and [Uniform Manifold Approximation and Projection (UMAP)](https://github.com/lmcinnes/umap). They will be applied to an array of flattened images (reshape from (n, h, w, 3) to (n, w\*h)), producing a 1-D array of size n.
+The dimensionality reduction techniques available to use include [Principal Component Analysis (PCA)](https://en.wikipedia.org/wiki/Principal_component_analysis) and [t-Distributed Stochastic Neighbor Embedding (t-SNE)](https://lvdmaaten.github.io/tsne/). They will be applied to an array of flattened images (reshape from (n, h, w, 3) to (n, w\*h)), producing a 1-D array of size n.
 
 ```python
 # sort_function converts each image of shape (h, w, 3) 
