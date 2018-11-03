@@ -180,13 +180,7 @@ def sort_collage(imgs: list, ratio: tuple, sort_method="pca_lab", rev_sort=False
         sort_function = eval(sort_method.replace("tsne", "pca"))
         from sklearn.manifold import TSNE
 
-        img_keys = TSNE(n_components=1, n_iter=400).fit_transform(
-            list(map(sort_function, imgs)))[:, 0]
-    elif sort_method.startswith("umap_"):
-        sort_function = eval(sort_method.replace("umap", "pca"))
-        import umap
-
-        img_keys = umap.UMAP(n_components=1, n_neighbors=15).fit_transform(
+        img_keys = TSNE(n_components=1, n_iter=400, verbose=1).fit_transform(
             list(map(sort_function, imgs)))[:, 0]
     elif sort_method == "none":
         img_keys = np.array(list(range(0, num_imgs)))
@@ -491,7 +485,6 @@ def read_img_helper(args) -> list:
 all_sort_methods = ["none", "bgr_sum", "av_hue", "av_sat", "av_lum", "rand",
                     "pca_bgr", "pca_hsv", "pca_lab", "pca_gray", "pca_lum", "pca_sat", "pca_hue",
                     "tsne_bgr", "tsne_hsv", "tsne_lab", "tsne_gray", "tsne_lum", "tsne_sat", "tsne_hue",
-                    "umap_bgr", "umap_hsv", "umap_lab", "umap_gray", "umap_lum", "umap_sat", "umap_hue",
                     ]
 all_color_spaces = ["hsv", "hsl", "bgr", "lab"]
 

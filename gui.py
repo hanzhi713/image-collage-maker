@@ -9,6 +9,7 @@ import make_img
 from multiprocessing.pool import ThreadPool
 from multiprocessing import Queue
 import math
+import sys
 
 
 def limit_wh(w: int, h: int, max_width: int, max_height: int) -> [int, int, float]:
@@ -98,6 +99,8 @@ class OutputWrapper:
 
 
 out_wrapper = OutputWrapper(log_entry)
+sys.stdout = out_wrapper
+sys.stderr = out_wrapper
 
 canvas = Canvas(root, width=800, height=500)
 result_img = None
@@ -167,6 +170,7 @@ def load_images():
         pool = ThreadPool(1)
         print("Loading source images from", fp, file=out_wrapper)
         pool.apply_async(action, args=(), callback=show_img)
+        pool.close()
 
     except:
         t = traceback.format_exc()
@@ -229,6 +233,7 @@ def generate_sorted_image():
 
         pool = ThreadPool(1)
         pool.apply_async(action, args=(), callback=show_img)
+        pool.close()
 
 
 Button(right_sort_opt_panel, text="Generate sorted image",
@@ -362,6 +367,8 @@ def generate_collage():
 
             pool = ThreadPool(1)
             pool.apply_async(action, callback=show_img)
+            pool.close()
+
         except:
             return messagebox.showerror("Error", traceback.format_exc())
 
