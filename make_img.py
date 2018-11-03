@@ -403,19 +403,8 @@ def save_img(img: np.ndarray, path: str, suffix: str, v: OutputWrapper = OutputW
             cv2.imwrite(path, img)
 
 
-def ss_wrapper(a):
-    return sort_collage(*a)
-
-
-def sc_wrapper(a):
-    return calculate_collage_bipartite(*a)
-
-
-def sc_dup_wrapper(a):
-    return calculate_collage_dup(*a)
-
-
 def read_images(pic_path: str, img_size: tuple, recursive=False, num_process=1, v: OutputWrapper = OutputWrapper()) -> list:
+    assert os.path.isdir(pic_path), "Directory " + pic_path + "is non-existent"
     files = []
     if recursive:
         for root, subfolder, file_list in os.walk(pic_path):
@@ -445,9 +434,9 @@ def read_images(pic_path: str, img_size: tuple, recursive=False, num_process=1, 
     queue = manager.Queue()
     for i in range(num_process - 1):
         futures.append(pool.submit(read_img_helper,
-                                   (files[i * slice_length:(i + 1) * slice_length], img_size, queue)))
+                                   files[i * slice_length:(i + 1) * slice_length], img_size, queue))
     futures.append(pool.submit(read_img_helper,
-                               (files[(num_process - 1) * slice_length:], img_size, queue)))
+                               files[(num_process - 1) * slice_length:], img_size, queue))
 
     while True:
         try:
@@ -465,9 +454,7 @@ def read_images(pic_path: str, img_size: tuple, recursive=False, num_process=1, 
     return imgs
 
 
-def read_img_helper(args) -> list:
-    files, img_size, queue = args
-
+def read_img_helper(files, img_size, queue) -> list:
     def imread(filename):
         return cv2.imdecode(np.fromfile(filename, np.uint8), cv2.IMREAD_COLOR)
 
@@ -536,6 +523,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
     v = OutputWrapper(args.verbose)
 
+    if len(args.out) > 0:
+        folder, file_name = os.path.split(args.out)
+        if len(folder) > 0:
+            assert os.path.isdir(folder), "The output path {} does not exist!".format(folder)
+        # ext = os.path.splitext(file_name)[-1]
+        # assert ext.lower() == ".jpg" or ext.lower() == ".png", "The file extension must be .jpg or .png"            
+    
     imgs = read_images(args.path, (args.size, args.size), args.recursive, args.num_process, v)
 
     if len(args.collage) == 0:
@@ -554,8 +548,8 @@ if __name__ == "__main__":
             pbar = tqdm(total=len(all_sort_methods),
                         desc="[Experimenting]", unit="exps")
             for sort_method in all_sort_methods:
-                f = pool.submit(ss_wrapper, (imgs, args.ratio,
-                                             sort_method, args.rev_sort, v))
+                f = pool.submit(sort_collage, imgs, args.ratio,
+                                             sort_method, args.rev_sort, v)
                 (lambda sort_method: f.add_done_callback(
                     lambda x: callback(x, args.out, args.rev_row, sort_method, pbar, v)))(sort_method)
                 futures.append(f)
@@ -580,13 +574,13 @@ if __name__ == "__main__":
                 for sigma in all_sigmas:
                     for color_space in all_color_spaces:
                         f = pool.submit(
-                            sc_dup_wrapper, (args.collage, imgs, args.max_width, color_space, sigma, v))
+                            calculate_collage_dup, args.collage, imgs, args.max_width, color_space, sigma)
                         futures.append((f, sigma, color_space))
             else:
                 for sigma in all_sigmas:
                     for color_space in all_color_spaces:
-                        f = pool.submit(sc_wrapper, (args.collage, imgs, args.dup,
-                                                     color_space, args.ctype, sigma, v))
+                        f = pool.submit(calculate_collage_bipartite, args.collage, imgs, args.dup,
+                                                     color_space, args.ctype, sigma)
                         futures.append((f, sigma, color_space))
 
             cost_vis = np.zeros((len(all_sigmas), len(all_color_spaces)))

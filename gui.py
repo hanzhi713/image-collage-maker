@@ -338,9 +338,6 @@ def generate_collage():
         return messagebox.showerror("No destination image", "Please first load the image that you're trying to fit")
     else:
         try:
-            assert os.path.isfile(
-                dest_img_path.get()), "Destination image does not exist!"
-
             if even.get() == "even":
                 assert dup.get() > 0, "Duplication must be a positive number"
                 assert float(sigma.get()) != 0, "Sigma must be non-zero"
@@ -369,6 +366,8 @@ def generate_collage():
             pool.apply_async(action, callback=show_img)
             pool.close()
 
+        except AssertionError as e:
+            return messagebox.showerror("Error", e)
         except:
             return messagebox.showerror("Error", traceback.format_exc())
 
