@@ -6,8 +6,10 @@ import argparse
 import random
 from tqdm import tqdm
 import concurrent.futures as con
+import multiprocessing
 import io
 import sys
+import time
 
 
 def bgr_chl_sum(img: np.ndarray) -> [float, float, float]:
@@ -178,13 +180,14 @@ def sort_collage(imgs: list, ratio: tuple, sort_method="pca_lab", rev_sort=False
         sort_function = eval(sort_method.replace("tsne", "pca"))
         from sklearn.manifold import TSNE
 
-        img_keys = TSNE(n_components=1).fit_transform(list(map(sort_function, imgs)))[:, 0]
-    # elif sort_method.startswith("umap_"):
-    #     sort_function = eval(sort_method.replace("umap", "pca"))
-    #     import umap
+        img_keys = TSNE(n_components=1, n_iter=400).fit_transform(
+            list(map(sort_function, imgs)))[:, 0]
+    elif sort_method.startswith("umap_"):
+        sort_function = eval(sort_method.replace("umap", "pca"))
+        import umap
 
-    #     img_keys = umap.UMAP(n_components=1, n_neighbors=15).fit_transform(
-    #         list(map(sort_function, imgs)))[:, 0]
+        img_keys = umap.UMAP(n_components=1, n_neighbors=15).fit_transform(
+            list(map(sort_function, imgs)))[:, 0]
     elif sort_method == "none":
         img_keys = np.array(list(range(0, num_imgs)))
     else:
@@ -207,8 +210,8 @@ def chl_mean_hsv(weights: np.ndarray) -> "function":
     def f(img: np.ndarray) -> [float, float, float]:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         return np.average(img[:, :, 0], weights=weights), \
-               np.average(img[:, :, 1], weights=weights), \
-               np.average(img[:, :, 2], weights=weights)
+            np.average(img[:, :, 1], weights=weights), \
+            np.average(img[:, :, 2], weights=weights)
 
     return f
 
@@ -217,8 +220,8 @@ def chl_mean_hsl(weights: np.ndarray) -> "function":
     def f(img: np.ndarray) -> [float, float, float]:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
         return np.average(img[:, :, 0], weights=weights), \
-               np.average(img[:, :, 1], weights=weights), \
-               np.average(img[:, :, 2], weights=weights)
+            np.average(img[:, :, 1], weights=weights), \
+            np.average(img[:, :, 2], weights=weights)
 
     return f
 
@@ -226,8 +229,8 @@ def chl_mean_hsl(weights: np.ndarray) -> "function":
 def chl_mean_bgr(weights: np.ndarray) -> "function":
     def f(img: np.ndarray) -> [float, float, float]:
         return np.average(img[:, :, 0], weights=weights), \
-               np.average(img[:, :, 1], weights=weights), \
-               np.average(img[:, :, 2], weights=weights)
+            np.average(img[:, :, 1], weights=weights), \
+            np.average(img[:, :, 2], weights=weights)
 
     return f
 
@@ -236,8 +239,8 @@ def chl_mean_lab(weights: np.ndarray) -> "function":
     def f(img: np.ndarray) -> [float, float, float]:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2Lab)
         return np.average(img[:, :, 0], weights=weights), \
-               np.average(img[:, :, 1], weights=weights), \
-               np.average(img[:, :, 2], weights=weights)
+            np.average(img[:, :, 1], weights=weights), \
+            np.average(img[:, :, 2], weights=weights)
 
     return f
 
@@ -418,14 +421,15 @@ def sc_dup_wrapper(a):
     return calculate_collage_dup(*a)
 
 
-def read_images(pic_path: str, img_size: tuple, recursive=False, v: OutputWrapper = OutputWrapper()) -> list:
+def read_images(pic_path: str, img_size: tuple, recursive=False, num_process=1, v: OutputWrapper = OutputWrapper()) -> list:
     files = []
     if recursive:
         for root, subfolder, file_list in os.walk(pic_path):
             for f in file_list:
                 files.append(os.path.join(root, f))
     else:
-        files = list(os.walk(pic_path))[0][-1]
+        root, _, file_names = list(os.walk(pic_path))[0]
+        files = [os.path.join(root, f) for f in file_names]
 
     try:
         while True:
@@ -433,21 +437,61 @@ def read_images(pic_path: str, img_size: tuple, recursive=False, v: OutputWrappe
     except ValueError:
         pass
 
+    pbar = tqdm(total=len(files),
+                desc="[Reading files]", unit="file", file=v, ncols=v.width)
+
+    if num_process <= 1:
+        num_process = 1
+
     imgs = []
-    for i, img_file in tqdm(enumerate(files), total=len(files), desc="[Reading files]", unit="file", file=v,
-                            ncols=v.width):
+    slice_length = len(files) // num_process
+    pool = con.ProcessPoolExecutor(num_process)
+    futures = []
+    manager = multiprocessing.Manager()
+    queue = manager.Queue()
+    for i in range(num_process - 1):
+        futures.append(pool.submit(read_img_helper,
+                                   (files[i * slice_length:(i + 1) * slice_length], img_size, queue)))
+    futures.append(pool.submit(read_img_helper,
+                               (files[(num_process - 1) * slice_length:], img_size, queue)))
+
+    while True:
         try:
-            imgs.append(cv2.resize(cv2.imread(join(pic_path, img_file)),
+            pbar.update(queue.get_nowait())
+            if pbar.n >= len(files):
+                break
+        except:
+            time.sleep(0.001)
+
+    for future in con.as_completed(futures):
+        imgs.extend(future.result())
+
+    pbar.close()
+
+    return imgs
+
+
+def read_img_helper(args) -> list:
+    files, img_size, queue = args
+
+    def imread(filename):
+        return cv2.imdecode(np.fromfile(filename, np.uint8), cv2.IMREAD_COLOR)
+
+    imgs = []
+    for i, img_file in enumerate(files):
+        try:
+            imgs.append(cv2.resize(imread(img_file),
                                    img_size, interpolation=cv2.INTER_CUBIC))
         except:
             pass
+        queue.put(1)
     return imgs
 
 
 all_sort_methods = ["none", "bgr_sum", "av_hue", "av_sat", "av_lum", "rand",
                     "pca_bgr", "pca_hsv", "pca_lab", "pca_gray", "pca_lum", "pca_sat", "pca_hue",
                     "tsne_bgr", "tsne_hsv", "tsne_lab", "tsne_gray", "tsne_lum", "tsne_sat", "tsne_hue",
-                    # "umap_bgr", "umap_hsv", "umap_lab", "umap_gray", "umap_lum", "umap_sat", "umap_hue",
+                    "umap_bgr", "umap_hsv", "umap_lab", "umap_gray", "umap_lum", "umap_sat", "umap_hue",
                     ]
 all_color_spaces = ["hsv", "hsl", "bgr", "lab"]
 
@@ -460,11 +504,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--path", help="Path to the downloaded head images",
                         default=join(dirname(__file__), "img"), type=str)
-    parser.add_argument("--recursive", "-r", action="store_true")
+    parser.add_argument("--recursive", action="store_true")
+    parser.add_argument("--num_process", type=int, default=1, help="Number of processes to use when loading images")
     parser.add_argument(
         "--out", help="The name of the output image", default="", type=str)
     parser.add_argument(
-        "--size", help="Size of each image in pixels", type=int, default=100)
+        "--size", help="Size of each image in pixels", type=int, default=50)
     parser.add_argument("--ratio", help="Aspect ratio",
                         nargs=2, type=int, default=(16, 9))
     parser.add_argument("--sort", help="Sort methods", choices=all_sort_methods,
@@ -498,7 +543,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     v = OutputWrapper(args.verbose)
 
-    imgs = read_images(args.path, (args.size, args.size,), args.recursive, v)
+    imgs = read_images(args.path, (args.size, args.size), args.recursive, args.num_process, v)
 
     if len(args.collage) == 0:
         if args.exp:
@@ -506,14 +551,12 @@ if __name__ == "__main__":
             pool = con.ProcessPoolExecutor(4)
             futures = []
 
-
             def callback(x, out, rev_row, suffix, pbar, v: OutputWrapper = OutputWrapper()):
                 result_grid, sorted_imgs = x.result()
                 combined_img = make_collage(
                     result_grid, sorted_imgs, rev_row, v)
                 save_img(combined_img, out, suffix, v)
                 pbar.update()
-
 
             pbar = tqdm(total=len(all_sort_methods),
                         desc="[Experimenting]", unit="exps")
