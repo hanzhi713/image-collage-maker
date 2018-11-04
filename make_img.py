@@ -388,19 +388,26 @@ def calculate_collage_dup(dest_img_path: str, imgs: list, max_width: int = 50, c
 
 
 def save_img(img: np.ndarray, path: str, suffix: str, v: OutputWrapper = OutputWrapper()) -> None:
+
+    def imwrite(filename, img):
+        ext = os.path.splitext(filename)[1]
+        result, n = cv2.imencode(ext, img)
+
+        if result:
+            with open(filename, mode='wb') as f:
+                n.tofile(f)
+
     if len(path) == 0:
-        path = 'result_{}.png'.format(suffix)
+        path = "result.png"
+
+    if len(suffix) == 0:
         print("Saving to", path, file=v)
-        cv2.imwrite(path, img)
+        imwrite(path, img)
     else:
-        if len(suffix) == 0:
-            print("Saving to", path, file=v)
-            cv2.imwrite(path, img)
-        else:
-            path = path.split(".")
-            path = path[0] + "_{}".format(suffix) + "." + path[1]
-            print("Saving to", path, file=v)
-            cv2.imwrite(path, img)
+        file_path, ext = os.path.splitext(path)
+        path = file_path + "_{}".format(suffix) + "." + ext
+        print("Saving to", path, file=v)
+        imwrite(path, img)
 
 
 def read_images(pic_path: str, img_size: tuple, recursive=False, num_process=1, v: OutputWrapper = OutputWrapper()) -> list:
@@ -485,7 +492,8 @@ if __name__ == "__main__":
     parser.add_argument("--path", help="Path to the downloaded head images",
                         default=join(dirname(__file__), "img"), type=str)
     parser.add_argument("--recursive", action="store_true")
-    parser.add_argument("--num_process", type=int, default=1, help="Number of processes to use when loading images")
+    parser.add_argument("--num_process", type=int, default=1,
+                        help="Number of processes to use when loading images")
     parser.add_argument(
         "--out", help="The name of the output image", default="", type=str)
     parser.add_argument(
@@ -522,37 +530,33 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     v = OutputWrapper(args.verbose)
+    sys.stdout = v
 
     if len(args.out) > 0:
         folder, file_name = os.path.split(args.out)
         if len(folder) > 0:
-            assert os.path.isdir(folder), "The output path {} does not exist!".format(folder)
+            assert os.path.isdir(
+                folder), "The output path {} does not exist!".format(folder)
         # ext = os.path.splitext(file_name)[-1]
-        # assert ext.lower() == ".jpg" or ext.lower() == ".png", "The file extension must be .jpg or .png"            
-    
-    imgs = read_images(args.path, (args.size, args.size), args.recursive, args.num_process, v)
+        # assert ext.lower() == ".jpg" or ext.lower() == ".png", "The file extension must be .jpg or .png"
+
+    imgs = read_images(args.path, (args.size, args.size),
+                       args.recursive, args.num_process, v)
 
     if len(args.collage) == 0:
         if args.exp:
 
             pool = con.ProcessPoolExecutor(4)
-            futures = []
+            futures = {}
 
-            def callback(x, out, rev_row, suffix, pbar, v: OutputWrapper = OutputWrapper()):
-                result_grid, sorted_imgs = x.result()
-                combined_img = make_collage(
-                    result_grid, sorted_imgs, rev_row, v)
-                save_img(combined_img, out, suffix, v)
-                pbar.update()
-
-            pbar = tqdm(total=len(all_sort_methods),
-                        desc="[Experimenting]", unit="exps")
             for sort_method in all_sort_methods:
-                f = pool.submit(sort_collage, imgs, args.ratio,
-                                             sort_method, args.rev_sort, v)
-                (lambda sort_method: f.add_done_callback(
-                    lambda x: callback(x, args.out, args.rev_row, sort_method, pbar, v)))(sort_method)
-                futures.append(f)
+                futures[pool.submit(sort_collage, imgs, args.ratio,
+                                            sort_method, args.rev_sort)] = sort_method
+
+            for future in tqdm(con.as_completed(futures.keys()), total=len(all_sort_methods), desc="[Experimenting]", unit="exps"):
+                grid, sorted_imgs = future.result()
+                combined_img = make_collage(grid, sorted_imgs, args.rev_row, v)
+                save_img(combined_img, args.out, futures[future], v)
 
         else:
             result_grid, sorted_imgs = sort_collage(
@@ -580,16 +584,15 @@ if __name__ == "__main__":
                 for sigma in all_sigmas:
                     for color_space in all_color_spaces:
                         f = pool.submit(calculate_collage_bipartite, args.collage, imgs, args.dup,
-                                                     color_space, args.ctype, sigma)
+                                        color_space, args.ctype, sigma)
                         futures.append((f, sigma, color_space))
 
             cost_vis = np.zeros((len(all_sigmas), len(all_color_spaces)))
-            r = 0
-            c = 0
+            r, c = 0, 0
             for (f, sigma, color_space) in tqdm(futures, desc="[Experimenting]", unit="exps"):
                 suffix = "{}_{}".format(color_space, np.round(sigma, 2))
-                result_grid, sorted_imgs, cost = f.result()
-                save_img(make_collage(result_grid, sorted_imgs,
+                grid, sorted_imgs, cost = f.result()
+                save_img(make_collage(grid, sorted_imgs,
                                       args.rev_row, v), args.out, suffix, v)
                 cost_vis[r, c] = cost
                 c += 1

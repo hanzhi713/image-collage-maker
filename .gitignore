@@ -8,3 +8,4 @@ dist
 gui.spec
 __pycache__
 venv
+test.sh

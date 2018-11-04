@@ -12,7 +12,7 @@ import math
 import sys
 
 
-def limit_wh(w: int, h: int, max_width: int, max_height: int) -> [int, int, float]:
+def limit_wh(w: int, h: int, max_width: int, max_height: int) -> [int, int]:
     if h > max_height:
         ratio = max_height / h
         h = max_height
