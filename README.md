@@ -1,7 +1,13 @@
-|                                              |                                                |
-| -------------------------------------------- | ---------------------------------------------- |
-| <img src="result-rand.png" width="500px">    | <img src="collage.png" width="300px">          |
-| <img src="result-pca_bgr.png" width="500px"> | <img src="collage-best-fit.png" width="300px"> |
+<table style="border: none">
+    <tr>
+        <td><img src="result-rand.png" width="480px"></td>
+        <td><img src="collage.png" width="270px"></td>
+    </tr>
+    <tr>
+        <td><img src="result-pca_bgr.png" width="480px"></td>
+        <td><img src="collage-best-fit.png" width="270px"></td>
+    </tr>
+</table>
 
 # Image Collage Maker
 
