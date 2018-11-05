@@ -1,13 +1,13 @@
-# Image Collage Maker
+|                                              |                                                |
+| -------------------------------------------- | ---------------------------------------------- |
+| <img src="result-rand.png" width="500px">    | <img src="collage.png" width="300px">          |
+| <img src="result-pca_bgr.png" width="500px"> | <img src="collage-best-fit.png" width="300px"> |
 
-![](result-rand.png)
+# Image Collage Maker
 
 ## System Requirements
 
 - Python >= 3.5
-- A WeChat account with a lot of friends
-
-Note: The collage maker can be applied to any folder which contains a sufficient amount of images
 
 ### Install dependencies
 
@@ -16,6 +16,8 @@ pip3 install itchat pillow opencv-python tqdm scikit-learn umap-learn matplotlib
 ```
 
 ## How to use
+
+>Note: If you already have a set of images to work with, you can skip step 1. The collage maker can be applied to any folder which contains a sufficient amount of images, not limited to your WeChat friends' profile pictures.
 
 ### 1\. Use [extract_img.py](extract_img.py) to download profile pictures of your WeChat friends
 
@@ -37,13 +39,15 @@ Sometimes the download may fail, especially when the program is running for the 
 python3 extract_img.py --dir img --clean
 ```
 
-### 2\. Use [make_img.py](make_img.py) to make the collage
+### 2\. Use [make_img.py](make_img.py) to make a collage
 
 You can run the GUI (experimental) to make the collage. Simply type
 
 ```bash
 python3 gui.py
 ```
+
+If you're using Windows, you may want to try the [experimental build for Windows](https://github.com/hanzhi713/image-collage-maker/releases)
 
 Or, read the following part for the usage of the command-line tool.
 
@@ -58,7 +62,8 @@ Use ```--ratio w h``` to change the aspect ratio, whose default is 16:9
 Example: use ```--ratio 21 9``` to change aspect ratio to 21:9
 
 Result:
-![PCA-LAB](result-pca_bgr.png)
+
+<img src="result-pca_bgr.png"/>
 
 #### Option 2: Fit a particular image
 
