@@ -5,11 +5,11 @@ import traceback
 import os
 import cv2
 from PIL import Image, ImageTk
-import make_img
-from multiprocessing.pool import ThreadPool
+from multiprocessing.pool import ThreadPool, Pool
 from multiprocessing import Queue
 import math
 import sys
+import make_img
 
 
 def limit_wh(w: int, h: int, max_width: int, max_height: int) -> [int, int]:
@@ -69,16 +69,16 @@ class SafeText(Text):
                 else:
                     self.insert(END, line)
                 self.see("end-1c")
-                self.update_idletasks()
         except:
             pass
+        self.update_idletasks()
         self.after(50, self.update_me)
 
 
 log_panel = PanedWindow(root)
 log_panel.grid(row=2, column=0, columnspan=3, sticky="WE")
 log_panel.grid_columnconfigure(0, weight=1)
-log_entry = SafeText(log_panel, height=5, bd=0)
+log_entry = SafeText(log_panel, height=6, bd=0)
 log_entry.grid(row=1, column=0, sticky="nsew")
 scroll = Scrollbar(log_panel, orient="vertical", command=log_entry.yview)
 log_entry.config(yscrollcommand=scroll.set)
@@ -111,7 +111,7 @@ def show_img(img):
     result_img = img
     w, h = limit_wh(*img.shape[:2][::-1], 800, 500)
     preview = cv2.cvtColor(cv2.resize(img, (w, h),
-                                      cv2.INTER_CUBIC), cv2.COLOR_BGR2RGB)
+                                      cv2.INTER_AREA), cv2.COLOR_BGR2RGB)
     root.preview = ImageTk.PhotoImage(image=Image.fromarray(preview))
     canvas.delete("all")
     canvas.create_image((800 - w) // 2, (500 - h) // 2,
@@ -138,7 +138,7 @@ Label(right_top_panel, text="Image size: ").grid(row=2, column=0, pady=(5, 2))
 Entry(right_top_panel, width=5, textvariable=img_size).grid(
     row=2, column=1, sticky="W", pady=(5, 2))
 recursive = BooleanVar()
-recursive.set(False)
+recursive.set(True)
 Checkbutton(right_top_panel, text="Read sub-folders",
             variable=recursive).grid(row=3, columnspan=2, sticky="W")
 
@@ -150,7 +150,7 @@ def load_images():
     global imgs, current_image
     fp = filedialog.askdirectory(
         initialdir=os.path.dirname(__file__), title="Select folder of source images")
-    if fp is not None and len(fp) >= 0 and os.path.isdir(fp):
+    if len(fp) > 0 and os.path.isdir(fp):
         file_path.set(fp)
     else:
         return
@@ -162,10 +162,9 @@ def load_images():
         def action():
             global imgs
             imgs = make_img.read_images(
-                fp, (size, size), recursive.get(), 6, out_wrapper)
-            w, h = 16, 10
-            grid = make_img.calculate_grid_size(w, h, len(imgs), out_wrapper)
-            return make_img.make_collage(grid, imgs, out_wrapper)
+                fp, (size, size), recursive.get(), 8, out_wrapper)
+            grid = make_img.calculate_grid_size(16, 10, len(imgs), out_wrapper)
+            return make_img.make_collage(grid, imgs, False, out_wrapper)
 
         pool = ThreadPool(1)
         print("Loading source images from", fp, file=out_wrapper)
@@ -177,7 +176,7 @@ def load_images():
         messagebox.showerror("Error", t)
 
 
-Button(right_top_panel, text=" Load images ", command=load_images).grid(
+Button(right_top_panel, text=" Load source images ", command=load_images).grid(
     row=4, column=0, columnspan=2, pady=(0, 5))
 
 right_top_panel.grid(row=0, column=0, pady=10, sticky="W")
@@ -208,7 +207,9 @@ Label(aspect_ratio_panel, text=":").grid(row=0, column=1)
 Entry(aspect_ratio_panel, width=3, textvariable=rh).grid(row=0, column=2)
 
 rev_row = BooleanVar()
+rev_row.set(False)
 rev_sort = BooleanVar()
+rev_sort.set(False)
 Checkbutton(right_sort_opt_panel, variable=rev_row,
             text="Reverse consecutive row").grid(row=2, columnspan=2, sticky="W")
 Checkbutton(right_sort_opt_panel, variable=rev_sort,
@@ -217,7 +218,7 @@ Checkbutton(right_sort_opt_panel, variable=rev_sort,
 
 def generate_sorted_image():
     if imgs is None:
-        messagebox.showerror("Empty set", "Please first load images")
+        messagebox.showerror("Empty set", "Please first load source images")
     else:
         try:
             w, h = rw.get(), rh.get()
@@ -248,7 +249,7 @@ dest_img_path = StringVar()
 dest_img_path.set("N/A")
 dest_img = None
 Label(right_collage_opt_panel, text="Path of destination image").grid(
-    row=0, columnspan=2, sticky="W")
+    row=0, columnspan=2, sticky="W", pady=(2, 3))
 Label(right_collage_opt_panel, textvariable=dest_img_path,
       wraplength=150).grid(row=1, columnspan=2, sticky="W")
 
@@ -256,7 +257,7 @@ Label(right_collage_opt_panel, textvariable=dest_img_path,
 def load_dest_img():
     global dest_img
     if imgs is None:
-        messagebox.showerror("Empty set", "Please first load images")
+        messagebox.showerror("Empty set", "Please first load source images")
     else:
         fp = filedialog.askopenfilename(initialdir=os.path.dirname(__file__), title="Select destination image",
                                         filetypes=(("images", "*.jpg"), ("images", "*.png"), ("images", "*.gif"),
@@ -333,7 +334,7 @@ Radiobutton(right_collage_opt_panel, text="Uneven", variable=even, value="uneven
 
 def generate_collage():
     if imgs is None:
-        return messagebox.showerror("Empty set", "Please first load images")
+        return messagebox.showerror("Empty set", "Please first load source images")
     if not os.path.isfile(dest_img_path.get()):
         return messagebox.showerror("No destination image", "Please first load the image that you're trying to fit")
     else:
@@ -358,7 +359,7 @@ def generate_collage():
                         grid, sorted_imgs, _ = make_img.calculate_collage_dup(dest_img_path.get(), imgs,
                                                                               max_width.get(), color_space.get(),
                                                                               float(sigma.get()), out_wrapper)
-                        return make_img.make_collage(result_grid, sorted_imgs, False, out_wrapper)
+                        return make_img.make_collage(grid, sorted_imgs, False, out_wrapper)
                     except:
                         messagebox.showerror("Error", traceback.format_exc())
 
@@ -415,7 +416,7 @@ def save_img():
                                           filetypes=(
                                               ("images", "*.jpg"), ("images", "*.png")),
                                           defaultextension=".png", initialfile="result.png")
-        if fp is not None and len(fp) >= 0 and os.path.isdir(os.path.dirname(fp)):
+        if fp is not None and len(fp) > 0 and os.path.isdir(os.path.dirname(fp)):
             print("Image saved to", fp, file=out_wrapper)
             imwrite(fp, result_img)
 

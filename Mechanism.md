@@ -12,8 +12,7 @@ def bgr_sum(img: np.ndarray) -> float:
     return np.sum(img)
 
 
-# Or,
-# Simply compute the average of a particular channel of a particular color space
+# Or simply compute the average of a particular channel of a particular color space
 # In this case it's the average of hues
 def av_hue(img: np.ndarray) -> float:
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -32,7 +31,7 @@ sorted_imgs = np.array(imgs)[np.argsort(img_keys)]
 
 ### Dimensionality reduction
 
-The dimensionality reduction techniques available to use include [Principal Component Analysis (PCA)](https://en.wikipedia.org/wiki/Principal_component_analysis) and [t-Distributed Stochastic Neighbor Embedding (t-SNE)](https://lvdmaaten.github.io/tsne/). They will be applied to an array of flattened images (reshape from (n, h, w, 3) to (n, w\*h)), producing a 1-D array of size n.
+The dimensionality reduction techniques available to use include [Principal Component Analysis (PCA)](https://en.wikipedia.org/wiki/Principal_component_analysis), [t-Distributed Stochastic Neighbor Embedding (t-SNE)](https://lvdmaaten.github.io/tsne/) and [Uniform Manifold Approximation and Projection](https://github.com/lmcinnes/umap). They will be applied to an array of flattened images (reshape from (n, h, w, 3) to (n, w\*h)), producing a 1-D array of size n.
 
 ```python
 # sort_function converts each image of shape (h, w, 3) 
@@ -53,7 +52,7 @@ sorted_imgs = np.array(imgs)[np.argsort(img_keys)]
 
 Without the ```--uneven``` option, a collage will be produced with each image being used the same amount of times. This number depends on your ```--dup``` option.
 
-The collage maker in this case will manage to find an optimal assignment between the source images and pixels of the destination image. It's based on the minimal weight bipartite matching (linear sum assignment) on a cost matrix of color distances. I used [an implementation of the Jonker-Volgenant algorithm](https://github.com/gatagat/lap) to solve such assignment problem. It has time complexity of O(m<sup>3</sup>) and can solve 5000x5000 case in less than 30s.
+The collage maker in this case will manage to find an optimal assignment between the source images and pixels of the destination image. It's based on the minimal weight bipartite matching (linear sum assignment) on a cost matrix of color distances. I used [an implementation of the Jonker-Volgenant algorithm](https://github.com/src-d/lapjv) to solve such assignment problem. It has time complexity of O(n<sup>3</sup>) and can solve 5000x5000 case in less than 30s.
 
 ```python
 # Compute the grid size based on the number images that we have
@@ -132,7 +131,7 @@ sorted_imgs = []
 cost = 0
 for pixel in dest_img:
     # Compute the distance between the current pixel and each image in the set
-    dist = cdist(img_keys, pixel, metric="euclidean")[:, 0]
+    dist = cdist(img_keys, np.array([pixel]), metric="euclidean")[:, 0]
     
     # Find the index of the image which best approximates the current pixel
     idx = np.argmin(dist)

@@ -109,22 +109,18 @@ def make_collage(grid: tuple, sorted_imgs: list or np.ndarray, rev: False,
     :param v: verbose
     :return: a collage
     """
-    for i in tqdm(range(grid[1]), desc="[Merging]", unit="row", file=v, ncols=v.width):
+    size, _, _ = sorted_imgs[0].shape
+    print("Aligning images on the grid...", file=v)
+    combined_img = np.zeros((grid[1] * size, grid[0] * size, 3), np.uint8)
+    for i in range(grid[1]):
         if rev and i % 2 == 1:
-            img_row = sorted_imgs[(i + 1) * grid[0] - 1]
-            for j in range(grid[0] - 2, -1, -1):
-                img_row = np.append(
-                    img_row, sorted_imgs[i * grid[0] + j], axis=1)
-            combined_img = np.append(combined_img, img_row, axis=0)
+            for j in range(0, grid[0]):
+                combined_img[i * size:(i + 1) * size, j * size:(j + 1)
+                             * size, :] = sorted_imgs[i * grid[0] + grid[0] - j - 1]
         else:
-            img_row = sorted_imgs[i * grid[0]]
-            for j in range(1, grid[0]):
-                img_row = np.append(
-                    img_row, sorted_imgs[i * grid[0] + j], axis=1)
-            if i == 0:
-                combined_img = img_row
-            else:
-                combined_img = np.append(combined_img, img_row, axis=0)
+            for j in range(0, grid[0]):
+                combined_img[i * size:(i + 1) * size, j * size:(j + 1)
+                             * size, :] = sorted_imgs[i * grid[0] + j]
     return combined_img
 
 
@@ -169,8 +165,8 @@ def sort_collage(imgs: list, ratio: tuple, sort_method="pca_lab", rev_sort=False
     print("Calculated grid size based on your aspect ratio:", result_grid, file=v)
     print("Note that", num_imgs - result_grid[0] * result_grid[1], "images will be thrown away from the collage",
           file=v)
-
     print("Sorting images...", file=v)
+    t = time.clock()
     if sort_method.startswith("pca_"):
         sort_function = eval(sort_method)
         from sklearn.decomposition import PCA
@@ -180,7 +176,13 @@ def sort_collage(imgs: list, ratio: tuple, sort_method="pca_lab", rev_sort=False
         sort_function = eval(sort_method.replace("tsne", "pca"))
         from sklearn.manifold import TSNE
 
-        img_keys = TSNE(n_components=1, n_iter=400, verbose=1).fit_transform(
+        img_keys = TSNE(n_components=1, verbose=1, init="pca").fit_transform(
+            list(map(sort_function, imgs)))[:, 0]
+    elif sort_method.startswith("umap_"):
+        sort_function = eval(sort_method.replace("umap", "pca"))
+        import umap
+
+        img_keys = umap.UMAP(n_components=1, verbose=1).fit_transform(
             list(map(sort_function, imgs)))[:, 0]
     elif sort_method == "none":
         img_keys = np.array(list(range(0, num_imgs)))
@@ -196,6 +198,8 @@ def sort_collage(imgs: list, ratio: tuple, sort_method="pca_lab", rev_sort=False
     sorted_imgs = np.array(imgs)[np.argsort(img_keys)]
     if rev_sort:
         sorted_imgs = list(reversed(sorted_imgs))
+
+    print("Time taken: {}s".format(np.round(time.clock() - t, 2)), file=v)
 
     return result_grid, sorted_imgs
 
@@ -256,7 +260,6 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: list, dup: int = 1, co
     """
     assert isfile(dest_img_path)
     from scipy.spatial.distance import cdist
-    from lap import lapjv
 
     print("Duplicating {} times".format(dup), file=v)
 
@@ -284,10 +287,10 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: list, dup: int = 1, co
 
     # Resize the destination image so that it has the same size as the grid
     # This makes sure that each image in the list of images corresponds to a pixel of the destination image
-    dest_img = cv2.resize(dest_img, result_grid, cv2.INTER_CUBIC)
+    dest_img = cv2.resize(dest_img, result_grid, cv2.INTER_AREA)
 
     weights = calculate_decay_weights_normal(imgs[0].shape[:2], sigma)
-
+    t = time.clock()
     print("Computing cost matrix...", file=v)
     if colorspace == "hsv":
         img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))
@@ -314,8 +317,15 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: list, dup: int = 1, co
     print("Computing optimal assignment on a {}x{} matrix...".format(cost_matrix.shape[0], cost_matrix.shape[1]),
           file=v)
 
-    cost, _, cols = lapjv(cost_matrix)
+    # from lap import lapjv
+    # cost, _, cols = lapjv(cost_matrix)
+
+    from lapjv import lapjv
+    _, cols, cost = lapjv(cost_matrix)
+    cost = cost[0]
+
     print("Total assignment cost:", cost, file=v)
+    print("Time taken: {}s".format(np.round(time.clock() - t), 2), file=v)
 
     return result_grid, np.array(imgs)[cols], cost
 
@@ -349,8 +359,8 @@ def calculate_collage_dup(dest_img_path: str, imgs: list, max_width: int = 50, c
           result_grid, file=v)
 
     weights = calculate_decay_weights_normal(imgs[0].shape[:2], sigma)
-    dest_img = cv2.resize(dest_img, result_grid, cv2.INTER_CUBIC)
-
+    dest_img = cv2.resize(dest_img, result_grid, cv2.INTER_AREA)
+    t = time.clock()
     print("Computing costs", file=v)
     if colorspace == "hsv":
         img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))
@@ -383,6 +393,8 @@ def calculate_collage_dup(dest_img_path: str, imgs: list, max_width: int = 50, c
 
         # Accumulate the distance to get the total cot
         cost += dist[idx]
+
+    print("Time taken: {}s".format(np.round(time.clock() - t, 2)))
 
     return result_grid, sorted_imgs, cost
 
@@ -469,7 +481,7 @@ def read_img_helper(files, img_size, queue) -> list:
     for i, img_file in enumerate(files):
         try:
             imgs.append(cv2.resize(imread(img_file),
-                                   img_size, interpolation=cv2.INTER_CUBIC))
+                                   img_size, interpolation=cv2.INTER_AREA))
         except:
             pass
         queue.put(1)
@@ -479,10 +491,11 @@ def read_img_helper(files, img_size, queue) -> list:
 all_sort_methods = ["none", "bgr_sum", "av_hue", "av_sat", "av_lum", "rand",
                     "pca_bgr", "pca_hsv", "pca_lab", "pca_gray", "pca_lum", "pca_sat", "pca_hue",
                     "tsne_bgr", "tsne_hsv", "tsne_lab", "tsne_gray", "tsne_lum", "tsne_sat", "tsne_hue",
+                    "umap_bgr", "umap_hsv", "umap_lab", "umap_gray", "umap_lum", "umap_sat", "umap_hue",
                     ]
 all_color_spaces = ["hsv", "hsl", "bgr", "lab"]
 
-all_ctypes = ["float16", "float32", "float64", "int16", "int32"]
+all_ctypes = ["float16", "float32", "float64"]
 
 if __name__ == "__main__":
     all_sigmas = np.concatenate(
@@ -551,7 +564,7 @@ if __name__ == "__main__":
 
             for sort_method in all_sort_methods:
                 futures[pool.submit(sort_collage, imgs, args.ratio,
-                                            sort_method, args.rev_sort)] = sort_method
+                                    sort_method, args.rev_sort)] = sort_method
 
             for future in tqdm(con.as_completed(futures.keys()), total=len(all_sort_methods), desc="[Experimenting]", unit="exps"):
                 grid, sorted_imgs = future.result()

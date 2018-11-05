@@ -11,10 +11,8 @@ Note: The collage maker can be applied to any folder which contains a sufficient
 
 ### Install dependencies
 
-Open the terminal and type
-
 ```bash
-pip3 install itchat pillow opencv-python tqdm scikit-learn matplotlib lap
+pip3 install itchat pillow opencv-python tqdm scikit-learn umap-learn matplotlib lapjv
 ```
 
 ## How to use
