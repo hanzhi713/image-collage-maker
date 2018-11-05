@@ -262,7 +262,7 @@ def load_dest_img():
         fp = filedialog.askopenfilename(initialdir=os.path.dirname(__file__), title="Select destination image",
                                         filetypes=(("images", "*.jpg"), ("images", "*.png"), ("images", "*.gif"),
                                                    ("all files", "*.*")))
-        if fp is not None and len(fp) >= 0 and os.path.isfile(fp):
+        if fp is not None and len(fp) > 0 and os.path.isfile(fp):
             try:
                 print("Destination image loaded from", fp, file=out_wrapper)
                 dest_img = cv2.imread(fp)
