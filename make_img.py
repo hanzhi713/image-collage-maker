@@ -498,6 +498,7 @@ all_color_spaces = ["hsv", "hsl", "bgr", "lab"]
 all_ctypes = ["float16", "float32", "float64"]
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     all_sigmas = np.concatenate(
         (np.arange(-1, -0.45, 0.05), np.arange(0.5, 1.05, 0.05)))
 
