@@ -10,6 +10,7 @@ import multiprocessing
 import io
 import sys
 import time
+import platform
 
 
 def bgr_chl_sum(img: np.ndarray) -> [float, float, float]:
@@ -76,11 +77,46 @@ class OutputWrapper(io.TextIOWrapper):
         super().__init__(sys.stdout.buffer, encoding="utf-8")
         self.v = v
         self.width = width
+        self.gui = False
 
     def write(self, s):
         if self.v:
             super().write(s)
-            self.flush()
+            super().flush()
+
+    def flush(self):
+        pass
+
+
+# The output wrapper for displaying the progress of J-V algorithm is only available for the GUI running in Linux
+class JVOutWrapper():
+    def __init__(self, io_wrapper):
+        self.tqdm = tqdm(file=io_wrapper, ncols=io_wrapper.width)
+        self.io_wrapper = io_wrapper
+
+    def write(self, lines):
+        lines = lines.split("\n")
+        for line in lines:
+            if line.find("AUGMENT SOLUTION row ") > 0:
+                line = line.replace(" ", "")
+                slash_idx = line.find("/")
+                self.tqdm.n = int(line[line.find("[") + 1:slash_idx])
+                self.tqdm.total = int(line[slash_idx + 1:line.find("]")])
+                self.tqdm.update(0)
+            else:
+                if len(line) > 0:
+                    idx = line.find("lapjv: AUGMENT SOLUTION finished")
+                    if idx > -1:
+                        line = line[idx:] + "\n"
+                        self.tqdm.n = self.tqdm.total
+                        self.tqdm.update(0)
+                        self.tqdm.close()
+                        self.io_wrapper.write(line)
+                    else:
+                        self.io_wrapper.write(line + "\n")
+
+    def flush(self):
+        pass
 
 
 def calculate_grid_size(rw: int, rh: int, num_imgs: int, v: OutputWrapper = OutputWrapper()) -> tuple:
@@ -98,7 +134,7 @@ def calculate_grid_size(rw: int, rh: int, num_imgs: int, v: OutputWrapper = Outp
         possible_wh.append((width, height))
 
     return min(possible_wh, key=lambda x: ((x[0] / x[1]) - (rw / rh)) ** 2)
-
+    
 
 def make_collage(grid: tuple, sorted_imgs: list or np.ndarray, rev: False,
                  v: OutputWrapper = OutputWrapper()) -> np.ndarray:
@@ -303,8 +339,6 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: list, dup: int = 1, co
     elif colorspace == "lab":
         img_keys = np.array(list(map(chl_mean_lab(weights), imgs)))
         dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2Lab)
-    else:
-        raise Exception()
 
     dest_img = dest_img.reshape(result_grid[0] * result_grid[1], 3)
 
@@ -321,11 +355,24 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: list, dup: int = 1, co
     # cost, _, cols = lapjv(cost_matrix)
 
     from lapjv import lapjv
-    _, cols, cost = lapjv(cost_matrix)
+
+    if platform.system() == "Linux" and v.gui:
+        from wurlitzer import pipes, STDOUT
+        from wurlitzer import Wurlitzer
+        Wurlitzer.flush_interval = 0.1
+        with pipes(stdout=JVOutWrapper(v), stderr=STDOUT):
+            _, cols, cost = lapjv(cost_matrix, verbose=1)
+    else:
+        _, cols, cost = lapjv(cost_matrix)
+
     cost = cost[0]
 
     print("Total assignment cost:", cost, file=v)
     print("Time taken: {}s".format(np.round(time.clock() - t), 2), file=v)
+
+    # sometimes the cost matrix may be extremely large
+    # manually delete it to free memory
+    del cost_matrix
 
     return result_grid, np.array(imgs)[cols], cost
 
@@ -373,15 +420,13 @@ def calculate_collage_dup(dest_img_path: str, imgs: list, max_width: int = 50, c
     elif colorspace == "lab":
         img_keys = np.array(list(map(chl_mean_lab(weights), imgs)))
         dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2Lab)
-    else:
-        raise Exception()
 
     dest_img = dest_img.reshape(result_grid[0] * result_grid[1], 3)
 
     sorted_imgs = []
     cost = 0
     for pixel in tqdm(dest_img, desc="[Computing assignments]", unit="pixel", unit_divisor=1000, unit_scale=True,
-                      file=v, ncols=v.width):
+                      ncols=v.width, file=v):
         # Compute the distance between the current pixel and each image in the set
         dist = cdist(img_keys, np.array([pixel]), metric="euclidean")[:, 0]
 
@@ -440,7 +485,7 @@ def read_images(pic_path: str, img_size: tuple, recursive=False, num_process=1, 
         pass
 
     pbar = tqdm(total=len(files),
-                desc="[Reading files]", unit="file", file=v, ncols=v.width)
+                desc="[Reading files]", unit="file", ncols=v.width, file=v)
 
     if num_process <= 1:
         num_process = 1
@@ -544,7 +589,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     v = OutputWrapper(args.verbose)
-    sys.stdout = v
 
     if len(args.out) > 0:
         folder, file_name = os.path.split(args.out)

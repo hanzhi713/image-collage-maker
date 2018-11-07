@@ -1,4 +1,4 @@
-<table style="border: none">
+<table style="border: 0">
     <tr>
         <td><img src="result-rand.png" width="480px"></td>
         <td><img src="collage.png" width="270px"></td>
@@ -18,8 +18,10 @@
 ### Install dependencies
 
 ```bash
-pip3 install itchat pillow opencv-python tqdm scikit-learn umap-learn matplotlib lapjv
+pip3 install itchat pillow opencv-python tqdm scikit-learn umap-learn matplotlib lapjv wurlitzer
 ```
+
+>Note: You should not install "wurlitzer" if you're on Windows. It helps to visualize the progress of the linear sum assignment by redirecting output from the C++ code to python's stdout, but it does not work on Windows.
 
 ## How to use
 

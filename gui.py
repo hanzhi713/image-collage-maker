@@ -30,6 +30,9 @@ class SafeText(Text):
     def __init__(self, master, **options):
         Text.__init__(self, master, **options)
         self.queue = Queue()
+        self.encoding = "utf-8"
+        self.width = 110
+        self.gui = True
         self.update_me()
 
     def write(self, line: str):
@@ -60,18 +63,6 @@ class SafeText(Text):
         self.after(50, self.update_me)
 
 
-class OutputWrapper:
-    def __init__(self, cmd_log: SafeText, width=100):
-        self.cmd_log = cmd_log
-        self.encoding = "utf-8"
-        self.width = width
-
-    def write(self, s: str):
-        self.cmd_log.write(s)
-
-    def flush(self):
-        self.cmd_log.flush()
-
 if __name__ == "__main__":
     freeze_support()
     root = Tk()
@@ -97,26 +88,24 @@ if __name__ == "__main__":
     log_entry.config(yscrollcommand=scroll.set)
     scroll.grid(row=1, column=1, sticky="nsew")
 
-    out_wrapper = OutputWrapper(log_entry)
+    out_wrapper = log_entry
     sys.stdout = out_wrapper
     sys.stderr = out_wrapper
 
     canvas = Canvas(root, width=800, height=500)
     result_img = None
 
-
     def show_img(img):
         global result_img
         result_img = img
         w, h = limit_wh(*img.shape[:2][::-1], 800, 500)
         preview = cv2.cvtColor(cv2.resize(img, (w, h),
-                                        cv2.INTER_AREA), cv2.COLOR_BGR2RGB)
+                                          cv2.INTER_AREA), cv2.COLOR_BGR2RGB)
         root.preview = ImageTk.PhotoImage(image=Image.fromarray(preview))
         canvas.delete("all")
         canvas.create_image((800 - w) // 2, (500 - h) // 2,
                             image=root.preview, anchor=NW)
         print("Done", file=out_wrapper)
-
 
     left_panel.add(canvas)
 
@@ -133,7 +122,8 @@ if __name__ == "__main__":
     opt.set("sort")
     img_size = IntVar()
     img_size.set(50)
-    Label(right_top_panel, text="Image size: ").grid(row=2, column=0, pady=(5, 2))
+    Label(right_top_panel, text="Image size: ").grid(
+        row=2, column=0, pady=(5, 2))
     Entry(right_top_panel, width=5, textvariable=img_size).grid(
         row=2, column=1, sticky="W", pady=(5, 2))
     recursive = BooleanVar()
@@ -143,7 +133,6 @@ if __name__ == "__main__":
 
     imgs = None
     current_image = None
-
 
     def load_images():
         global imgs, current_image
@@ -162,7 +151,8 @@ if __name__ == "__main__":
                 global imgs
                 imgs = make_img.read_images(
                     fp, (size, size), recursive.get(), 4, out_wrapper)
-                grid = make_img.calculate_grid_size(16, 10, len(imgs), out_wrapper)
+                grid = make_img.calculate_grid_size(
+                    16, 10, len(imgs), out_wrapper)
                 return make_img.make_collage(grid, imgs, False, out_wrapper)
 
             pool = ThreadPool(1)
@@ -173,7 +163,6 @@ if __name__ == "__main__":
         except:
             t = traceback.format_exc()
             messagebox.showerror("Error", t)
-
 
     Button(right_top_panel, text=" Load source images ", command=load_images).grid(
         row=4, column=0, columnspan=2, pady=(0, 5))
@@ -191,7 +180,7 @@ if __name__ == "__main__":
     Label(right_sort_opt_panel, text="Sort methods:").grid(
         row=0, column=0, pady=5, sticky="W")
     OptionMenu(right_sort_opt_panel, sort_method, "", *
-            make_img.all_sort_methods).grid(row=0, column=1)
+               make_img.all_sort_methods).grid(row=0, column=1)
 
     Label(right_sort_opt_panel, text="Aspect ratio:").grid(
         row=1, column=0, sticky="W")
@@ -214,10 +203,10 @@ if __name__ == "__main__":
     Checkbutton(right_sort_opt_panel, variable=rev_sort,
                 text="Reverse sort order").grid(row=3, columnspan=2, sticky="W")
 
-
     def generate_sorted_image():
         if imgs is None:
-            messagebox.showerror("Empty set", "Please first load source images")
+            messagebox.showerror(
+                "Empty set", "Please first load source images")
         else:
             try:
                 w, h = rw.get(), rh.get()
@@ -228,16 +217,15 @@ if __name__ == "__main__":
 
             def action():
                 grid, sorted_imgs = make_img.sort_collage(imgs, (w, h), sort_method.get(),
-                                                        rev_sort.get(), out_wrapper)
+                                                          rev_sort.get(), out_wrapper)
                 return make_img.make_collage(grid, sorted_imgs, rev_row.get(), out_wrapper)
 
             pool = ThreadPool(1)
             pool.apply_async(action, args=(), callback=show_img)
             pool.close()
 
-
     Button(right_sort_opt_panel, text="Generate sorted image",
-        command=generate_sorted_image).grid(row=4, columnspan=2, pady=5)
+           command=generate_sorted_image).grid(row=4, columnspan=2, pady=5)
 
     right_collage_opt_panel = PanedWindow(right_panel)
     sigma = StringVar()
@@ -250,17 +238,17 @@ if __name__ == "__main__":
     Label(right_collage_opt_panel, text="Path of destination image").grid(
         row=0, columnspan=2, sticky="W", pady=(2, 3))
     Label(right_collage_opt_panel, textvariable=dest_img_path,
-        wraplength=150).grid(row=1, columnspan=2, sticky="W")
-
+          wraplength=150).grid(row=1, columnspan=2, sticky="W")
 
     def load_dest_img():
         global dest_img
         if imgs is None:
-            messagebox.showerror("Empty set", "Please first load source images")
+            messagebox.showerror(
+                "Empty set", "Please first load source images")
         else:
             fp = filedialog.askopenfilename(initialdir=os.path.dirname(__file__), title="Select destination image",
                                             filetypes=(("images", "*.jpg"), ("images", "*.png"), ("images", "*.gif"),
-                                                    ("all files", "*.*")))
+                                                       ("all files", "*.*")))
             if fp is not None and len(fp) > 0 and os.path.isfile(fp):
                 try:
                     print("Destination image loaded from", fp, file=out_wrapper)
@@ -269,13 +257,12 @@ if __name__ == "__main__":
                     dest_img_path.set(fp)
                 except:
                     messagebox.showerror("Error reading file",
-                                        traceback.format_exc())
+                                         traceback.format_exc())
             else:
                 return
 
-
     Button(right_collage_opt_panel, text="Load destination image",
-        command=load_dest_img).grid(row=2, columnspan=2)
+           command=load_dest_img).grid(row=2, columnspan=2)
     Label(right_collage_opt_panel, text="Sigma: ").grid(
         row=3, column=0, sticky="W", pady=(10, 2))
     Entry(right_collage_opt_panel, textvariable=sigma, width=8).grid(
@@ -283,7 +270,7 @@ if __name__ == "__main__":
     Label(right_collage_opt_panel, text="Color space: ").grid(
         row=4, column=0, sticky="W")
     OptionMenu(right_collage_opt_panel, color_space, "", *
-            make_img.all_color_spaces).grid(row=4, column=1, sticky="W")
+               make_img.all_color_spaces).grid(row=4, column=1, sticky="W")
 
     Separator(right_collage_opt_panel, orient="horizontal").grid(
         row=6, columnspan=2, sticky="we", pady=(5, 5))
@@ -294,13 +281,14 @@ if __name__ == "__main__":
     dup.set(1)
 
     collage_even_panel = PanedWindow(right_collage_opt_panel)
-    Label(collage_even_panel, text="C Types: ").grid(row=0, column=0, sticky="W")
+    Label(collage_even_panel, text="C Types: ").grid(
+        row=0, column=0, sticky="W")
     OptionMenu(collage_even_panel, ctype, "", *
-            make_img.all_ctypes).grid(row=0, column=1, sticky="W")
+               make_img.all_ctypes).grid(row=0, column=1, sticky="W")
     Label(collage_even_panel, text="Duplicates: ").grid(
         row=1, column=0, sticky="W")
     Entry(collage_even_panel, textvariable=dup,
-        width=5).grid(row=1, column=1, sticky="W")
+          width=5).grid(row=1, column=1, sticky="W")
     collage_even_panel.grid(row=7, columnspan=2, sticky="W")
 
     max_width = IntVar()
@@ -309,18 +297,15 @@ if __name__ == "__main__":
     Label(collage_uneven_panel, text="Max width: ").grid(
         row=0, column=0, sticky="W")
     Entry(collage_uneven_panel, textvariable=max_width,
-        width=5).grid(row=0, column=1, sticky="W")
-
+          width=5).grid(row=0, column=1, sticky="W")
 
     def attach_even():
         collage_uneven_panel.grid_remove()
         collage_even_panel.grid(row=7, columnspan=2, sticky="W")
 
-
     def attach_uneven():
         collage_even_panel.grid_remove()
         collage_uneven_panel.grid(row=7, columnspan=2, sticky="W")
-
 
     even = StringVar()
     even.set("even")
@@ -329,7 +314,6 @@ if __name__ == "__main__":
                 state=ACTIVE, command=attach_even).grid(row=5, column=0, sticky="W")
     Radiobutton(right_collage_opt_panel, text="Uneven", variable=even, value="uneven",
                 command=attach_uneven).grid(row=5, column=1, sticky="W")
-
 
     def generate_collage():
         if imgs is None:
@@ -349,18 +333,20 @@ if __name__ == "__main__":
                                                                                         float(sigma.get()), out_wrapper)
                             return make_img.make_collage(grid, sorted_imgs, False, out_wrapper)
                         except:
-                            messagebox.showerror("Error", traceback.format_exc())
+                            messagebox.showerror(
+                                "Error", traceback.format_exc())
                 else:
                     assert max_width.get() > 0, "Max width must be a positive number"
 
                     def action():
                         try:
                             grid, sorted_imgs, _ = make_img.calculate_collage_dup(dest_img_path.get(), imgs,
-                                                                                max_width.get(), color_space.get(),
-                                                                                float(sigma.get()), out_wrapper)
+                                                                                  max_width.get(), color_space.get(),
+                                                                                  float(sigma.get()), out_wrapper)
                             return make_img.make_collage(grid, sorted_imgs, False, out_wrapper)
                         except:
-                            messagebox.showerror("Error", traceback.format_exc())
+                            messagebox.showerror(
+                                "Error", traceback.format_exc())
 
                 pool = ThreadPool(1)
                 pool.apply_async(action, callback=show_img)
@@ -371,20 +357,16 @@ if __name__ == "__main__":
             except:
                 return messagebox.showerror("Error", traceback.format_exc())
 
-
     Button(right_collage_opt_panel, text=" Generate Collage ",
-        command=generate_collage).grid(row=8, columnspan=2, pady=(5, 3))
-
+           command=generate_collage).grid(row=8, columnspan=2, pady=(5, 3))
 
     def attach_sort():
         right_collage_opt_panel.grid_remove()
         right_sort_opt_panel.grid(row=2, columnspan=2, sticky="W")
 
-
     def attach_collage():
         right_sort_opt_panel.grid_remove()
         right_collage_opt_panel.grid(row=2, columnspan=2, sticky="W")
-
 
     Radiobutton(right_top_panel, text="Sort", value="sort", variable=opt,
                 state=ACTIVE, command=attach_sort).grid(row=5, column=0, sticky="W")
@@ -394,10 +376,10 @@ if __name__ == "__main__":
     Separator(right_panel, orient="horizontal").grid(
         row=3, columnspan=2, sticky="we", pady=(0, 10))
 
-
     def save_img():
         if result_img is None:
-            messagebox.showerror("Error", "You don't have any image to save yet!")
+            messagebox.showerror(
+                "Error", "You don't have any image to save yet!")
         else:
 
             def imwrite(filename, img):
@@ -412,16 +394,15 @@ if __name__ == "__main__":
                     messagebox.showerror("Error", traceback.format_exc())
 
             fp = filedialog.asksaveasfilename(initialdir=os.path.dirname(__file__), title="Save your collage",
-                                            filetypes=(
-                                                ("images", "*.jpg"), ("images", "*.png")),
-                                            defaultextension=".png", initialfile="result.png")
+                                              filetypes=(
+                ("images", "*.jpg"), ("images", "*.png")),
+                defaultextension=".png", initialfile="result.png")
             if fp is not None and len(fp) > 0 and os.path.isdir(os.path.dirname(fp)):
                 print("Image saved to", fp, file=out_wrapper)
                 imwrite(fp, result_img)
 
-
     Button(right_panel, text=" Save image ",
-        command=save_img).grid(row=4, columnspan=2)
+           command=save_img).grid(row=4, columnspan=2)
 
     # make the window appear at the center
     # https://www.reddit.com/r/Python/comments/6m03sh/make_tkinter_window_in_center_of_screen_newbie/
