@@ -7,10 +7,11 @@ import random
 from tqdm import tqdm
 import concurrent.futures as con
 import multiprocessing
-import io
 import sys
 import time
 import platform
+
+pbar_ncols = None
 
 
 def bgr_chl_sum(img: np.ndarray) -> [float, float, float]:
@@ -72,24 +73,8 @@ def rand(img: np.ndarray) -> float:
     return random.random()
 
 
-class OutputWrapper(io.TextIOWrapper):
-    def __init__(self, v=False, width=None):
-        super().__init__(sys.stdout.buffer, encoding="utf-8")
-        self.v = v
-        self.width = width
-        self.gui = False
-
-    def write(self, s):
-        if self.v:
-            super().write(s)
-            super().flush()
-
-    def flush(self):
-        pass
-
-
 # The output wrapper for displaying the progress of J-V algorithm is only available for the GUI running in Linux
-class JVOutWrapper():
+class JVOutWrapper:
     def __init__(self, io_wrapper):
         self.tqdm = tqdm(file=io_wrapper, ncols=io_wrapper.width)
         self.io_wrapper = io_wrapper
@@ -119,44 +104,40 @@ class JVOutWrapper():
         pass
 
 
-def calculate_grid_size(rw: int, rh: int, num_imgs: int, v: OutputWrapper = OutputWrapper()) -> tuple:
+def calculate_grid_size(rw: int, rh: int, num_imgs: int) -> tuple:
     """
     :param rw: the width of the target image
     :param rh: the height of the target image
     :param num_imgs: number of images available
-    :param v: verbose
     :return: an optimal grid size
     """
     possible_wh = []
-    # print("Calculating grid size...", file=v)
     for width in range(1, num_imgs):
         height = num_imgs // width
         possible_wh.append((width, height))
 
     return min(possible_wh, key=lambda x: ((x[0] / x[1]) - (rw / rh)) ** 2)
-    
 
-def make_collage(grid: tuple, sorted_imgs: list or np.ndarray, rev: False,
-                 v: OutputWrapper = OutputWrapper()) -> np.ndarray:
+
+def make_collage(grid: tuple, sorted_imgs: list or np.ndarray, rev: False) -> np.ndarray:
     """
     :param grid: grid size
     :param sorted_imgs: list of images sorted in correct position
     :param rev: whether to have opposite alignment for consecutive rows
-    :param v: verbose
     :return: a collage
     """
     size, _, _ = sorted_imgs[0].shape
-    print("Aligning images on the grid...", file=v)
+    print("Aligning images on the grid...")
     combined_img = np.zeros((grid[1] * size, grid[0] * size, 3), np.uint8)
     for i in range(grid[1]):
         if rev and i % 2 == 1:
             for j in range(0, grid[0]):
                 combined_img[i * size:(i + 1) * size, j * size:(j + 1)
-                             * size, :] = sorted_imgs[i * grid[0] + grid[0] - j - 1]
+                                                               * size, :] = sorted_imgs[i * grid[0] + grid[0] - j - 1]
         else:
             for j in range(0, grid[0]):
                 combined_img[i * size:(i + 1) * size, j * size:(j + 1)
-                             * size, :] = sorted_imgs[i * grid[0] + j]
+                                                               * size, :] = sorted_imgs[i * grid[0] + j]
     return combined_img
 
 
@@ -185,23 +166,20 @@ def calculate_decay_weights_normal(shape: tuple, sigma: float = 1) -> np.ndarray
     return weights
 
 
-def sort_collage(imgs: list, ratio: tuple, sort_method="pca_lab", rev_sort=False,
-                 v: OutputWrapper = OutputWrapper()) -> [tuple, np.ndarray]:
+def sort_collage(imgs: list, ratio: tuple, sort_method="pca_lab", rev_sort=False) -> [tuple, np.ndarray]:
     """
     :param imgs: list of images
     :param ratio: The aspect ratio of the collage
     :param sort_method:
     :param rev_sort: whether to reverse the sorted array
-    :param v: verbose
     :return: calculated grid size and the sorted image array
     """
     num_imgs = len(imgs)
-    result_grid = calculate_grid_size(ratio[0], ratio[1], num_imgs, v)
+    result_grid = calculate_grid_size(ratio[0], ratio[1], num_imgs)
 
-    print("Calculated grid size based on your aspect ratio:", result_grid, file=v)
-    print("Note that", num_imgs - result_grid[0] * result_grid[1], "images will be thrown away from the collage",
-          file=v)
-    print("Sorting images...", file=v)
+    print("Calculated grid size based on your aspect ratio:", result_grid)
+    print("Note that", num_imgs - result_grid[0] * result_grid[1], "images will be thrown away from the collage")
+    print("Sorting images...")
     t = time.clock()
     if sort_method.startswith("pca_"):
         sort_function = eval(sort_method)
@@ -235,7 +213,7 @@ def sort_collage(imgs: list, ratio: tuple, sort_method="pca_lab", rev_sort=False
     if rev_sort:
         sorted_imgs = list(reversed(sorted_imgs))
 
-    print("Time taken: {}s".format(np.round(time.clock() - t, 2)), file=v)
+    print("Time taken: {}s".format(np.round(time.clock() - t, 2)))
 
     return result_grid, sorted_imgs
 
@@ -244,8 +222,8 @@ def chl_mean_hsv(weights: np.ndarray) -> "function":
     def f(img: np.ndarray) -> [float, float, float]:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         return np.average(img[:, :, 0], weights=weights), \
-            np.average(img[:, :, 1], weights=weights), \
-            np.average(img[:, :, 2], weights=weights)
+               np.average(img[:, :, 1], weights=weights), \
+               np.average(img[:, :, 2], weights=weights)
 
     return f
 
@@ -254,8 +232,8 @@ def chl_mean_hsl(weights: np.ndarray) -> "function":
     def f(img: np.ndarray) -> [float, float, float]:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
         return np.average(img[:, :, 0], weights=weights), \
-            np.average(img[:, :, 1], weights=weights), \
-            np.average(img[:, :, 2], weights=weights)
+               np.average(img[:, :, 1], weights=weights), \
+               np.average(img[:, :, 2], weights=weights)
 
     return f
 
@@ -263,8 +241,8 @@ def chl_mean_hsl(weights: np.ndarray) -> "function":
 def chl_mean_bgr(weights: np.ndarray) -> "function":
     def f(img: np.ndarray) -> [float, float, float]:
         return np.average(img[:, :, 0], weights=weights), \
-            np.average(img[:, :, 1], weights=weights), \
-            np.average(img[:, :, 2], weights=weights)
+               np.average(img[:, :, 1], weights=weights), \
+               np.average(img[:, :, 2], weights=weights)
 
     return f
 
@@ -273,14 +251,14 @@ def chl_mean_lab(weights: np.ndarray) -> "function":
     def f(img: np.ndarray) -> [float, float, float]:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2Lab)
         return np.average(img[:, :, 0], weights=weights), \
-            np.average(img[:, :, 1], weights=weights), \
-            np.average(img[:, :, 2], weights=weights)
+               np.average(img[:, :, 1], weights=weights), \
+               np.average(img[:, :, 2], weights=weights)
 
     return f
 
 
 def calculate_collage_bipartite(dest_img_path: str, imgs: list, dup: int = 1, colorspace="lab", ctype="float16",
-                                sigma: float = 1.0, v: OutputWrapper = OutputWrapper()) -> [tuple, list, float]:
+                                sigma: float = 1.0, v=None) -> [tuple, list, float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
     with the restriction that every image should be used the same amount of times
@@ -297,7 +275,7 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: list, dup: int = 1, co
     assert isfile(dest_img_path)
     from scipy.spatial.distance import cdist
 
-    print("Duplicating {} times".format(dup), file=v)
+    print("Duplicating {} times".format(dup))
 
     # avoid modifying the original array
     imgs = list(map(np.copy, imgs))
@@ -310,12 +288,12 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: list, dup: int = 1, co
     # Compute the grid size based on the number images that we have
     dest_img = cv2.imread(dest_img_path)
     rh, rw, _ = dest_img.shape
-    result_grid = calculate_grid_size(rw, rh, num_imgs, v)
+    result_grid = calculate_grid_size(rw, rh, num_imgs)
 
     print("Calculated grid size based on the aspect ratio of the image provided:",
-          result_grid, file=v)
+          result_grid)
     print("Note:", num_imgs - result_grid[0] * result_grid[1],
-          "images will be thrown away from the collage", file=v)
+          "images will be thrown away from the collage")
 
     # it's VERY important to remove redundant images
     # this makes sure that cost_matrix is a square
@@ -327,7 +305,7 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: list, dup: int = 1, co
 
     weights = calculate_decay_weights_normal(imgs[0].shape[:2], sigma)
     t = time.clock()
-    print("Computing cost matrix...", file=v)
+    print("Computing cost matrix...")
     if colorspace == "hsv":
         img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))
         dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2HSV)
@@ -348,15 +326,14 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: list, dup: int = 1, co
     ctype = eval("np." + ctype)
     cost_matrix = ctype(cost_matrix)
 
-    print("Computing optimal assignment on a {}x{} matrix...".format(cost_matrix.shape[0], cost_matrix.shape[1]),
-          file=v)
+    print("Computing optimal assignment on a {}x{} matrix...".format(cost_matrix.shape[0], cost_matrix.shape[1]))
 
     # from lap import lapjv
     # cost, _, cols = lapjv(cost_matrix)
 
     from lapjv import lapjv
 
-    if platform.system() == "Linux" and v.gui:
+    if v is not None and platform.system() == "Linux" and v.gui:
         from wurlitzer import pipes, STDOUT
         from wurlitzer import Wurlitzer
         Wurlitzer.flush_interval = 0.1
@@ -367,8 +344,8 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: list, dup: int = 1, co
 
     cost = cost[0]
 
-    print("Total assignment cost:", cost, file=v)
-    print("Time taken: {}s".format(np.round(time.clock() - t), 2), file=v)
+    print("Total assignment cost:", cost)
+    print("Time taken: {}s".format(np.round(time.clock() - t), 2))
 
     # sometimes the cost matrix may be extremely large
     # manually delete it to free memory
@@ -377,8 +354,8 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: list, dup: int = 1, co
     return result_grid, np.array(imgs)[cols], cost
 
 
-def calculate_collage_dup(dest_img_path: str, imgs: list, max_width: int = 50, colorspace="lab",
-                          sigma: float = 1.0, v: OutputWrapper = OutputWrapper()) -> [tuple, list, float]:
+def calculate_collage_dup(dest_img_path: str, imgs: list, max_width: int = 50, color_space="lab",
+                          sigma: float = 1.0) -> [tuple, list, float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
     given that every image could be used arbitrary amount of times
@@ -386,9 +363,8 @@ def calculate_collage_dup(dest_img_path: str, imgs: list, max_width: int = 50, c
     :param dest_img_path: path to the dest_img file
     :param imgs: list of images
     :param max_width: max_width of the resulting dest_img
-    :param colorspace: colorspace used
+    :param color_space: color space used
     :param sigma:
-    :param v: verbose
     :return: [gird size, sorted images, total assignment cost]
     """
     assert isfile(dest_img_path)
@@ -402,22 +378,21 @@ def calculate_collage_dup(dest_img_path: str, imgs: list, max_width: int = 50, c
     rh = round(rh * max_width / rw)
     result_grid = (max_width, rh)
 
-    print("Calculated grid size based on the aspect ratio of the image provided:",
-          result_grid, file=v)
+    print("Calculated grid size based on the aspect ratio of the image provided:", result_grid)
 
     weights = calculate_decay_weights_normal(imgs[0].shape[:2], sigma)
     dest_img = cv2.resize(dest_img, result_grid, cv2.INTER_AREA)
     t = time.clock()
-    print("Computing costs", file=v)
-    if colorspace == "hsv":
+    print("Computing costs")
+    if color_space == "hsv":
         img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))
         dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2HSV)
-    elif colorspace == "hsl":
+    elif color_space == "hsl":
         img_keys = np.array(list(map(chl_mean_hsl(weights), imgs)))
         dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2HLS)
-    elif colorspace == "bgr":
+    elif color_space == "bgr":
         img_keys = np.array(list(map(chl_mean_bgr(weights), imgs)))
-    elif colorspace == "lab":
+    elif color_space == "lab":
         img_keys = np.array(list(map(chl_mean_lab(weights), imgs)))
         dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2Lab)
 
@@ -426,7 +401,7 @@ def calculate_collage_dup(dest_img_path: str, imgs: list, max_width: int = 50, c
     sorted_imgs = []
     cost = 0
     for pixel in tqdm(dest_img, desc="[Computing assignments]", unit="pixel", unit_divisor=1000, unit_scale=True,
-                      ncols=v.width, file=v):
+                      ncols=pbar_ncols):
         # Compute the distance between the current pixel and each image in the set
         dist = cdist(img_keys, np.array([pixel]), metric="euclidean")[:, 0]
 
@@ -444,8 +419,7 @@ def calculate_collage_dup(dest_img_path: str, imgs: list, max_width: int = 50, c
     return result_grid, sorted_imgs, cost
 
 
-def save_img(img: np.ndarray, path: str, suffix: str, v: OutputWrapper = OutputWrapper()) -> None:
-
+def save_img(img: np.ndarray, path: str, suffix: str) -> None:
     def imwrite(filename, img):
         ext = os.path.splitext(filename)[1]
         result, n = cv2.imencode(ext, img)
@@ -458,16 +432,16 @@ def save_img(img: np.ndarray, path: str, suffix: str, v: OutputWrapper = OutputW
         path = "result.png"
 
     if len(suffix) == 0:
-        print("Saving to", path, file=v)
+        print("Saving to", path)
         imwrite(path, img)
     else:
         file_path, ext = os.path.splitext(path)
         path = file_path + "_{}".format(suffix) + "." + ext
-        print("Saving to", path, file=v)
+        print("Saving to", path)
         imwrite(path, img)
 
 
-def read_images(pic_path: str, img_size: tuple, recursive=False, num_process=1, v: OutputWrapper = OutputWrapper()) -> list:
+def read_images(pic_path: str, img_size: tuple, recursive=False, num_process=1) -> list:
     assert os.path.isdir(pic_path), "Directory " + pic_path + "is non-existent"
     files = []
     if recursive:
@@ -484,8 +458,7 @@ def read_images(pic_path: str, img_size: tuple, recursive=False, num_process=1, 
     except ValueError:
         pass
 
-    pbar = tqdm(total=len(files),
-                desc="[Reading files]", unit="file", ncols=v.width, file=v)
+    pbar = tqdm(total=len(files), desc="[Reading files]", unit="file", ncols=pbar_ncols)
 
     if num_process <= 1:
         num_process = 1
@@ -588,7 +561,9 @@ if __name__ == "__main__":
     parser.add_argument("--verbose", action="store_true")
 
     args = parser.parse_args()
-    v = OutputWrapper(args.verbose)
+    if not args.verbose:
+        sys.stdout = open(devnull, 'w')
+        sys.stderr = sys.stdout
 
     if len(args.out) > 0:
         folder, file_name = os.path.split(args.out)
@@ -599,7 +574,7 @@ if __name__ == "__main__":
         # assert ext.lower() == ".jpg" or ext.lower() == ".png", "The file extension must be .jpg or .png"
 
     imgs = read_images(args.path, (args.size, args.size),
-                       args.recursive, args.num_process, v)
+                       args.recursive, args.num_process)
 
     if len(args.collage) == 0:
         if args.exp:
@@ -611,16 +586,17 @@ if __name__ == "__main__":
                 futures[pool.submit(sort_collage, imgs, args.ratio,
                                     sort_method, args.rev_sort)] = sort_method
 
-            for future in tqdm(con.as_completed(futures.keys()), total=len(all_sort_methods), desc="[Experimenting]", unit="exps"):
+            for future in tqdm(con.as_completed(futures.keys()), total=len(all_sort_methods), desc="[Experimenting]",
+                               unit="exps", file=sys.__stderr__):
                 grid, sorted_imgs = future.result()
-                combined_img = make_collage(grid, sorted_imgs, args.rev_row, v)
-                save_img(combined_img, args.out, futures[future], v)
+                combined_img = make_collage(grid, sorted_imgs, args.rev_row)
+                save_img(combined_img, args.out, futures[future])
 
         else:
             result_grid, sorted_imgs = sort_collage(
-                imgs, args.ratio, args.sort, args.rev_sort, v)
+                imgs, args.ratio, args.sort, args.rev_sort)
             save_img(make_collage(result_grid, sorted_imgs,
-                                  args.rev_row, v), args.out, "", v)
+                                  args.rev_row), args.out, "")
     else:
         if args.exp:
             # noinspection PyUnresolvedReferences
@@ -647,11 +623,11 @@ if __name__ == "__main__":
 
             cost_vis = np.zeros((len(all_sigmas), len(all_color_spaces)))
             r, c = 0, 0
-            for (f, sigma, color_space) in tqdm(futures, desc="[Experimenting]", unit="exps"):
+            for (f, sigma, color_space) in tqdm(futures, desc="[Experimenting]", unit="exps", file=sys.__stdout__):
                 suffix = "{}_{}".format(color_space, np.round(sigma, 2))
                 grid, sorted_imgs, cost = f.result()
                 save_img(make_collage(grid, sorted_imgs,
-                                      args.rev_row, v), args.out, suffix, v)
+                                      args.rev_row), args.out, suffix)
                 cost_vis[r, c] = cost
                 c += 1
                 if c % len(all_color_spaces) == 0:
@@ -671,11 +647,11 @@ if __name__ == "__main__":
         else:
             if args.uneven:
                 result_grid, sorted_imgs, cost = calculate_collage_dup(args.collage, imgs, args.max_width,
-                                                                       args.colorspace, args.sigma, v)
-                save_img(make_collage(result_grid, sorted_imgs, args.rev_row, v),
-                         args.out, "", v)
+                                                                       args.colorspace, args.sigma)
+                save_img(make_collage(result_grid, sorted_imgs, args.rev_row),
+                         args.out, "")
             else:
                 result_grid, sorted_imgs, cost = calculate_collage_bipartite(args.collage, imgs, args.dup,
-                                                                             args.colorspace, args.ctype, args.sigma, v)
-                save_img(make_collage(result_grid, sorted_imgs, args.rev_row, v),
-                         args.out, "", v)
+                                                                             args.colorspace, args.ctype, args.sigma)
+                save_img(make_collage(result_grid, sorted_imgs, args.rev_row),
+                         args.out, "")

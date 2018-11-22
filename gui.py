@@ -11,6 +11,8 @@ import math
 import sys
 import make_img
 
+make_img.pbar_ncols = 110
+
 
 def limit_wh(w: int, h: int, max_width: int, max_height: int) -> [int, int]:
     if h > max_height:
@@ -95,6 +97,7 @@ if __name__ == "__main__":
     canvas = Canvas(root, width=800, height=500)
     result_img = None
 
+
     def show_img(img):
         global result_img
         result_img = img
@@ -105,7 +108,8 @@ if __name__ == "__main__":
         canvas.delete("all")
         canvas.create_image((800 - w) // 2, (500 - h) // 2,
                             image=root.preview, anchor=NW)
-        print("Done", file=out_wrapper)
+        print("Done")
+
 
     left_panel.add(canvas)
 
@@ -134,6 +138,7 @@ if __name__ == "__main__":
     imgs = None
     current_image = None
 
+
     def load_images():
         global imgs, current_image
         fp = filedialog.askdirectory(
@@ -150,19 +155,20 @@ if __name__ == "__main__":
             def action():
                 global imgs
                 imgs = make_img.read_images(
-                    fp, (size, size), recursive.get(), 4, out_wrapper)
+                    fp, (size, size), recursive.get(), 4)
                 grid = make_img.calculate_grid_size(
-                    16, 10, len(imgs), out_wrapper)
-                return make_img.make_collage(grid, imgs, False, out_wrapper)
+                    16, 10, len(imgs))
+                return make_img.make_collage(grid, imgs, False)
 
             pool = ThreadPool(1)
-            print("Loading source images from", fp, file=out_wrapper)
+            print("Loading source images from", fp)
             pool.apply_async(action, args=(), callback=show_img)
             pool.close()
 
         except:
             t = traceback.format_exc()
             messagebox.showerror("Error", t)
+
 
     Button(right_top_panel, text=" Load source images ", command=load_images).grid(
         row=4, column=0, columnspan=2, pady=(0, 5))
@@ -180,7 +186,7 @@ if __name__ == "__main__":
     Label(right_sort_opt_panel, text="Sort methods:").grid(
         row=0, column=0, pady=5, sticky="W")
     OptionMenu(right_sort_opt_panel, sort_method, "", *
-               make_img.all_sort_methods).grid(row=0, column=1)
+    make_img.all_sort_methods).grid(row=0, column=1)
 
     Label(right_sort_opt_panel, text="Aspect ratio:").grid(
         row=1, column=0, sticky="W")
@@ -203,6 +209,7 @@ if __name__ == "__main__":
     Checkbutton(right_sort_opt_panel, variable=rev_sort,
                 text="Reverse sort order").grid(row=3, columnspan=2, sticky="W")
 
+
     def generate_sorted_image():
         if imgs is None:
             messagebox.showerror(
@@ -217,12 +224,13 @@ if __name__ == "__main__":
 
             def action():
                 grid, sorted_imgs = make_img.sort_collage(imgs, (w, h), sort_method.get(),
-                                                          rev_sort.get(), out_wrapper)
-                return make_img.make_collage(grid, sorted_imgs, rev_row.get(), out_wrapper)
+                                                          rev_sort.get())
+                return make_img.make_collage(grid, sorted_imgs, rev_row.get())
 
             pool = ThreadPool(1)
             pool.apply_async(action, args=(), callback=show_img)
             pool.close()
+
 
     Button(right_sort_opt_panel, text="Generate sorted image",
            command=generate_sorted_image).grid(row=4, columnspan=2, pady=5)
@@ -240,6 +248,7 @@ if __name__ == "__main__":
     Label(right_collage_opt_panel, textvariable=dest_img_path,
           wraplength=150).grid(row=1, columnspan=2, sticky="W")
 
+
     def load_dest_img():
         global dest_img
         if imgs is None:
@@ -251,7 +260,7 @@ if __name__ == "__main__":
                                                        ("all files", "*.*")))
             if fp is not None and len(fp) > 0 and os.path.isfile(fp):
                 try:
-                    print("Destination image loaded from", fp, file=out_wrapper)
+                    print("Destination image loaded from", fp)
                     dest_img = cv2.imread(fp)
                     show_img(dest_img)
                     dest_img_path.set(fp)
@@ -260,6 +269,7 @@ if __name__ == "__main__":
                                          traceback.format_exc())
             else:
                 return
+
 
     Button(right_collage_opt_panel, text="Load destination image",
            command=load_dest_img).grid(row=2, columnspan=2)
@@ -270,7 +280,7 @@ if __name__ == "__main__":
     Label(right_collage_opt_panel, text="Color space: ").grid(
         row=4, column=0, sticky="W")
     OptionMenu(right_collage_opt_panel, color_space, "", *
-               make_img.all_color_spaces).grid(row=4, column=1, sticky="W")
+    make_img.all_color_spaces).grid(row=4, column=1, sticky="W")
 
     Separator(right_collage_opt_panel, orient="horizontal").grid(
         row=6, columnspan=2, sticky="we", pady=(5, 5))
@@ -284,7 +294,7 @@ if __name__ == "__main__":
     Label(collage_even_panel, text="C Types: ").grid(
         row=0, column=0, sticky="W")
     OptionMenu(collage_even_panel, ctype, "", *
-               make_img.all_ctypes).grid(row=0, column=1, sticky="W")
+    make_img.all_ctypes).grid(row=0, column=1, sticky="W")
     Label(collage_even_panel, text="Duplicates: ").grid(
         row=1, column=0, sticky="W")
     Entry(collage_even_panel, textvariable=dup,
@@ -299,13 +309,16 @@ if __name__ == "__main__":
     Entry(collage_uneven_panel, textvariable=max_width,
           width=5).grid(row=0, column=1, sticky="W")
 
+
     def attach_even():
         collage_uneven_panel.grid_remove()
         collage_even_panel.grid(row=7, columnspan=2, sticky="W")
 
+
     def attach_uneven():
         collage_even_panel.grid_remove()
         collage_uneven_panel.grid(row=7, columnspan=2, sticky="W")
+
 
     even = StringVar()
     even.set("even")
@@ -314,6 +327,7 @@ if __name__ == "__main__":
                 state=ACTIVE, command=attach_even).grid(row=5, column=0, sticky="W")
     Radiobutton(right_collage_opt_panel, text="Uneven", variable=even, value="uneven",
                 command=attach_uneven).grid(row=5, column=1, sticky="W")
+
 
     def generate_collage():
         if imgs is None:
@@ -329,9 +343,10 @@ if __name__ == "__main__":
                     def action():
                         try:
                             grid, sorted_imgs, _ = make_img.calculate_collage_bipartite(dest_img_path.get(), imgs,
-                                                                                        dup.get(), color_space.get(), ctype.get(),
+                                                                                        dup.get(), color_space.get(),
+                                                                                        ctype.get(),
                                                                                         float(sigma.get()), out_wrapper)
-                            return make_img.make_collage(grid, sorted_imgs, False, out_wrapper)
+                            return make_img.make_collage(grid, sorted_imgs, False)
                         except:
                             messagebox.showerror(
                                 "Error", traceback.format_exc())
@@ -342,8 +357,8 @@ if __name__ == "__main__":
                         try:
                             grid, sorted_imgs, _ = make_img.calculate_collage_dup(dest_img_path.get(), imgs,
                                                                                   max_width.get(), color_space.get(),
-                                                                                  float(sigma.get()), out_wrapper)
-                            return make_img.make_collage(grid, sorted_imgs, False, out_wrapper)
+                                                                                  float(sigma.get()))
+                            return make_img.make_collage(grid, sorted_imgs, False)
                         except:
                             messagebox.showerror(
                                 "Error", traceback.format_exc())
@@ -357,16 +372,20 @@ if __name__ == "__main__":
             except:
                 return messagebox.showerror("Error", traceback.format_exc())
 
+
     Button(right_collage_opt_panel, text=" Generate Collage ",
            command=generate_collage).grid(row=8, columnspan=2, pady=(5, 3))
+
 
     def attach_sort():
         right_collage_opt_panel.grid_remove()
         right_sort_opt_panel.grid(row=2, columnspan=2, sticky="W")
 
+
     def attach_collage():
         right_sort_opt_panel.grid_remove()
         right_collage_opt_panel.grid(row=2, columnspan=2, sticky="W")
+
 
     Radiobutton(right_top_panel, text="Sort", value="sort", variable=opt,
                 state=ACTIVE, command=attach_sort).grid(row=5, column=0, sticky="W")
@@ -375,6 +394,7 @@ if __name__ == "__main__":
 
     Separator(right_panel, orient="horizontal").grid(
         row=3, columnspan=2, sticky="we", pady=(0, 10))
+
 
     def save_img():
         if result_img is None:
@@ -395,11 +415,12 @@ if __name__ == "__main__":
 
             fp = filedialog.asksaveasfilename(initialdir=os.path.dirname(__file__), title="Save your collage",
                                               filetypes=(
-                ("images", "*.jpg"), ("images", "*.png")),
-                defaultextension=".png", initialfile="result.png")
+                                                  ("images", "*.jpg"), ("images", "*.png")),
+                                              defaultextension=".png", initialfile="result.png")
             if fp is not None and len(fp) > 0 and os.path.isdir(os.path.dirname(fp)):
-                print("Image saved to", fp, file=out_wrapper)
+                print("Image saved to", fp)
                 imwrite(fp, result_img)
+
 
     Button(right_panel, text=" Save image ",
            command=save_img).grid(row=4, columnspan=2)
