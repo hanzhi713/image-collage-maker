@@ -76,32 +76,36 @@ def rand(img: np.ndarray) -> float:
 # The output wrapper for displaying the progress of J-V algorithm is only available for the GUI running in Linux
 class JVOutWrapper:
     def __init__(self, io_wrapper):
-        self.tqdm = tqdm(file=io_wrapper, ncols=io_wrapper.width)
         self.io_wrapper = io_wrapper
+        self.start_row_aug = False
 
     def write(self, lines):
         lines = lines.split("\n")
         for line in lines:
+            if not line.startswith("lapjv: "): continue
             if line.find("AUGMENT SOLUTION row ") > 0:
                 line = line.replace(" ", "")
                 slash_idx = line.find("/")
-                self.tqdm.n = int(line[line.find("[") + 1:slash_idx])
-                self.tqdm.total = int(line[slash_idx + 1:line.find("]")])
-                self.tqdm.update(0)
-            else:
-                if len(line) > 0:
-                    idx = line.find("lapjv: AUGMENT SOLUTION finished")
-                    if idx > -1:
-                        line = line[idx:] + "\n"
-                        self.tqdm.n = self.tqdm.total
-                        self.tqdm.update(0)
-                        self.tqdm.close()
-                        self.io_wrapper.write(line)
-                    else:
-                        self.io_wrapper.write(line + "\n")
+                s_idx = line.find("[")
+                e_idx = line.find("]")
+                if s_idx > -1 and slash_idx > -1 and e_idx > -1:
+                    if not self.start_row_aug:
+                        self.tqdm = tqdm(file=self.io_wrapper, ncols=self.io_wrapper.width, 
+                                         total=int(line[slash_idx + 1:e_idx]))
+                    self.tqdm.n = int(line[s_idx + 1:slash_idx])
+                    self.tqdm.update(0)
+                    self.start_row_aug = True
+                continue
+            if not self.start_row_aug:
+                self.io_wrapper.write(line + "\n")
 
     def flush(self):
         pass
+
+    def finish(self):
+        self.tqdm.n = self.tqdm.total
+        self.tqdm.update(0)
+        self.tqdm.close()
 
 
 def calculate_grid_size(rw: int, rh: int, num_imgs: int) -> tuple:
@@ -258,7 +262,7 @@ def chl_mean_lab(weights: np.ndarray) -> "function":
 
 
 def calculate_collage_bipartite(dest_img_path: str, imgs: list, dup: int = 1, colorspace="lab", ctype="float16",
-                                sigma: float = 1.0, v=None) -> [tuple, list, float]:
+                                sigma: float = 1.0, metric : str = "euclidean", v=None) -> [tuple, list, float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
     with the restriction that every image should be used the same amount of times
@@ -321,7 +325,7 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: list, dup: int = 1, co
     dest_img = dest_img.reshape(result_grid[0] * result_grid[1], 3)
 
     # compute pair-wise distances
-    cost_matrix = cdist(img_keys, dest_img, metric="euclidean")
+    cost_matrix = cdist(img_keys, dest_img, metric=metric)
 
     ctype = eval("np." + ctype)
     cost_matrix = ctype(cost_matrix)
@@ -337,8 +341,11 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: list, dup: int = 1, co
         from wurlitzer import pipes, STDOUT
         from wurlitzer import Wurlitzer
         Wurlitzer.flush_interval = 0.1
-        with pipes(stdout=JVOutWrapper(v), stderr=STDOUT):
+        wrapper = JVOutWrapper(v)
+        with pipes(stdout=wrapper, stderr=STDOUT):
             _, cols, cost = lapjv(cost_matrix, verbose=1)
+            wrapper.finish()
+
     else:
         _, cols, cost = lapjv(cost_matrix)
 
@@ -355,7 +362,7 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: list, dup: int = 1, co
 
 
 def calculate_collage_dup(dest_img_path: str, imgs: list, max_width: int = 50, color_space="lab",
-                          sigma: float = 1.0) -> [tuple, list, float]:
+                          sigma: float = 1.0, metric : str = "euclidean") -> [tuple, list, float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
     given that every image could be used arbitrary amount of times
@@ -403,7 +410,7 @@ def calculate_collage_dup(dest_img_path: str, imgs: list, max_width: int = 50, c
     for pixel in tqdm(dest_img, desc="[Computing assignments]", unit="pixel", unit_divisor=1000, unit_scale=True,
                       ncols=pbar_ncols):
         # Compute the distance between the current pixel and each image in the set
-        dist = cdist(img_keys, np.array([pixel]), metric="euclidean")[:, 0]
+        dist = cdist(img_keys, np.array([pixel]), metric=metric)[:, 0]
 
         # Find the index of the image which best approximates the current pixel
         idx = np.argmin(dist)
@@ -514,6 +521,8 @@ all_sort_methods = ["none", "bgr_sum", "av_hue", "av_sat", "av_lum", "rand",
 all_color_spaces = ["hsv", "hsl", "bgr", "lab"]
 
 all_ctypes = ["float16", "float32", "float64"]
+
+all_metrics = ["euclidean", "cityblock", "chebyshev"]
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()

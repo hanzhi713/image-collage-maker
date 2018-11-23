@@ -154,11 +154,14 @@ if __name__ == "__main__":
 
             def action():
                 global imgs
-                imgs = make_img.read_images(
-                    fp, (size, size), recursive.get(), 4)
-                grid = make_img.calculate_grid_size(
-                    16, 10, len(imgs))
-                return make_img.make_collage(grid, imgs, False)
+                try:
+                    imgs = make_img.read_images(
+                        fp, (size, size), recursive.get(), 4)
+                    grid = make_img.calculate_grid_size(
+                        16, 10, len(imgs))
+                    return make_img.make_collage(grid, imgs, False)
+                except:
+                    messagebox.showerror("Error", traceback.format_exc())
 
             pool = ThreadPool(1)
             print("Loading source images from", fp)
@@ -171,7 +174,7 @@ if __name__ == "__main__":
 
 
     Button(right_top_panel, text=" Load source images ", command=load_images).grid(
-        row=4, column=0, columnspan=2, pady=(0, 5))
+        row=4, columnspan=2, pady=(2, 5))
 
     right_top_panel.grid(row=0, column=0, pady=10, sticky="W")
 
@@ -189,13 +192,13 @@ if __name__ == "__main__":
     make_img.all_sort_methods).grid(row=0, column=1)
 
     Label(right_sort_opt_panel, text="Aspect ratio:").grid(
-        row=1, column=0, sticky="W")
+        row=1, column=0, sticky="W", pady=(2, 2))
     aspect_ratio_panel = PanedWindow(right_sort_opt_panel)
     rw = IntVar()
     rw.set(16)
     rh = IntVar()
     rh.set(10)
-    aspect_ratio_panel.grid(row=1, column=1)
+    aspect_ratio_panel.grid(row=1, column=1, pady=(2, 2))
     Entry(aspect_ratio_panel, width=3, textvariable=rw).grid(row=0, column=0)
     Label(aspect_ratio_panel, text=":").grid(row=0, column=1)
     Entry(aspect_ratio_panel, width=3, textvariable=rh).grid(row=0, column=2)
@@ -223,9 +226,12 @@ if __name__ == "__main__":
                 return messagebox.showerror("Illegal Argument", traceback.format_exc())
 
             def action():
-                grid, sorted_imgs = make_img.sort_collage(imgs, (w, h), sort_method.get(),
-                                                          rev_sort.get())
-                return make_img.make_collage(grid, sorted_imgs, rev_row.get())
+                try:
+                    grid, sorted_imgs = make_img.sort_collage(imgs, (w, h), sort_method.get(),
+                                                            rev_sort.get())
+                    return make_img.make_collage(grid, sorted_imgs, rev_row.get())
+                except:
+                    messagebox.showerror("Error", traceback.format_exc())
 
             pool = ThreadPool(1)
             pool.apply_async(action, args=(), callback=show_img)
@@ -274,16 +280,13 @@ if __name__ == "__main__":
     Button(right_collage_opt_panel, text="Load destination image",
            command=load_dest_img).grid(row=2, columnspan=2)
     Label(right_collage_opt_panel, text="Sigma: ").grid(
-        row=3, column=0, sticky="W", pady=(10, 2))
+        row=3, column=0, sticky="W", pady=(5, 2))
     Entry(right_collage_opt_panel, textvariable=sigma, width=8).grid(
-        row=3, column=1, sticky="W", pady=(10, 2))
-    Label(right_collage_opt_panel, text="Color space: ").grid(
+        row=3, column=1, sticky="W", pady=(5, 2))
+    Label(right_collage_opt_panel, text="Colorspace: ").grid(
         row=4, column=0, sticky="W")
     OptionMenu(right_collage_opt_panel, color_space, "", *
     make_img.all_color_spaces).grid(row=4, column=1, sticky="W")
-
-    Separator(right_collage_opt_panel, orient="horizontal").grid(
-        row=6, columnspan=2, sticky="we", pady=(5, 5))
 
     ctype = StringVar()
     ctype.set("float16")
@@ -299,7 +302,7 @@ if __name__ == "__main__":
         row=1, column=0, sticky="W")
     Entry(collage_even_panel, textvariable=dup,
           width=5).grid(row=1, column=1, sticky="W")
-    collage_even_panel.grid(row=7, columnspan=2, sticky="W")
+    collage_even_panel.grid(row=8, columnspan=2, sticky="W")
 
     max_width = IntVar()
     max_width.set(50)
@@ -312,22 +315,28 @@ if __name__ == "__main__":
 
     def attach_even():
         collage_uneven_panel.grid_remove()
-        collage_even_panel.grid(row=7, columnspan=2, sticky="W")
+        collage_even_panel.grid(row=8, columnspan=2, sticky="W")
 
 
     def attach_uneven():
         collage_even_panel.grid_remove()
-        collage_uneven_panel.grid(row=7, columnspan=2, sticky="W")
+        collage_uneven_panel.grid(row=8, columnspan=2, sticky="W")
 
+
+    distance_metric = StringVar()
+    distance_metric.set("euclidena")
+    Label(right_collage_opt_panel, text="Metric: ").grid(row=5, column=0, sticky="W")
+    OptionMenu(right_collage_opt_panel, distance_metric, "", *make_img.all_metrics).grid(row=5, column=1, sticky="W")
 
     even = StringVar()
     even.set("even")
-
     Radiobutton(right_collage_opt_panel, text="Even", variable=even, value="even",
-                state=ACTIVE, command=attach_even).grid(row=5, column=0, sticky="W")
+                state=ACTIVE, command=attach_even).grid(row=6, column=0, sticky="W")
     Radiobutton(right_collage_opt_panel, text="Uneven", variable=even, value="uneven",
-                command=attach_uneven).grid(row=5, column=1, sticky="W")
-
+                command=attach_uneven).grid(row=6, column=1, sticky="W")
+    
+    Separator(right_collage_opt_panel, orient="horizontal").grid(
+        row=7, columnspan=2, sticky="we", pady=(5, 5))
 
     def generate_collage():
         if imgs is None:
@@ -344,8 +353,8 @@ if __name__ == "__main__":
                         try:
                             grid, sorted_imgs, _ = make_img.calculate_collage_bipartite(dest_img_path.get(), imgs,
                                                                                         dup.get(), color_space.get(),
-                                                                                        ctype.get(),
-                                                                                        float(sigma.get()), out_wrapper)
+                                                                                        ctype.get(), float(sigma.get()), 
+                                                                                        distance_metric.get(), out_wrapper)
                             return make_img.make_collage(grid, sorted_imgs, False)
                         except:
                             messagebox.showerror(
@@ -357,7 +366,7 @@ if __name__ == "__main__":
                         try:
                             grid, sorted_imgs, _ = make_img.calculate_collage_dup(dest_img_path.get(), imgs,
                                                                                   max_width.get(), color_space.get(),
-                                                                                  float(sigma.get()))
+                                                                                  float(sigma.get()), distance_metric.get())
                             return make_img.make_collage(grid, sorted_imgs, False)
                         except:
                             messagebox.showerror(
@@ -374,7 +383,7 @@ if __name__ == "__main__":
 
 
     Button(right_collage_opt_panel, text=" Generate Collage ",
-           command=generate_collage).grid(row=8, columnspan=2, pady=(5, 3))
+           command=generate_collage).grid(row=9, columnspan=2, pady=(5, 3))
 
 
     def attach_sort():
