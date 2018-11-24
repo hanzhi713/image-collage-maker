@@ -10,11 +10,12 @@ import multiprocessing
 import sys
 import time
 import platform
+from typing import *
 
 pbar_ncols = None
 
 
-def bgr_chl_sum(img: np.ndarray) -> [float, float, float]:
+def bgr_chl_sum(img: np.ndarray) -> Tuple[float, float, float]:
     return np.sum(img[:, :, 0]), np.sum(img[:, :, 1]), np.sum(img[:, :, 2])
 
 
@@ -32,7 +33,7 @@ def av_sat(img: np.ndarray) -> float:
     return np.mean(hsv[:, :, 1])
 
 
-def hsv(img: np.ndarray) -> [float, float, float]:
+def hsv(img: np.ndarray) -> Tuple[float, float, float]:
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     return np.mean(hsv[:, :, 0]), np.mean(hsv[:, :, 1]), np.mean(hsv[:, :, 2])
 
@@ -108,7 +109,7 @@ class JVOutWrapper:
         self.tqdm.close()
 
 
-def calculate_grid_size(rw: int, rh: int, num_imgs: int) -> tuple:
+def calculate_grid_size(rw: int, rh: int, num_imgs: int) -> Tuple[int, int]:
     """
     :param rw: the width of the target image
     :param rh: the height of the target image
@@ -123,7 +124,7 @@ def calculate_grid_size(rw: int, rh: int, num_imgs: int) -> tuple:
     return min(possible_wh, key=lambda x: ((x[0] / x[1]) - (rw / rh)) ** 2)
 
 
-def make_collage(grid: tuple, sorted_imgs: list or np.ndarray, rev: False) -> np.ndarray:
+def make_collage(grid: Tuple[int, int], sorted_imgs: List[np.ndarray], rev: bool = False) -> np.ndarray:
     """
     :param grid: grid size
     :param sorted_imgs: list of images sorted in correct position
@@ -145,7 +146,7 @@ def make_collage(grid: tuple, sorted_imgs: list or np.ndarray, rev: False) -> np
     return combined_img
 
 
-def calculate_decay_weights_normal(shape: tuple, sigma: float = 1) -> np.ndarray:
+def calculate_decay_weights_normal(shape: Tuple[int, int], sigma: float = 1.0) -> np.ndarray:
     """
     Generate a matrix of probabilities (as weights) sampled from a truncated bivariate normal distribution
     centered at (0, 0) whose covariance matrix is equal to sigma times the identity matrix
@@ -170,7 +171,7 @@ def calculate_decay_weights_normal(shape: tuple, sigma: float = 1) -> np.ndarray
     return weights
 
 
-def sort_collage(imgs: list, ratio: tuple, sort_method="pca_lab", rev_sort=False) -> [tuple, np.ndarray]:
+def sort_collage(imgs: List[np.ndarray], ratio: Tuple[int, int], sort_method="pca_lab", rev_sort=False) -> Tuple[Tuple[int, int], np.ndarray]:
     """
     :param imgs: list of images
     :param ratio: The aspect ratio of the collage
@@ -222,8 +223,8 @@ def sort_collage(imgs: list, ratio: tuple, sort_method="pca_lab", rev_sort=False
     return result_grid, sorted_imgs
 
 
-def chl_mean_hsv(weights: np.ndarray) -> "function":
-    def f(img: np.ndarray) -> [float, float, float]:
+def chl_mean_hsv(weights: np.ndarray) -> Callable:
+    def f(img: np.ndarray) -> Tuple[float, float, float]:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         return np.average(img[:, :, 0], weights=weights), \
                np.average(img[:, :, 1], weights=weights), \
@@ -232,8 +233,8 @@ def chl_mean_hsv(weights: np.ndarray) -> "function":
     return f
 
 
-def chl_mean_hsl(weights: np.ndarray) -> "function":
-    def f(img: np.ndarray) -> [float, float, float]:
+def chl_mean_hsl(weights: np.ndarray) -> Callable:
+    def f(img: np.ndarray) -> Tuple[float, float, float]:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
         return np.average(img[:, :, 0], weights=weights), \
                np.average(img[:, :, 1], weights=weights), \
@@ -242,8 +243,8 @@ def chl_mean_hsl(weights: np.ndarray) -> "function":
     return f
 
 
-def chl_mean_bgr(weights: np.ndarray) -> "function":
-    def f(img: np.ndarray) -> [float, float, float]:
+def chl_mean_bgr(weights: np.ndarray) -> Callable:
+    def f(img: np.ndarray) -> Tuple[float, float, float]:
         return np.average(img[:, :, 0], weights=weights), \
                np.average(img[:, :, 1], weights=weights), \
                np.average(img[:, :, 2], weights=weights)
@@ -251,8 +252,8 @@ def chl_mean_bgr(weights: np.ndarray) -> "function":
     return f
 
 
-def chl_mean_lab(weights: np.ndarray) -> "function":
-    def f(img: np.ndarray) -> [float, float, float]:
+def chl_mean_lab(weights: np.ndarray) -> Callable:
+    def f(img: np.ndarray) -> Tuple[float, float, float]:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2Lab)
         return np.average(img[:, :, 0], weights=weights), \
                np.average(img[:, :, 1], weights=weights), \
@@ -261,8 +262,9 @@ def chl_mean_lab(weights: np.ndarray) -> "function":
     return f
 
 
-def calculate_collage_bipartite(dest_img_path: str, imgs: list, dup: int = 1, colorspace="lab", ctype="float16",
-                                sigma: float = 1.0, metric : str = "euclidean", v=None) -> [tuple, list, float]:
+def calculate_collage_bipartite(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1, 
+                                colorspace: str = "lab", ctype: str ="float16", sigma: float = 1.0, 
+                                metric : str = "euclidean", v = None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
     with the restriction that every image should be used the same amount of times
@@ -327,8 +329,8 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: list, dup: int = 1, co
     # compute pair-wise distances
     cost_matrix = cdist(img_keys, dest_img, metric=metric)
 
-    ctype = eval("np." + ctype)
-    cost_matrix = ctype(cost_matrix)
+    np_ctype = eval("np." + ctype)
+    cost_matrix = np_ctype(cost_matrix)
 
     print("Computing optimal assignment on a {}x{} matrix...".format(cost_matrix.shape[0], cost_matrix.shape[1]))
 
@@ -338,13 +340,16 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: list, dup: int = 1, co
     from lapjv import lapjv
 
     if v is not None and platform.system() == "Linux" and v.gui:
-        from wurlitzer import pipes, STDOUT
-        from wurlitzer import Wurlitzer
-        Wurlitzer.flush_interval = 0.1
-        wrapper = JVOutWrapper(v)
-        with pipes(stdout=wrapper, stderr=STDOUT):
-            _, cols, cost = lapjv(cost_matrix, verbose=1)
-            wrapper.finish()
+        try:
+            from wurlitzer import pipes, STDOUT
+            from wurlitzer import Wurlitzer
+            Wurlitzer.flush_interval = 0.1
+            wrapper = JVOutWrapper(v)
+            with pipes(stdout=wrapper, stderr=STDOUT):
+                _, cols, cost = lapjv(cost_matrix, verbose=1)
+                wrapper.finish()
+        except ImportError:
+            _, cols, cost = lapjv(cost_matrix)
 
     else:
         _, cols, cost = lapjv(cost_matrix)
@@ -362,7 +367,7 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: list, dup: int = 1, co
 
 
 def calculate_collage_dup(dest_img_path: str, imgs: list, max_width: int = 50, color_space="lab",
-                          sigma: float = 1.0, metric : str = "euclidean") -> [tuple, list, float]:
+                          sigma: float = 1.0, metric : str = "euclidean") -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
     given that every image could be used arbitrary amount of times
@@ -448,7 +453,7 @@ def save_img(img: np.ndarray, path: str, suffix: str) -> None:
         imwrite(path, img)
 
 
-def read_images(pic_path: str, img_size: tuple, recursive=False, num_process=1) -> list:
+def read_images(pic_path: str, img_size: Tuple[int, int], recursive: bool = False, num_process: int = 1) -> List[np.ndarray]:
     assert os.path.isdir(pic_path), "Directory " + pic_path + "is non-existent"
     files = []
     if recursive:
@@ -498,7 +503,7 @@ def read_images(pic_path: str, img_size: tuple, recursive=False, num_process=1) 
     return imgs
 
 
-def read_img_helper(files, img_size, queue) -> list:
+def read_img_helper(files: List[str], img_size: Tuple[int, int], queue) -> List[np.ndarray]:
     def imread(filename):
         return cv2.imdecode(np.fromfile(filename, np.uint8), cv2.IMREAD_COLOR)
 

@@ -1,20 +1,21 @@
 from tkinter import *
 from tkinter import filedialog, messagebox
 from tkinter.ttk import *
-import traceback
-import os
-import cv2
 from PIL import Image, ImageTk
 from multiprocessing.pool import ThreadPool
 from multiprocessing import Queue, freeze_support
+from typing import Tuple, List
+import traceback
 import math
 import sys
+import os
+import cv2
 import make_img
 
 make_img.pbar_ncols = 110
 
 
-def limit_wh(w: int, h: int, max_width: int, max_height: int) -> [int, int]:
+def limit_wh(w: int, h: int, max_width: int, max_height: int) -> Tuple[int, int]:
     if h > max_height:
         ratio = max_height / h
         h = max_height
@@ -169,8 +170,7 @@ if __name__ == "__main__":
             pool.close()
 
         except:
-            t = traceback.format_exc()
-            messagebox.showerror("Error", t)
+            messagebox.showerror("Error", traceback.format_exc())
 
 
     Button(right_top_panel, text=" Load source images ", command=load_images).grid(
@@ -324,7 +324,7 @@ if __name__ == "__main__":
 
 
     distance_metric = StringVar()
-    distance_metric.set("euclidena")
+    distance_metric.set("euclidean")
     Label(right_collage_opt_panel, text="Metric: ").grid(row=5, column=0, sticky="W")
     OptionMenu(right_collage_opt_panel, distance_metric, "", *make_img.all_metrics).grid(row=5, column=1, sticky="W")
 
