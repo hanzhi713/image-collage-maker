@@ -339,7 +339,7 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: List[np.ndarray], dup:
 
     from lapjv import lapjv
 
-    if v is not None and platform.system() == "Linux" and v.gui:
+    if v is not None and (platform.system() == "Linux" or platform.system() == "Darwin") and v.gui:
         try:
             from wurlitzer import pipes, STDOUT
             from wurlitzer import Wurlitzer
