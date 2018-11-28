@@ -1,11 +1,11 @@
 <table style="border: 0">
     <tr>
-        <td><img src="result-rand.png" width="480px"></td>
-        <td><img src="collage.png" width="270px"></td>
+        <td><img src="examples/result-rand.png" width="480px"></td>
+        <td><img src="examples/collage.png" width="270px"></td>
     </tr>
     <tr>
-        <td><img src="result-pca_bgr.png" width="480px"></td>
-        <td><img src="collage-best-fit.png" width="270px"></td>
+        <td><img src="examples/result-pca_bgr.png" width="480px"></td>
+        <td><img src="examples/collage-best-fit.png" width="270px"></td>
     </tr>
 </table>
 
@@ -55,7 +55,7 @@ You can run the GUI (experimental) to make the collage. Simply type
 python3 gui.py
 ```
 
-If you're using Windows, you may want to try the [experimental build for Windows](https://github.com/hanzhi713/image-collage-maker/releases)
+If you're using Windows or MacOS, you may want to try the [binaries](https://github.com/hanzhi713/image-collage-maker/releases) built by PyInstaller
 
 Or, read the following part for the usage of the command-line tool.
 
@@ -67,17 +67,17 @@ python3 make_img.py --path img --sort pca_bgr --size 100
 
 Use ```--ratio w h``` to change the aspect ratio, whose default is 16:9
 
-Example: use ```--ratio 21 9``` to change aspect ratio to 21:9
+Example: use ```--ratio 21 9``` to change the aspect ratio to 21:9
 
 Result:
 
-<img src="result-pca_bgr.png"/>
+<img src="examples/result-pca_bgr.png"/>
 
 #### Option 2: Fit a particular image
 
 ##### Option 2.1: Give a fair chance to each image
 
-This fitting option ensures that each image is used the same amount of times.
+This fitting option ensures that each image is used for the same amount of times.
 
 ```bash
 python3 make_img.py --path img --collage img/1.png --size 25 --dup 10 --out collage.png
@@ -85,24 +85,24 @@ python3 make_img.py --path img --collage img/1.png --size 25 --dup 10 --out coll
 
 ```--dup 10``` allows each source image to be used 10 times. Increase that number if you don't have enough source images or you want a better fitting result. Note that a large number of images may result in long computational time.
 
-| Original                           | Fitting Result                        |
-| ---------------------------------- | ------------------------------------- |
-| <img src="dest.png" width="400px"> | <img src="collage.png" width="400px"> |
+| Original                                    | Fitting Result                                 |
+| ------------------------------------------- | ---------------------------------------------- |
+| <img src="examples/dest.png" width="400px"> | <img src="examples/collage.png" width="400px"> |
 
 
 ##### Option 2.2: Best fit
 
-This fitting option just selects the best subset of images you provided to approximate your destination images. Each image in that subset will be used for arbitrary amount of times.
+This fitting option just selects the best subset of images you provided to approximate your destination images. Each image in that subset will be used for arbitrary number of times.
 
-Add ```--uneven``` flag to enable this option. You can also specity ```--max_width``` to change the side length of the grid. Default is 50.
+Add ```--uneven``` flag to enable this option. You can also specify ```--max_width``` to change the width of the grid. The height will be automatically calculated based on the max_width provided. Generally, a larger grid will give better result. The default value is 50.
 
 ```bash
 python3 make_img.py --path img --out collage-best-fit.png --collage img/1.png --size 25 --uneven
 ```
 
-| Original                           | Fitting Result                                          |
-| ---------------------------------- | ------------------------------------------------------- |
-| <img src="dest.png" width="400px"> | <img src="collage-best-fit_bgr_-1.0.png" width="400px"> |
+| Original                                    | Fitting Result                                                   |
+| ------------------------------------------- | ---------------------------------------------------------------- |
+| <img src="examples/dest.png" width="400px"> | <img src="examples/collage-best-fit_bgr_-1.0.png" width="400px"> |
 
 
 #### Other options
