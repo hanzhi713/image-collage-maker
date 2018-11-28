@@ -20,12 +20,20 @@ If you have created the "collage" environment before, please remove it first.
 conda-env remove -n collage
 ```
 
+> Note: You can use other names for the conda environment as long as you activate it before running the build script. Under Linux, you need to change the build script for it to find the correct location of the library.
+
 ## Environment Setup: MacOS and Linux
 
 Create a conda environment without mkl. We don't want mkl because it's a huge library which takes a lot of space.
 
 ```bash
 conda create -n collage python=3.6 nomkl numpy scipy scikit-learn pillow opencv tqdm
+```
+
+Activate the conda environment
+
+```bash
+source activate collage
 ```
 
 Install the packages that are not available in the Anaconda repo
@@ -40,6 +48,12 @@ Create a conda environment
 
 ```bash
 conda create -n collage python=3.6
+```
+
+Activate the conda environment
+
+```bash
+activate collage
 ```
 
 Install numpy from conda-forge to avoid installing mkl
