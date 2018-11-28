@@ -36,6 +36,7 @@ class SafeText(Text):
         self.queue = Queue()
         self.encoding = "utf-8"
         self.gui = True
+        self.width = 95
         self.update_me()
 
     def write(self, line: str):
@@ -136,15 +137,24 @@ if __name__ == "__main__":
     img_size = IntVar()
     img_size.set(50)
     Label(right_panel, text="Image size: ").grid(
-        row=2, column=0, pady=(3, 2))
+        row=2, column=0, sticky="W", pady=(3, 2))
     Entry(right_panel, width=5, textvariable=img_size).grid(
         row=2, column=1, sticky="W", pady=(3, 2))
 
     # right panel ROW 3
+    resize_opt = StringVar()
+    resize_opt.set("center")
+    Label(right_panel, text="Resize flag: ").grid(
+        row=3, column=0, sticky="W", pady=(2, 3))
+    OptionMenu(right_panel, resize_opt, "center", "stretch").grid(
+        row=3, column=1, sticky="W", pady=(2, 3))
+    
+
+    # right panel ROW 4
     recursive = BooleanVar()
     recursive.set(True)
     Checkbutton(right_panel, text="Read sub-folders",
-                variable=recursive).grid(row=3, columnspan=2, sticky="W")
+                variable=recursive).grid(row=4, columnspan=2, sticky="W")
 
     imgs = None
     current_image = None
@@ -166,7 +176,7 @@ if __name__ == "__main__":
                 global imgs
                 try:
                     imgs = make_img.read_images(
-                        fp, (size, size), recursive.get(), 4)
+                        fp, (size, size), recursive.get(), 4, resize_opt.get())
                     grid = make_img.calculate_grid_size(
                         16, 10, len(imgs))
                     return make_img.make_collage(grid, imgs, False)
@@ -180,33 +190,33 @@ if __name__ == "__main__":
         except:
             messagebox.showerror("Error", traceback.format_exc())
 
-    # right panel ROW 4
+    # right panel ROW 5
     Button(right_panel, text=" Load source images ", command=load_images).grid(
-        row=4, columnspan=2, pady=(2, 5))
+        row=5, columnspan=2, pady=(3, 4))
 
     def attach_sort():
         right_collage_opt_panel.grid_remove()
-        right_sort_opt_panel.grid(row=7, columnspan=2, sticky="W")
+        right_sort_opt_panel.grid(row=8, columnspan=2, sticky="W")
 
     def attach_collage():
         right_sort_opt_panel.grid_remove()
-        right_collage_opt_panel.grid(row=7, columnspan=2, sticky="W")
-
-    # right panel ROW 5
-    Radiobutton(right_panel, text="Sort", value="sort", variable=opt,
-                state=ACTIVE, command=attach_sort).grid(row=5, column=0, sticky="W")
-    Radiobutton(right_panel, text="Collage", value="collage", variable=opt,
-                command=attach_collage).grid(row=5, column=1, sticky="W")
+        right_collage_opt_panel.grid(row=8, columnspan=2, sticky="W")
 
     # right panel ROW 6
-    Separator(right_panel, orient="horizontal").grid(
-        row=6, columnspan=2, pady=(5, 3), sticky="we")
+    Radiobutton(right_panel, text="Sort", value="sort", variable=opt,
+                state=ACTIVE, command=attach_sort).grid(row=6, column=0, sticky="W")
+    Radiobutton(right_panel, text="Collage", value="collage", variable=opt,
+                command=attach_collage).grid(row=6, column=1, sticky="W")
 
-    # right panel ROW 7: Dynamically attached
+    # right panel ROW 7
+    Separator(right_panel, orient="horizontal").grid(
+        row=7, columnspan=2, pady=(5, 3), sticky="we")
+
+    # right panel ROW 8: Dynamically attached
     # right sort option panel !!OR!! right collage option panel
     right_sort_opt_panel = PanedWindow(right_panel)
     right_sort_opt_panel.grid(
-        row=7, column=0, columnspan=2, pady=2, sticky="W")
+        row=8, column=0, columnspan=2, pady=2, sticky="W")
 
     # ------------------------- right sort option panel --------------------------
     # right sort option panel ROW 0:
@@ -433,9 +443,9 @@ if __name__ == "__main__":
            command=generate_collage).grid(row=9, columnspan=2, pady=(5, 5))
     # ------------------------ end right collage option panel --------------------
 
-    # right panel ROW 8:
+    # right panel ROW 9:
     Separator(right_panel, orient="horizontal").grid(
-        row=8, columnspan=2, sticky="we", pady=(4, 10))
+        row=9, columnspan=2, sticky="we", pady=(4, 10))
 
     def save_img():
         if result_img is None:
@@ -462,9 +472,9 @@ if __name__ == "__main__":
                 print("Image saved to", fp)
                 imwrite(fp, result_img)
 
-    # right panel ROW 9:
+    # right panel ROW 10:
     Button(right_panel, text=" Save image ",
-           command=save_img).grid(row=9, columnspan=2)
+           command=save_img).grid(row=10, columnspan=2)
     # -------------------------- end right panel -----------------------------------
 
     # make the window appear at the center

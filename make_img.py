@@ -6,11 +6,12 @@ import argparse
 import random
 from tqdm import tqdm
 import concurrent.futures as con
-import multiprocessing
+import multiprocessing as mp
 import sys
 import time
 import platform
 from typing import *
+import traceback
 
 pbar_ncols = None
 
@@ -78,7 +79,7 @@ def rand(img: np.ndarray) -> float:
 class JVOutWrapper:
     def __init__(self, io_wrapper):
         self.io_wrapper = io_wrapper
-        self.start_row_aug = False
+        self.tqdm = None
 
     def write(self, lines):
         lines = lines.split("\n")
@@ -90,12 +91,13 @@ class JVOutWrapper:
                 s_idx = line.find("[")
                 e_idx = line.find("]")
                 if s_idx > -1 and slash_idx > -1 and e_idx > -1:
-                    if not self.start_row_aug:
+                    if self.tqdm:
+                        self.tqdm.n = int(line[s_idx + 1:slash_idx])
+                        self.tqdm.update(0)
+                        self.start_row_aug = True
+                    else:
                         self.tqdm = tqdm(file=self.io_wrapper, ncols=self.io_wrapper.width, 
                                          total=int(line[slash_idx + 1:e_idx]))
-                    self.tqdm.n = int(line[s_idx + 1:slash_idx])
-                    self.tqdm.update(0)
-                    self.start_row_aug = True
                 continue
             if not self.start_row_aug:
                 self.io_wrapper.write(line + "\n")
@@ -104,9 +106,10 @@ class JVOutWrapper:
         pass
 
     def finish(self):
-        self.tqdm.n = self.tqdm.total
-        self.tqdm.update(0)
-        self.tqdm.close()
+        if self.tqdm:
+            self.tqdm.n = self.tqdm.total
+            self.tqdm.update(0)
+            self.tqdm.close()
 
 
 def calculate_grid_size(rw: int, rh: int, num_imgs: int) -> Tuple[int, int]:
@@ -450,7 +453,8 @@ def save_img(img: np.ndarray, path: str, suffix: str) -> None:
         imwrite(path, img)
 
 
-def read_images(pic_path: str, img_size: Tuple[int, int], recursive: bool = False, num_process: int = 1) -> List[np.ndarray]:
+def read_images(pic_path: str, img_size: Tuple[int, int], recursive: bool = False, 
+    num_process: int = 1, flag: str = "stretch") -> List[np.ndarray]:
     assert os.path.isdir(pic_path), "Directory " + pic_path + "is non-existent"
     files = []
     if recursive:
@@ -476,19 +480,22 @@ def read_images(pic_path: str, img_size: Tuple[int, int], recursive: bool = Fals
     slice_length = len(files) // num_process
     pool = con.ProcessPoolExecutor(num_process)
     futures = []
-    manager = multiprocessing.Manager()
-    queue = manager.Queue()
+    queue = mp.Manager().Queue()
     for i in range(num_process - 1):
         futures.append(pool.submit(read_img_helper,
-                                   files[i * slice_length:(i + 1) * slice_length], img_size, queue))
+                                   files[i * slice_length:(i + 1) * slice_length], img_size, queue, flag))
     futures.append(pool.submit(read_img_helper,
-                               files[(num_process - 1) * slice_length:], img_size, queue))
+                               files[(num_process - 1) * slice_length:], img_size, queue, flag))
 
     while True:
         try:
-            pbar.update(queue.get_nowait())
-            if pbar.n >= len(files):
-                break
+            out = queue.get_nowait()
+            if type(out) == str:
+                pbar.write(out)
+            elif type(out) == int:
+                pbar.update(out)
+                if pbar.n >= len(files):
+                    break
         except:
             time.sleep(0.001)
 
@@ -500,26 +507,47 @@ def read_images(pic_path: str, img_size: Tuple[int, int], recursive: bool = Fals
     return imgs
 
 
-def read_img_helper(files: List[str], img_size: Tuple[int, int], queue) -> List[np.ndarray]:
+def read_img_helper(files: List[str], img_size: Tuple[int, int], queue: mp.Queue, flag: str = "center") -> List[np.ndarray]:
     def imread(filename):
         return cv2.imdecode(np.fromfile(filename, np.uint8), cv2.IMREAD_COLOR)
 
     imgs = []
-    for i, img_file in enumerate(files):
+    for img_file in files:
         try:
-            imgs.append(cv2.resize(imread(img_file),
-                                   img_size, interpolation=cv2.INTER_AREA))
-        except:
+            img = imread(img_file)
+            if flag == "center":
+                h, w, _ = img.shape
+                if w == h:
+                    imgs.append(cv2.resize(img, img_size, interpolation=cv2.INTER_AREA))
+                else:
+                    if w > h:
+                        ratio = img_size[1] / h
+                        img = cv2.resize(img, (round(w * ratio), img_size[1]), interpolation=cv2.INTER_AREA)
+                        s = int((w * ratio - img_size[0]) // 2)
+                        img = img[:, s:s + img_size[0], :]
+                    else:
+                        ratio = img_size[0] / w
+                        img = cv2.resize(img, (img_size[0], round(h * ratio)), interpolation=cv2.INTER_AREA)
+                        s = int((h * ratio - img_size[1]) // 2)
+                        img = img[s:s + img_size[1], :, :]
+                    imgs.append(img)
+
+            else:
+                imgs.append(cv2.resize(img, img_size, interpolation=cv2.INTER_AREA))
+        except Exception as e:
             pass
+            # queue.put(traceback.format_exc())
         queue.put(1)
     return imgs
 
 
-all_sort_methods = ["none", "bgr_sum", "av_hue", "av_sat", "av_lum", "rand",
-                    "pca_bgr", "pca_hsv", "pca_lab", "pca_gray", "pca_lum", "pca_sat", "pca_hue",
-                    "tsne_bgr", "tsne_hsv", "tsne_lab", "tsne_gray", "tsne_lum", "tsne_sat", "tsne_hue",
-                    "umap_bgr", "umap_hsv", "umap_lab", "umap_gray", "umap_lum", "umap_sat", "umap_hue",
-                    ]
+all_sort_methods = ["none", "bgr_sum", "av_hue", "av_sat", "av_lum", "rand"]
+
+# # these require scikit-learn
+# all_sort_methods.extend(["pca_bgr", "pca_hsv", "pca_lab", "pca_gray", "pca_lum", "pca_sat", "pca_hue",
+#                          "tsne_bgr", "tsne_hsv", "tsne_lab", "tsne_gray", "tsne_lum", "tsne_sat", "tsne_hue",
+#                          "umap_bgr", "umap_hsv", "umap_lab", "umap_gray", "umap_lum", "umap_sat", "umap_hue"])
+
 all_color_spaces = ["hsv", "hsl", "bgr", "lab"]
 
 all_ctypes = ["float16", "float32", "float64"]
@@ -527,7 +555,7 @@ all_ctypes = ["float16", "float32", "float64"]
 all_metrics = ["euclidean", "cityblock", "chebyshev"]
 
 if __name__ == "__main__":
-    multiprocessing.freeze_support()
+    mp.freeze_support()
     all_sigmas = np.concatenate(
         (np.arange(-1, -0.45, 0.05), np.arange(0.5, 1.05, 0.05)))
 
