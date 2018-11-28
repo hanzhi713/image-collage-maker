@@ -94,12 +94,11 @@ class JVOutWrapper:
                     if self.tqdm:
                         self.tqdm.n = int(line[s_idx + 1:slash_idx])
                         self.tqdm.update(0)
-                        self.start_row_aug = True
                     else:
                         self.tqdm = tqdm(file=self.io_wrapper, ncols=self.io_wrapper.width, 
                                          total=int(line[slash_idx + 1:e_idx]))
                 continue
-            if not self.start_row_aug:
+            if not self.tqdm:
                 self.io_wrapper.write(line + "\n")
 
     def flush(self):
