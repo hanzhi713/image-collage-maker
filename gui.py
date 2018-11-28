@@ -116,8 +116,8 @@ if __name__ == "__main__":
         result_img = img
         width, height = canvas.winfo_width(), canvas.winfo_height()
         img_h, img_w, _ = img.shape
+        w, h = limit_wh(img_w, img_h, width, height)
         if img_h > height or img_w > width:
-            w, h = limit_wh(img_w, img_h, width, height)
             img = cv2.resize(img, (w, h), cv2.INTER_AREA)
         preview = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
