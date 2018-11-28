@@ -542,10 +542,12 @@ def read_img_helper(files: List[str], img_size: Tuple[int, int], queue: mp.Queue
 
 all_sort_methods = ["none", "bgr_sum", "av_hue", "av_sat", "av_lum", "rand"]
 
-# # these require scikit-learn
-# all_sort_methods.extend(["pca_bgr", "pca_hsv", "pca_lab", "pca_gray", "pca_lum", "pca_sat", "pca_hue",
-#                          "tsne_bgr", "tsne_hsv", "tsne_lab", "tsne_gray", "tsne_lum", "tsne_sat", "tsne_hue",
-#                          "umap_bgr", "umap_hsv", "umap_lab", "umap_gray", "umap_lum", "umap_sat", "umap_hue"])
+# these require scikit-learn
+all_sort_methods.extend(["pca_bgr", "pca_hsv", "pca_lab", "pca_gray", "pca_lum", "pca_sat", "pca_hue",
+                         "tsne_bgr", "tsne_hsv", "tsne_lab", "tsne_gray", "tsne_lum", "tsne_sat", "tsne_hue"])
+
+# these require scikit-learn and umap-learn
+# all_sort_methods.extend(["umap_bgr", "umap_hsv", "umap_lab", "umap_gray", "umap_lum", "umap_sat", "umap_hue"])
 
 all_color_spaces = ["hsv", "hsl", "bgr", "lab"]
 

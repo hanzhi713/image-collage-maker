@@ -11,9 +11,8 @@ import sys
 import os
 import cv2
 import numpy as np
+import time
 import make_img
-
-make_img.pbar_ncols = 95
 
 
 def limit_wh(w: int, h: int, max_width: int, max_height: int) -> Tuple[int, int]:
@@ -36,7 +35,8 @@ class SafeText(Text):
         self.queue = Queue()
         self.encoding = "utf-8"
         self.gui = True
-        self.width = 95
+        self.initial_width = 80
+        self.width = self.initial_width
         self.update_me()
 
     def write(self, line: str):
@@ -71,10 +71,13 @@ if __name__ == "__main__":
     freeze_support()
     pool = ThreadPoolExecutor(1)
     root = Tk()
+    root.title("Collage Maker")
 
     # ---------------- initialization -----------------
     left_panel = PanedWindow(root)
-    left_panel.grid(row=0, column=0)
+    left_panel.grid(row=0, column=0, sticky="nsew")
+    # left_panel.rowconfigure(0, weight=1)
+    # left_panel.columnconfigure(0, weight=1)
     Separator(root, orient="vertical").grid(
         row=0, column=1, sticky="nsew", padx=(5, 5))
     right_panel = PanedWindow(root)
@@ -95,6 +98,8 @@ if __name__ == "__main__":
     log_panel.grid(row=2, column=0, columnspan=2, sticky="WE")
     log_panel.grid_columnconfigure(0, weight=1)
     log_entry = SafeText(log_panel, height=6, bd=0)
+    make_img.pbar_ncols = log_entry.width
+    # log_entry.configure(font=("", 10, ""))
     log_entry.grid(row=1, column=0, sticky="nsew")
     scroll = Scrollbar(log_panel, orient="vertical", command=log_entry.yview)
     log_entry.config(yscrollcommand=scroll.set)
@@ -109,16 +114,19 @@ if __name__ == "__main__":
     def show_img(img: np.ndarray) -> None:
         global result_img
         result_img = img
-        w, h = limit_wh(*img.shape[:2][::-1], 800, 500)
-        preview = cv2.cvtColor(cv2.resize(img, (w, h),
-                                          cv2.INTER_AREA), cv2.COLOR_BGR2RGB)
-        
+        width, height = canvas.winfo_width(), canvas.winfo_height()
+        img_h, img_w, _ = img.shape
+        if img_h > height or img_w > width:
+            w, h = limit_wh(img_w, img_h, width, height)
+            img = cv2.resize(img, (w, h), cv2.INTER_AREA)
+        preview = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
         # prevent the image from being garbage-collected
         root.preview = ImageTk.PhotoImage(image=Image.fromarray(preview))
         canvas.delete("all")
-        canvas.create_image((800 - w) // 2, (500 - h) // 2,
+        canvas.create_image((width - w) // 2, (height - h) // 2,
                             image=root.preview, anchor=NW)
-        print("Done")
+        # print("Done")
 
     # --------------------- right panel's children ------------------------
     # right panel ROW 0
@@ -146,7 +154,7 @@ if __name__ == "__main__":
     resize_opt.set("center")
     Label(right_panel, text="Resize flag: ").grid(
         row=3, column=0, sticky="W", pady=(2, 3))
-    OptionMenu(right_panel, resize_opt, "center", "stretch").grid(
+    OptionMenu(right_panel, resize_opt, "", "center", "stretch").grid(
         row=3, column=1, sticky="W", pady=(2, 3))
     
 
@@ -285,7 +293,7 @@ if __name__ == "__main__":
     dest_img_path = StringVar()
     dest_img_path.set("N/A")
     dest_img = None
-    Label(right_collage_opt_panel, text="Path of destination image").grid(
+    Label(right_collage_opt_panel, text="Path of destination image: ").grid(
         row=0, columnspan=2, sticky="W", pady=2)
 
     # right collage option panel ROW 1:
@@ -486,4 +494,27 @@ if __name__ == "__main__":
     x = w / 2 - size[0] / 2
     y = h / 2 - size[1] / 2 - 10
     root.geometry("%dx%d+%d+%d" % (size + (x, y)))
+    root.update()
+
+    right_panel_width = right_panel.winfo_width()
+    log_entry_height = left_panel.winfo_height() - canvas.winfo_height()
+    last_resize_time = time.time()
+
+    def canvas_resize(event):
+        global last_resize_time
+        if time.time() - last_resize_time > 0.25 and event.width >= 800 and event.height >= 500:
+            last_resize_time = time.time()
+            log_entry.configure(height=6 + math.floor((event.height - 500) / 80))
+            log_entry.width = log_entry.initial_width + math.floor((event.width - 800) / 10)
+            make_img.pbar_ncols = log_entry.width
+            log_entry.update()
+            w, h = event.width - right_panel_width - 20, event.height - log_entry.winfo_height() - 15
+            pw, ph = canvas.winfo_width(), canvas.winfo_height()
+            w_scale, h_scale = w / pw, h / ph
+            canvas.configure(width=w, height=h)
+            canvas.update()
+            if result_img is not None:
+                show_img(result_img)
+
+    root.bind("<Configure>", canvas_resize)
     root.mainloop()
