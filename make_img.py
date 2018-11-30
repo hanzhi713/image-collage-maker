@@ -491,6 +491,77 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: List[np.ndarray], dup:
 
     return grid, np.array(imgs)[cols], cost
 
+def calculate_salient_collage_dup(dest_img_path: str, imgs: list, max_width: int = 50, color_space="lab",
+                          sigma: float = 1.0, metric: str = "euclidean") -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+    assert isfile(dest_img_path)
+    from scipy.spatial.distance import cdist
+
+    dest_img = cv2.imread(dest_img_path)
+
+    saliency = cv2.saliency.StaticSaliencyFineGrained_create()
+    _, saliency_map = saliency.computeSaliency(dest_img)
+    _, thresh = cv2.threshold(saliency_map * 255, 50, 255, cv2.THRESH_BINARY)
+
+    rh, rw, _ = dest_img.shape
+
+    # print(thresh)
+
+    for i in range(rh):
+        for j in range(rw):
+            if thresh[i][j] < 10:
+                # print("haha ")
+                dest_img[i][j] = [255,255,255]
+
+    print(dest_img)
+
+    rh = round(rh * max_width / rw)
+    grid = (max_width, rh)
+
+    h, w, _ = imgs[0].shape
+
+    # print(np.ones((h, w, 3), np.uint8) * 255)
+    imgs.append(np.ones((h, w, 3), np.uint8) * 255)
+
+    print("Calculated grid size based on the aspect ratio of the image provided:", grid)
+
+    weights = calculate_decay_weights_normal(imgs[0].shape[:2], sigma)
+    dest_img = cv2.resize(dest_img, grid, cv2.INTER_AREA)
+    t = time.clock()
+    print("Computing costs")
+    if color_space == "hsv":
+        img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))
+        dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2HSV)
+    elif color_space == "hsl":
+        img_keys = np.array(list(map(chl_mean_hsl(weights), imgs)))
+        dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2HLS)
+    elif color_space == "bgr":
+        img_keys = np.array(list(map(chl_mean_bgr(weights), imgs)))
+    elif color_space == "lab":
+        img_keys = np.array(list(map(chl_mean_lab(weights), imgs)))
+        dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2Lab)
+
+    dest_img = dest_img.reshape(grid[0] * grid[1], 3)
+
+    sorted_imgs = []
+    cost = 0
+    for pixel in tqdm(dest_img, desc="[Computing assignments]", unit="pixel", unit_divisor=1000, unit_scale=True,
+                      ncols=pbar_ncols):
+        # Compute the distance between the current pixel and each image in the set
+        dist = cdist(img_keys, np.array([pixel]), metric=metric)[:, 0]
+
+        # Find the index of the image which best approximates the current pixel
+        idx = np.argmin(dist)
+
+        # Store that image
+        sorted_imgs.append(imgs[idx])
+
+        # Accumulate the distance to get the total cot
+        cost += dist[idx]
+
+    print("Time taken: {}s".format(np.round(time.clock() - t, 2)))
+
+    return grid, sorted_imgs, cost
+    
 
 def calculate_collage_dup(dest_img_path: str, imgs: list, max_width: int = 50, color_space="lab",
                           sigma: float = 1.0, metric: str = "euclidean") -> Tuple[Tuple[int, int], List[np.ndarray], float]:
@@ -828,6 +899,11 @@ if __name__ == "__main__":
             plt.show()
 
         else:
+            if args.uneven and args.salient:
+                grid, sorted_imgs, _ = calculate_salient_collage_dup(args.collage, imgs, args.max_width,
+                                                             args.colorspace, args.sigma, args.metric)
+                save_img(make_collage(grid, sorted_imgs, args.rev_row),
+                         args.out, "")
             if args.uneven:
                 grid, sorted_imgs, _ = calculate_collage_dup(args.collage, imgs, args.max_width,
                                                              args.colorspace, args.sigma, args.metric)
