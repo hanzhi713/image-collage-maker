@@ -270,7 +270,7 @@ def chl_mean_lab(weights: np.ndarray) -> Callable:
 
 def calculate_salient_collage_bipartite(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
                                         colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
-                                        metric: str = "euclidean", v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+                                        metric: str = "euclidean", lower_thresh : int = 50, v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     assert isfile(dest_img_path)
     from scipy.spatial.distance import cdist
 
@@ -290,7 +290,7 @@ def calculate_salient_collage_bipartite(dest_img_path: str, imgs: List[np.ndarra
     # Remove un-salient part of dest_image
     saliency = cv2.saliency.StaticSaliencyFineGrained_create()
     _, saliency_map = saliency.computeSaliency(dest_img)
-    _, thresh = cv2.threshold(saliency_map * 255, 50, 255, cv2.THRESH_BINARY)
+    _, thresh = cv2.threshold(saliency_map * 255, lower_thresh, 255, cv2.THRESH_BINARY)
 
     # print(thresh)
 
@@ -389,26 +389,162 @@ def calculate_salient_collage_bipartite(dest_img_path: str, imgs: List[np.ndarra
 
     return grid, np.array(imgs)[cols], cost
 
-def calculate_separate_salient_collage_bipartite(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
+def calculate_salient_collage_bipartite_test(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
                                 colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
-                                metric: str = "euclidean", v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
-    
+                                metric: str = "euclidean", lower_thresh : int = 75, v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     assert isfile(dest_img_path)
     from scipy.spatial.distance import cdist
-    #copy source images
-    #deep copy
+
+    print("Duplicating {} times".format(dup))
+
+    # avoid modifying the original array
     imgs = list(map(np.copy, imgs))
     imgs_copy = list(map(np.copy, imgs))
     for i in range(dup - 1):
         imgs.extend(imgs_copy)
-    
-    
-    #read dest image
+
     dest_img = cv2.imread(dest_img_path)
 
-    #convert dest image into several object images, store them and their coordinate
-    #process the object images and return each collaged images
-    #put them in a same image and return
+    saliency = cv2.saliency.StaticSaliencyFineGrained_create()
+    _, saliency_map = saliency.computeSaliency(dest_img)
+    _, thresh = cv2.threshold(saliency_map * 255, lower_thresh - 25, 255, cv2.THRESH_BINARY)
+
+    rh, rw, _ = dest_img.shape
+
+    obj_area = 0
+    
+    for i in range(rh):
+        for j in range(rw):
+            if int(thresh[i][j]) != 0:
+                obj_area += 1
+
+    num_imgs = int((rh * rw) / obj_area * len(imgs))
+
+    grid = calculate_grid_size(rw, rh, num_imgs)
+
+    #imgs = imgs[:grid[0] * grid[1]]
+
+    print("object area")
+    print(obj_area)
+    print("total area")
+    print(rh * rw)
+
+    dest_img = cv2.resize(dest_img, grid, cv2.INTER_AREA)
+
+    saliency2 = cv2.saliency.StaticSaliencyFineGrained_create()
+    _, saliency_map_resized = saliency2.computeSaliency(dest_img)
+    _, thresh_resized = cv2.threshold(saliency_map_resized * 255, lower_thresh, 255, cv2.THRESH_BINARY)
+
+
+    rh, rw, _ = dest_img.shape
+    print("new area")
+    print(rh * rw)
+
+
+
+    dest_obj = [[]]
+    coor = []
+
+    obj_area = 0
+
+    for i in range(rh):
+        for j in range(rw):
+            if int(thresh_resized[i][j]) != 0:
+                obj_area += 1
+                dest_obj[0].append(dest_img[i, j])
+                coor.append(i * rw + j)
+            else:
+                dest_img[i, j] = [255, 255, 255]
+    
+    print("new obj area")
+    print(obj_area)
+    weights = calculate_decay_weights_normal(imgs[0].shape[:2], sigma)
+    t = time.time()
+
+    dest_obj = np.array(dest_obj)
+
+    imgs = imgs[:len(dest_obj[0])]
+
+    # if len(imgs) > len(dest_obj[0]):
+    #     imgs = imgs[:len(dest_obj[0])]
+    # else:
+    #     temp = dest_obj[0, :len(imgs)]
+    #     dest_obj = np.array([temp])
+    
+    #This program is not robust yet
+    
+
+    if colorspace == "hsv":
+        img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))
+        dest_obj = cv2.cvtColor(dest_obj, cv2.COLOR_BGR2HSV)
+    elif colorspace == "hsl":
+        img_keys = np.array(list(map(chl_mean_hsl(weights), imgs)))
+        dest_obj = cv2.cvtColor(dest_obj, cv2.COLOR_BGR2HLS)
+    elif colorspace == "bgr":
+        img_keys = np.array(list(map(chl_mean_bgr(weights), imgs)))
+    elif colorspace == "lab":
+        img_keys = np.array(list(map(chl_mean_lab(weights), imgs)))
+        dest_obj = cv2.cvtColor(dest_obj, cv2.COLOR_BGR2Lab)
+
+    dest_obj = np.array(dest_obj[0])
+
+    
+
+    cost_matrix = cdist(img_keys, dest_obj, metric=metric)
+
+    carr = np.array(cost_matrix)
+    print(carr.shape)
+    print(len(img_keys))
+    print(len(dest_obj))
+
+    np_ctype = eval("np." + ctype)
+    cost_matrix = np_ctype(cost_matrix)
+
+    from lapjv import lapjv
+
+    if v is not None and (platform.system() == "Linux" or platform.system() == "Darwin") and v.gui:
+        try:
+            from wurlitzer import pipes, STDOUT
+            from wurlitzer import Wurlitzer
+            Wurlitzer.flush_interval = 0.1
+            wrapper = JVOutWrapper(v)
+            with pipes(stdout=wrapper, stderr=STDOUT):
+                _, cols, cost = lapjv(cost_matrix, verbose=1)
+                wrapper.finish()
+        except ImportError:
+            _, cols, cost = lapjv(cost_matrix)
+
+    else:
+        _, cols, cost = lapjv(cost_matrix)
+
+    cost = cost[0]
+
+    del cost_matrix
+
+    paired = np.array(imgs)[cols]
+
+    white = np.ones(imgs[0].shape, np.uint8) * 255
+
+    filled = []
+
+    counter = 0
+
+    for i in range(grid[0] * grid[1]):
+        if i in coor:
+            if counter == len(paired):
+                break
+            filled.append(paired[counter])
+            
+            counter += 1
+        else:
+            filled.append(white)
+
+    filled = np.array(filled)
+
+    return grid, filled, cost
+
+    #
+
     pass
 
 def calculate_collage_bipartite(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
@@ -510,10 +646,17 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: List[np.ndarray], dup:
     # manually delete it to free memory
     del cost_matrix
 
+    print("grid:")
+    print(grid)
+    print("imgs:")
+    print(imgs)
+    print("cols")
+    print(cols)
+
     return grid, np.array(imgs)[cols], cost
 
 def calculate_salient_collage_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: int = 50, color_space="lab",
-                          sigma: float = 1.0, metric: str = "euclidean") -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+                          sigma: float = 1.0, metric: str = "euclidean", lower_thresh : int = 50) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     assert isfile(dest_img_path)
     from scipy.spatial.distance import cdist
 
@@ -535,7 +678,7 @@ def calculate_salient_collage_dup(dest_img_path: str, imgs: List[np.ndarray], ma
 
     saliency = cv2.saliency.StaticSaliencyFineGrained_create()
     _, saliency_map = saliency.computeSaliency(dest_img)
-    _, thresh = cv2.threshold(saliency_map * 255, 50, 255, cv2.THRESH_BINARY)
+    _, thresh = cv2.threshold(saliency_map * 255, lower_thresh, 255, cv2.THRESH_BINARY)
 
     rh, rw, _ = dest_img.shape
 
@@ -924,7 +1067,7 @@ if __name__ == "__main__":
                     save_img(make_collage(grid, sorted_imgs, args.rev_row),
                             args.out, "")
                 else:
-                    grid, sorted_imgs, _ = calculate_salient_collage_bipartite(args.collage, imgs, args.dup,
+                    grid, sorted_imgs, _ = calculate_salient_collage_bipartite_test(args.collage, imgs, args.dup,
                                                                             args.colorspace, args.ctype, args.sigma, args.metric)
                     save_img(make_collage(grid, sorted_imgs, args.rev_row),
                          args.out, "")
