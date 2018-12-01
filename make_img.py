@@ -190,7 +190,7 @@ def sort_collage(imgs: List[np.ndarray], ratio: Tuple[int, int], sort_method="pc
     print("Note that", num_imgs - grid[0] * grid[1],
           "images will be thrown away from the collage")
     print("Sorting images...")
-    t = time.clock()
+    t = time.time()
     if sort_method.startswith("pca_"):
         sort_function = eval(sort_method)
         from sklearn.decomposition import PCA
@@ -224,7 +224,7 @@ def sort_collage(imgs: List[np.ndarray], ratio: Tuple[int, int], sort_method="pc
     if rev_sort:
         sorted_imgs = list(reversed(sorted_imgs))
 
-    print("Time taken: {}s".format(np.round(time.clock() - t, 2)))
+    print("Time taken: {}s".format(np.round(time.time() - t, 2)))
 
     return grid, sorted_imgs
 
@@ -289,8 +289,8 @@ def calculate_salient_collage_bipartite(dest_img_path: str, imgs: List[np.ndarra
 
     # Remove un-salient part of dest_image
     saliency = cv2.saliency.StaticSaliencyFineGrained_create()
-    (_, saliency_map) = saliency.computeSaliency(dest_img)
-    (_, thresh) = cv2.threshold(saliency_map * 255, 50, 255, cv2.THRESH_BINARY)
+    _, saliency_map = saliency.computeSaliency(dest_img)
+    _, thresh = cv2.threshold(saliency_map * 255, 50, 255, cv2.THRESH_BINARY)
 
     # print(thresh)
 
@@ -336,7 +336,7 @@ def calculate_salient_collage_bipartite(dest_img_path: str, imgs: List[np.ndarra
 
 
     weights = calculate_decay_weights_normal(imgs[0].shape[:2], sigma)
-    t = time.clock()
+    t = time.time()
     print("Computing cost matrix...")
     if colorspace == "hsv":
         img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))
@@ -381,7 +381,7 @@ def calculate_salient_collage_bipartite(dest_img_path: str, imgs: List[np.ndarra
     cost = cost[0]
 
     print("Total assignment cost:", cost)
-    print("Time taken: {}s".format(np.round(time.clock() - t), 2))
+    print("Time taken: {}s".format(np.round(time.time() - t), 2))
 
     # sometimes the cost matrix may be extremely large
     # manually delete it to free memory
@@ -389,6 +389,27 @@ def calculate_salient_collage_bipartite(dest_img_path: str, imgs: List[np.ndarra
 
     return grid, np.array(imgs)[cols], cost
 
+def calculate_separate_salient_collage_bipartite(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
+                                colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
+                                metric: str = "euclidean", v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+    
+    assert isfile(dest_img_path)
+    from scipy.spatial.distance import cdist
+    #copy source images
+    #deep copy
+    imgs = list(map(np.copy, imgs))
+    imgs_copy = list(map(np.copy, imgs))
+    for i in range(dup - 1):
+        imgs.extend(imgs_copy)
+    
+    
+    #read dest image
+    dest_img = cv2.imread(dest_img_path)
+
+    #convert dest image into several object images, store them and their coordinate
+    #process the object images and return each collaged images
+    #put them in a same image and return
+    pass
 
 def calculate_collage_bipartite(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
                                 colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
@@ -438,7 +459,7 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: List[np.ndarray], dup:
     dest_img = cv2.resize(dest_img, grid, cv2.INTER_AREA)
 
     weights = calculate_decay_weights_normal(imgs[0].shape[:2], sigma)
-    t = time.clock()
+    t = time.time()
     print("Computing cost matrix...")
     if colorspace == "hsv":
         img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))
@@ -483,7 +504,7 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: List[np.ndarray], dup:
     cost = cost[0]
 
     print("Total assignment cost:", cost)
-    print("Time taken: {}s".format((np.round(time.clock() - t), 2)))
+    print("Time taken: {}s".format((np.round(time.time() - t), 2)))
 
     # sometimes the cost matrix may be extremely large
     # manually delete it to free memory
@@ -491,12 +512,26 @@ def calculate_collage_bipartite(dest_img_path: str, imgs: List[np.ndarray], dup:
 
     return grid, np.array(imgs)[cols], cost
 
-def calculate_salient_collage_dup(dest_img_path: str, imgs: list, max_width: int = 50, color_space="lab",
+def calculate_salient_collage_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: int = 50, color_space="lab",
                           sigma: float = 1.0, metric: str = "euclidean") -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     assert isfile(dest_img_path)
     from scipy.spatial.distance import cdist
 
+    t = time.time()
+
+    #deep copy
+    imgs = list(map(np.copy, imgs))
     dest_img = cv2.imread(dest_img_path)
+
+    rh, rw, _ = dest_img.shape
+
+    rh = round(rh * max_width / rw)
+    grid = (max_width, rh)
+
+    print("Calculated grid size based on the aspect ratio of the image provided:", grid)
+
+    weights = calculate_decay_weights_normal(imgs[0].shape[:2], sigma)
+    dest_img = cv2.resize(dest_img, grid, cv2.INTER_AREA)
 
     saliency = cv2.saliency.StaticSaliencyFineGrained_create()
     _, saliency_map = saliency.computeSaliency(dest_img)
@@ -504,30 +539,14 @@ def calculate_salient_collage_dup(dest_img_path: str, imgs: list, max_width: int
 
     rh, rw, _ = dest_img.shape
 
-    # print(thresh)
-
     for i in range(rh):
         for j in range(rw):
-            if thresh[i][j] < 10:
-                # print("haha ")
-                dest_img[i][j] = [255,255,255]
+            if thresh[i, j] < 10:
+                dest_img[i, j, :] = np.array([255,255,255], np.uint8)
+    
+    imgs.append(np.ones(imgs[0].shape, np.uint8) * 255)
 
-    print(dest_img)
-
-    rh = round(rh * max_width / rw)
-    grid = (max_width, rh)
-
-    h, w, _ = imgs[0].shape
-
-    # print(np.ones((h, w, 3), np.uint8) * 255)
-    imgs.append(np.ones((h, w, 3), np.uint8) * 255)
-
-    print("Calculated grid size based on the aspect ratio of the image provided:", grid)
-
-    weights = calculate_decay_weights_normal(imgs[0].shape[:2], sigma)
-    dest_img = cv2.resize(dest_img, grid, cv2.INTER_AREA)
-    t = time.clock()
-    print("Computing costs")
+    print("Computing costs...")
     if color_space == "hsv":
         img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))
         dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2HSV)
@@ -541,7 +560,6 @@ def calculate_salient_collage_dup(dest_img_path: str, imgs: list, max_width: int
         dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2Lab)
 
     dest_img = dest_img.reshape(grid[0] * grid[1], 3)
-
     sorted_imgs = []
     cost = 0
     for pixel in tqdm(dest_img, desc="[Computing assignments]", unit="pixel", unit_divisor=1000, unit_scale=True,
@@ -558,7 +576,7 @@ def calculate_salient_collage_dup(dest_img_path: str, imgs: list, max_width: int
         # Accumulate the distance to get the total cot
         cost += dist[idx]
 
-    print("Time taken: {}s".format(np.round(time.clock() - t, 2)))
+    print("Time taken: {}s".format(np.round(time.time() - t, 2)))
 
     return grid, sorted_imgs, cost
     
@@ -591,7 +609,7 @@ def calculate_collage_dup(dest_img_path: str, imgs: list, max_width: int = 50, c
 
     weights = calculate_decay_weights_normal(imgs[0].shape[:2], sigma)
     dest_img = cv2.resize(dest_img, grid, cv2.INTER_AREA)
-    t = time.clock()
+    t = time.time()
     print("Computing costs")
     if color_space == "hsv":
         img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))
@@ -623,7 +641,7 @@ def calculate_collage_dup(dest_img_path: str, imgs: list, max_width: int = 50, c
         # Accumulate the distance to get the total cot
         cost += dist[idx]
 
-    print("Time taken: {}s".format(np.round(time.clock() - t, 2)))
+    print("Time taken: {}s".format(np.round(time.time() - t, 2)))
 
     return grid, sorted_imgs, cost
 
@@ -899,23 +917,26 @@ if __name__ == "__main__":
             plt.show()
 
         else:
-            if args.uneven and args.salient:
-                grid, sorted_imgs, _ = calculate_salient_collage_dup(args.collage, imgs, args.max_width,
-                                                             args.colorspace, args.sigma, args.metric)
-                save_img(make_collage(grid, sorted_imgs, args.rev_row),
-                         args.out, "")
-            if args.uneven:
-                grid, sorted_imgs, _ = calculate_collage_dup(args.collage, imgs, args.max_width,
-                                                             args.colorspace, args.sigma, args.metric)
-                save_img(make_collage(grid, sorted_imgs, args.rev_row),
-                         args.out, "")
-            elif args.salient:
-                grid, sorted_imgs, _ = calculate_salient_collage_bipartite(args.collage, imgs, args.dup,
-                                                                           args.colorspace, args.ctype, args.sigma, args.metric)
-                save_img(make_collage(grid, sorted_imgs, args.rev_row),
+            if args.salient:
+                if args.uneven:
+                    grid, sorted_imgs, _ = calculate_salient_collage_dup(args.collage, imgs, args.max_width,
+                                                                args.colorspace, args.sigma, args.metric)
+                    save_img(make_collage(grid, sorted_imgs, args.rev_row),
+                            args.out, "")
+                else:
+                    grid, sorted_imgs, _ = calculate_salient_collage_bipartite(args.collage, imgs, args.dup,
+                                                                            args.colorspace, args.ctype, args.sigma, args.metric)
+                    save_img(make_collage(grid, sorted_imgs, args.rev_row),
                          args.out, "")
             else:
-                grid, sorted_imgs, _ = calculate_collage_bipartite(args.collage, imgs, args.dup,
-                                                                   args.colorspace, args.ctype, args.sigma, args.metric)
-                save_img(make_collage(grid, sorted_imgs, args.rev_row),
-                         args.out, "")
+                if args.uneven:
+                    grid, sorted_imgs, _ = calculate_collage_dup(args.collage, imgs, args.max_width,
+                                                                args.colorspace, args.sigma, args.metric)
+                    save_img(make_collage(grid, sorted_imgs, args.rev_row),
+                            args.out, "")
+                
+                else:
+                    grid, sorted_imgs, _ = calculate_collage_bipartite(args.collage, imgs, args.dup,
+                                                                    args.colorspace, args.ctype, args.sigma, args.metric)
+                    save_img(make_collage(grid, sorted_imgs, args.rev_row),
+                            args.out, "")
