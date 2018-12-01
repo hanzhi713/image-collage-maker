@@ -331,10 +331,6 @@ def calculate_salient_collage_bipartite(dest_img_path: str, imgs: List[np.ndarra
     # This makes sure that each image in the list of images corresponds to a pixel of the destination image
     dest_img = cv2.resize(dest_img, grid, cv2.INTER_AREA)
 
-
-
-
-
     weights = calculate_decay_weights_normal(imgs[0].shape[:2], sigma)
     t = time.time()
     print("Computing cost matrix...")
@@ -404,7 +400,6 @@ def calculate_salient_collage_bipartite_test(dest_img_path: str, imgs: List[np.n
         imgs.extend(imgs_copy)
 
     dest_img = cv2.imread(dest_img_path)
-
     
     saliency = cv2.saliency.StaticSaliencyFineGrained_create()
     _, saliency_map = saliency.computeSaliency(dest_img)
@@ -416,19 +411,12 @@ def calculate_salient_collage_bipartite_test(dest_img_path: str, imgs: List[np.n
     
     for i in range(rh):
         for j in range(rw):
-            if int(thresh[i][j]) != 0:
+            if int(thresh[i, j]) != 0:
                 obj_area += 1
 
     num_imgs = int((rh * rw) / obj_area * len(imgs))
 
     grid = calculate_grid_size(rw, rh, num_imgs)
-
-    #imgs = imgs[:grid[0] * grid[1]]
-
-    print("object area")
-    print(obj_area)
-    print("total area")
-    print(rh * rw)
 
     dest_img = cv2.resize(dest_img, grid, cv2.INTER_AREA)
 
@@ -436,13 +424,8 @@ def calculate_salient_collage_bipartite_test(dest_img_path: str, imgs: List[np.n
     _, saliency_map_resized = saliency2.computeSaliency(dest_img)
     _, thresh_resized = cv2.threshold(saliency_map_resized * 255, lower_thresh, 255, cv2.THRESH_BINARY)
 
-
     rh, rw, _ = dest_img.shape
-    print("new area")
-    print(rh * rw)
-
-
-
+    
     dest_obj = [[]]
     coor = []
 
@@ -457,8 +440,9 @@ def calculate_salient_collage_bipartite_test(dest_img_path: str, imgs: List[np.n
             else:
                 dest_img[i, j] = [255, 255, 255]
     
-    print("new obj area")
-    print(obj_area)
+    print("Calculated grid size based on the aspect ratio of the image provided:",grid)
+    print("Note:", len(imgs) - len(dest_obj[0]),"images will be thrown away from the collage")
+    
     weights = calculate_decay_weights_normal(imgs[0].shape[:2], sigma)
     t = time.time()
 
@@ -466,15 +450,8 @@ def calculate_salient_collage_bipartite_test(dest_img_path: str, imgs: List[np.n
 
     imgs = imgs[:len(dest_obj[0])]
 
-    # if len(imgs) > len(dest_obj[0]):
-    #     imgs = imgs[:len(dest_obj[0])]
-    # else:
-    #     temp = dest_obj[0, :len(imgs)]
-    #     dest_obj = np.array([temp])
+    print("Computing cost matrix...")
     
-    #This program is not robust yet
-    
-
     if colorspace == "hsv":
         img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))
         dest_obj = cv2.cvtColor(dest_obj, cv2.COLOR_BGR2HSV)
@@ -489,17 +466,15 @@ def calculate_salient_collage_bipartite_test(dest_img_path: str, imgs: List[np.n
 
     dest_obj = np.array(dest_obj[0])
 
-    
-
     cost_matrix = cdist(img_keys, dest_obj, metric=metric)
 
     carr = np.array(cost_matrix)
-    print(carr.shape)
-    print(len(img_keys))
-    print(len(dest_obj))
-
+    
     np_ctype = eval("np." + ctype)
     cost_matrix = np_ctype(cost_matrix)
+
+    print("Computing optimal assignment on a {}x{} matrix...".format(
+        cost_matrix.shape[0], cost_matrix.shape[1]))
 
     from lapjv import lapjv
 
@@ -519,6 +494,9 @@ def calculate_salient_collage_bipartite_test(dest_img_path: str, imgs: List[np.n
         _, cols, cost = lapjv(cost_matrix)
 
     cost = cost[0]
+
+    print("Total assignment cost:", cost)
+    print("Time taken: {}s".format(np.round(time.time() - t)))
 
     del cost_matrix
 
@@ -547,10 +525,6 @@ def calculate_salient_collage_bipartite_test(dest_img_path: str, imgs: List[np.n
     filled = np.array(filled)
 
     return grid, filled, cost
-
-    #
-
-    pass
 
 def calculate_collage_bipartite(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
                                 colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
