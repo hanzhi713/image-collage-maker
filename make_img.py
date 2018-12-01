@@ -391,7 +391,7 @@ def calculate_salient_collage_bipartite(dest_img_path: str, imgs: List[np.ndarra
 
 def calculate_salient_collage_bipartite_test(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
                                 colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
-                                metric: str = "euclidean", lower_thresh : int = 75, v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+                                metric: str = "euclidean", lower_thresh : int = 75, background : list = [255,255,255], v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     assert isfile(dest_img_path)
     from scipy.spatial.distance import cdist
 
@@ -405,6 +405,7 @@ def calculate_salient_collage_bipartite_test(dest_img_path: str, imgs: List[np.n
 
     dest_img = cv2.imread(dest_img_path)
 
+    
     saliency = cv2.saliency.StaticSaliencyFineGrained_create()
     _, saliency_map = saliency.computeSaliency(dest_img)
     _, thresh = cv2.threshold(saliency_map * 255, lower_thresh - 25, 255, cv2.THRESH_BINARY)
@@ -524,6 +525,10 @@ def calculate_salient_collage_bipartite_test(dest_img_path: str, imgs: List[np.n
     paired = np.array(imgs)[cols]
 
     white = np.ones(imgs[0].shape, np.uint8) * 255
+    
+    white[:, :, 0] = background[0]
+    white[:, :, 1] = background[1]
+    white[:, :, 2] = background[2]
 
     filled = []
 
