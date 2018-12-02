@@ -268,9 +268,9 @@ def chl_mean_lab(weights: np.ndarray) -> Callable:
     return f
 
 
-def calc_salient_col_bipartite(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
-                                        colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
-                                        metric: str = "euclidean", lower_thresh: int = 50, v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+def calc_salient_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
+                               colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
+                               metric: str = "euclidean", lower_thresh: int = 50, v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     assert isfile(dest_img_path)
     from scipy.spatial.distance import cdist
 
@@ -293,16 +293,15 @@ def calc_salient_col_bipartite(dest_img_path: str, imgs: List[np.ndarray], dup: 
     _, thresh = cv2.threshold(
         saliency_map * 255, lower_thresh, 255, cv2.THRESH_BINARY)
 
-    # print(thresh)
-
     rh, rw, _ = dest_img.shape
 
+    thresh = thresh.astype(np.uint8)
     total_area = rh * rw
     obj_area = 0
 
     for i in range(rh):
         for j in range(rw):
-            if int(thresh[i, j]) != 0:
+            if thresh[i, j] != 0:
                 obj_area += 1
             else:
                 dest_img[i, j, :] = np.array([255, 255, 255], np.uint8)
@@ -387,9 +386,10 @@ def calc_salient_col_bipartite(dest_img_path: str, imgs: List[np.ndarray], dup: 
     return grid, np.array(imgs)[cols], cost
 
 
-def calc_salient_col_bipartite_fast(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
-                                             colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
-                                             metric: str = "euclidean", lower_thresh: int = 75, background: list = [255, 255, 255], v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
+                                    colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
+                                    metric: str = "euclidean", lower_thresh: int = 120, background: list = [255, 255, 255], 
+                                    v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     assert isfile(dest_img_path)
     from scipy.spatial.distance import cdist
 
@@ -417,8 +417,9 @@ def calc_salient_col_bipartite_fast(dest_img_path: str, imgs: List[np.ndarray], 
 
     threshold = lower_thresh
     grid = (0, 0)
+    pbar = tqdm(unit=" iteration", desc="[Computing saliency & grid]")
     while True:
-        num_imgs = int(rh * rw / obj_area * len(imgs))
+        num_imgs = round(rh * rw / obj_area * len(imgs))
 
         last_grid = grid
         grid = calc_grid_size(rw, rh, num_imgs)
@@ -435,19 +436,26 @@ def calc_salient_col_bipartite_fast(dest_img_path: str, imgs: List[np.ndarray], 
         thresh_resized = thresh_resized.astype(np.uint8)
         obj_area = np.count_nonzero(thresh_resized)
 
-        itr += 1
-        if (abs(last_grid[0] - grid[0]) + abs(last_grid[1] - grid[1])) <= 2 or itr > 50:
+        diff = len(imgs) - obj_area
+        last_thresh = threshold
+        pbar.update(1)
+
+        if diff > 0 :
+            threshold -= 2
+            if threshold < 1:
+                threshold = 1
+        else:
+            threshold += 2
+            if threshold > 254:
+                threshold = 254
+
+        if diff >= 0 and diff < int(len(imgs) / dup / 2) or pbar.n > 100:
             break
 
-        diff = len(imgs) - obj_area
-        if diff > 0 :
-            threshold -= 1 + abs(diff / 100)
-        else:
-            threshold += 1 + abs(diff / 100)
+    pbar.close()
+    print("Final threshold:", threshold)
+    print("Grid size {} calculated in {} iterations".format(grid, pbar.n))
 
-    print("Grid size calculated in {} iterations".format(itr))
-    print("Calculated grid size based on the aspect ratio of the image provided:", grid)
-    
     dest_obj = []
     coor = []
 
@@ -459,13 +467,9 @@ def calc_salient_col_bipartite_fast(dest_img_path: str, imgs: List[np.ndarray], 
             else:
                 dest_img[i, j, :] = np.array([255, 255, 255], np.uint8)
 
-    
     if len(imgs) > len(dest_obj):
         print("Note:", len(imgs) - len(dest_obj), "images will be thrown away from the collage")
-
     imgs = imgs[:len(dest_obj)]
-
-    cv2.imwrite("/home/hanzhi713/Desktop/2.jpg", dest_img)
 
     print("Computing cost matrix...")
 
@@ -512,39 +516,31 @@ def calc_salient_col_bipartite_fast(dest_img_path: str, imgs: List[np.ndarray], 
 
     cost = cost[0]
 
-    print("Total assignment cost:", cost)
-    print("Time taken: {}s".format(np.round(time.time() - t)))
-
     del cost_matrix
 
     paired = np.array(imgs)[cols]
 
-    white = np.ones(imgs[0].shape, np.uint8) * 255
-
-    white[:, :, 0] = background[0]
-    white[:, :, 1] = background[1]
-    white[:, :, 2] = background[2]
+    white = np.ones(imgs[0].shape, np.uint8)
+    white[:, :, :] = background
 
     filled = []
-
     counter = 0
-
     for i in range(grid[0] * grid[1]):
         if i in coor:
-            # if counter == len(paired):
-            #     break
             filled.append(paired[counter])
-
             counter += 1
         else:
             filled.append(white)
 
+    print("Total assignment cost:", cost)
+    print("Time taken: {}s".format(np.round(time.time() - t)))
+
     return grid, filled, cost
 
 
-def calc_col_bipartite(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
-                                colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
-                                metric: str = "euclidean", v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
+                       colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
+                       metric: str = "euclidean", v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
     with the restriction that every image should be used the same amount of times
@@ -644,9 +640,9 @@ def calc_col_bipartite(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
     return grid, np.array(imgs)[cols], cost
 
 
-def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: int = 50, color_space="lab",
-                                  sigma: float = 1.0, metric: str = "euclidean", 
-                                  lower_thresh: int = 50, background: list = [255, 255, 255]) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: int = 50, 
+                         color_space="lab", sigma: float = 1.0, metric: str = "euclidean", 
+                         lower_thresh: int = 50, background: list = [255, 255, 255]) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     assert isfile(dest_img_path)
     from scipy.spatial.distance import cdist
 
@@ -962,6 +958,7 @@ if __name__ == "__main__":
     parser.add_argument("--exp", action="store_true")
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--salient", action="store_true")
+    parser.add_argument("--lower_thresh", type=int, default=50)
 
     args = parser.parse_args()
     if not args.verbose:
@@ -1020,7 +1017,7 @@ if __name__ == "__main__":
             else:
                 for sigma in all_sigmas:
                     for color_space in all_color_spaces:
-                        f = pool.submit(calc_col_bipartite, args.collage, imgs, args.dup,
+                        f = pool.submit(calc_col_even, args.collage, imgs, args.dup,
                                         color_space, args.ctype, sigma, args.metric)
                         futures.append((f, sigma, color_space))
 
@@ -1051,23 +1048,25 @@ if __name__ == "__main__":
             if args.salient:
                 if args.uneven:
                     grid, sorted_imgs, _ = calc_salient_col_dup(args.collage, imgs, args.max_width,
-                                                                         args.colorspace, args.sigma, args.metric)
+                                                                args.colorspace, args.sigma, args.metric,
+                                                                args.lower_thresh)
                     save_img(make_collage(grid, sorted_imgs, args.rev_row),
                              args.out, "")
                 else:
-                    grid, sorted_imgs, _ = calc_salient_col_bipartite_fast(args.collage, imgs, args.dup,
-                                                                                    args.colorspace, args.ctype, args.sigma, args.metric)
+                    grid, sorted_imgs, _ = calc_salient_col_even_fast(args.collage, imgs, args.dup,
+                                                                           args.colorspace, args.ctype, args.sigma, 
+                                                                           args.metric, args.lower_thresh)
                     save_img(make_collage(grid, sorted_imgs, args.rev_row),
                              args.out, "")
             else:
                 if args.uneven:
                     grid, sorted_imgs, _ = calc_col_dup(args.collage, imgs, args.max_width,
-                                                                 args.colorspace, args.sigma, args.metric)
+                                                        args.colorspace, args.sigma, args.metric)
                     save_img(make_collage(grid, sorted_imgs, args.rev_row),
                              args.out, "")
 
                 else:
-                    grid, sorted_imgs, _ = calc_col_bipartite(args.collage, imgs, args.dup,
-                                                                       args.colorspace, args.ctype, args.sigma, args.metric)
+                    grid, sorted_imgs, _ = calc_col_even(args.collage, imgs, args.dup,
+                                                              args.colorspace, args.ctype, args.sigma, args.metric)
                     save_img(make_collage(grid, sorted_imgs, args.rev_row),
                              args.out, "")
