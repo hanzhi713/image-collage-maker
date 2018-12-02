@@ -12,7 +12,7 @@ import os
 import cv2
 import numpy as np
 import time
-import make_img
+import make_img as mkg
 
 
 def limit_wh(w: int, h: int, max_width: int, max_height: int) -> Tuple[int, int]:
@@ -98,7 +98,7 @@ if __name__ == "__main__":
     log_panel.grid(row=2, column=0, columnspan=2, sticky="WE")
     log_panel.grid_columnconfigure(0, weight=1)
     log_entry = SafeText(log_panel, height=6, bd=0)
-    make_img.pbar_ncols = log_entry.width
+    mkg.pbar_ncols = log_entry.width
     # log_entry.configure(font=("", 10, ""))
     log_entry.grid(row=1, column=0, sticky="nsew")
     scroll = Scrollbar(log_panel, orient="vertical", command=log_entry.yview)
@@ -182,11 +182,11 @@ if __name__ == "__main__":
             def action():
                 global imgs
                 try:
-                    imgs = make_img.read_images(
+                    imgs = mkg.read_images(
                         fp, (size, size), recursive.get(), 4, resize_opt.get())
-                    grid = make_img.calculate_grid_size(
+                    grid = mkg.calc_grid_size(
                         16, 10, len(imgs))
-                    return make_img.make_collage(grid, imgs, False)
+                    return mkg.make_collage(grid, imgs, False)
                 except:
                     messagebox.showerror("Error", traceback.format_exc())
 
@@ -202,12 +202,12 @@ if __name__ == "__main__":
         row=5, columnspan=2, pady=(3, 4))
 
     def attach_sort():
-        right_collage_opt_panel.grid_remove()
+        right_col_opt_panel.grid_remove()
         right_sort_opt_panel.grid(row=8, columnspan=2, sticky="W")
 
     def attach_collage():
         right_sort_opt_panel.grid_remove()
-        right_collage_opt_panel.grid(row=8, columnspan=2, sticky="W")
+        right_col_opt_panel.grid(row=8, columnspan=2, sticky="W")
 
     # right panel ROW 6
     Radiobutton(right_panel, text="Sort", value="sort", variable=opt,
@@ -232,7 +232,7 @@ if __name__ == "__main__":
     Label(right_sort_opt_panel, text="Sort methods:").grid(
         row=0, column=0, pady=5, sticky="W")
     OptionMenu(right_sort_opt_panel, sort_method, "", *
-               make_img.all_sort_methods).grid(row=0, column=1)
+               mkg.all_sort_methods).grid(row=0, column=1)
 
     # right sort option panel ROW 1:
     Label(right_sort_opt_panel, text="Aspect ratio:").grid(
@@ -272,9 +272,9 @@ if __name__ == "__main__":
 
             def action():
                 try:
-                    grid, sorted_imgs = make_img.sort_collage(imgs, (w, h), sort_method.get(),
+                    grid, sorted_imgs = mkg.sort_collage(imgs, (w, h), sort_method.get(),
                                                               rev_sort.get())
-                    return make_img.make_collage(grid, sorted_imgs, rev_row.get())
+                    return mkg.make_collage(grid, sorted_imgs, rev_row.get())
                 except:
                     messagebox.showerror("Error", traceback.format_exc())
 
@@ -288,15 +288,15 @@ if __name__ == "__main__":
 
     # ------------------------ right collage option panel ------------------------------
     # right collage option panel ROW 0:
-    right_collage_opt_panel = PanedWindow(right_panel)
+    right_col_opt_panel = PanedWindow(right_panel)
     dest_img_path = StringVar()
     dest_img_path.set("N/A")
     dest_img = None
-    Label(right_collage_opt_panel, text="Path of destination image: ").grid(
+    Label(right_col_opt_panel, text="Path of destination image: ").grid(
         row=0, columnspan=2, sticky="W", pady=2)
 
     # right collage option panel ROW 1:
-    Label(right_collage_opt_panel, textvariable=dest_img_path,
+    Label(right_col_opt_panel, textvariable=dest_img_path,
           wraplength=150).grid(row=1, columnspan=2, sticky="W")
 
     def load_dest_img():
@@ -321,32 +321,32 @@ if __name__ == "__main__":
                 return
 
     # right collage option panel ROW 2:
-    Button(right_collage_opt_panel, text="Load destination image",
+    Button(right_col_opt_panel, text="Load destination image",
            command=load_dest_img).grid(row=2, columnspan=2, pady=(3, 2))
 
     # right collage option panel ROW 3:
     sigma = StringVar()
     sigma.set("1.0")
-    Label(right_collage_opt_panel, text="Sigma: ").grid(
+    Label(right_col_opt_panel, text="Sigma: ").grid(
         row=3, column=0, sticky="W", pady=(5, 2))
-    Entry(right_collage_opt_panel, textvariable=sigma, width=8).grid(
+    Entry(right_col_opt_panel, textvariable=sigma, width=8).grid(
         row=3, column=1, sticky="W", pady=(5, 2))
 
     # right collage option panel ROW 4:
     color_space = StringVar()
     color_space.set("lab")
-    Label(right_collage_opt_panel, text="Colorspace: ").grid(
+    Label(right_col_opt_panel, text="Colorspace: ").grid(
         row=4, column=0, sticky="W")
-    OptionMenu(right_collage_opt_panel, color_space, "", *
-               make_img.all_color_spaces).grid(row=4, column=1, sticky="W")
+    OptionMenu(right_col_opt_panel, color_space, "", *
+               mkg.all_color_spaces).grid(row=4, column=1, sticky="W")
 
     # right collage option panel ROW 5:
     dist_metric = StringVar()
     dist_metric.set("euclidean")
-    Label(right_collage_opt_panel, text="Metric: ").grid(
+    Label(right_col_opt_panel, text="Metric: ").grid(
         row=5, column=0, sticky="W")
-    OptionMenu(right_collage_opt_panel, dist_metric, "", *
-               make_img.all_metrics).grid(row=5, column=1, sticky="W")
+    OptionMenu(right_col_opt_panel, dist_metric, "", *
+               mkg.all_metrics).grid(row=5, column=1, sticky="W")
 
     def attach_even():
         collage_uneven_panel.grid_remove()
@@ -359,19 +359,19 @@ if __name__ == "__main__":
     # right collage option panel ROW 6:
     even = StringVar()
     even.set("even")
-    Radiobutton(right_collage_opt_panel, text="Even", variable=even, value="even",
+    Radiobutton(right_col_opt_panel, text="Even", variable=even, value="even",
                 state=ACTIVE, command=attach_even).grid(row=6, column=0, sticky="W")
-    Radiobutton(right_collage_opt_panel, text="Uneven", variable=even, value="uneven",
+    Radiobutton(right_col_opt_panel, text="Uneven", variable=even, value="uneven",
                 command=attach_uneven).grid(row=6, column=1, sticky="W")
 
     # right collage option panel ROW 7:
-    Separator(right_collage_opt_panel, orient="horizontal").grid(
+    Separator(right_col_opt_panel, orient="horizontal").grid(
         row=7, columnspan=2, sticky="we", pady=(5, 5))
 
     # right collage option panel ROW 8: Dynamically attached
     # could EITHER collage even panel OR collage uneven panel
     # ----------------------- start collage even panel ------------------------
-    collage_even_panel = PanedWindow(right_collage_opt_panel)
+    collage_even_panel = PanedWindow(right_col_opt_panel)
     collage_even_panel.grid(row=8, columnspan=2, sticky="W")
 
     # collage even panel ROW 0
@@ -380,7 +380,7 @@ if __name__ == "__main__":
     ctype = StringVar()
     ctype.set("float16")
     OptionMenu(collage_even_panel, ctype, "", *
-               make_img.all_ctypes).grid(row=0, column=1, sticky="W")
+               mkg.all_ctypes).grid(row=0, column=1, sticky="W")
 
     # collage even panel ROW 1
     Label(collage_even_panel, text="Duplicates: ").grid(
@@ -392,7 +392,7 @@ if __name__ == "__main__":
     # ----------------------- end collage even panel ------------------------
 
     # ----------------------- start collage uneven panel --------------------
-    collage_uneven_panel = PanedWindow(right_collage_opt_panel)
+    collage_uneven_panel = PanedWindow(right_col_opt_panel)
 
     # collage uneven panel ROW 0
     Label(collage_uneven_panel, text="Max width: ").grid(
@@ -420,12 +420,12 @@ if __name__ == "__main__":
 
                         def action():
                             try:
-                                grid, sorted_imgs, _ = make_img.calculate_salient_collage_bipartite(dest_img_path.get(), imgs,
+                                grid, sorted_imgs, _ = mkg.calc_salient_col_bipartite(dest_img_path.get(), imgs,
                                                                                                     dup.get(), color_space.get(),
                                                                                                     ctype.get(), float(sigma.get()),
                                                                                                     dist_metric.get(), out_wrapper)
                                 # lower_thresh, out_wrapper)
-                                return make_img.make_collage(grid, sorted_imgs, False)
+                                return mkg.make_collage(grid, sorted_imgs, False)
                             except:
                                 messagebox.showerror(
                                     "Error", traceback.format_exc())
@@ -434,11 +434,11 @@ if __name__ == "__main__":
 
                         def action():
                             try:
-                                grid, sorted_imgs, _ = make_img.calculate_salient_collage_dup(dest_img_path.get(), imgs,
+                                grid, sorted_imgs, _ = mkg.calc_salient_col_dup(dest_img_path.get(), imgs,
                                                                                               max_width.get(), color_space.get(),
                                                                                               float(sigma.get()), dist_metric.get())
                                 # lower_thresh)
-                                return make_img.make_collage(grid, sorted_imgs, False)
+                                return mkg.make_collage(grid, sorted_imgs, False)
                             except:
                                 messagebox.showerror(
                                     "Error", traceback.format_exc())
@@ -450,11 +450,11 @@ if __name__ == "__main__":
 
                         def action():
                             try:
-                                grid, sorted_imgs, _ = make_img.calculate_collage_bipartite(dest_img_path.get(), imgs,
+                                grid, sorted_imgs, _ = mkg.calc_col_bipartite(dest_img_path.get(), imgs,
                                                                                             dup.get(), color_space.get(),
                                                                                             ctype.get(), float(sigma.get()),
                                                                                             dist_metric.get(), out_wrapper)
-                                return make_img.make_collage(grid, sorted_imgs, False)
+                                return mkg.make_collage(grid, sorted_imgs, False)
                             except:
                                 messagebox.showerror(
                                     "Error", traceback.format_exc())
@@ -463,10 +463,10 @@ if __name__ == "__main__":
 
                         def action():
                             try:
-                                grid, sorted_imgs, _ = make_img.calculate_collage_dup(dest_img_path.get(), imgs,
+                                grid, sorted_imgs, _ = mkg.calc_col_dup(dest_img_path.get(), imgs,
                                                                                       max_width.get(), color_space.get(),
                                                                                       float(sigma.get()), dist_metric.get())
-                                return make_img.make_collage(grid, sorted_imgs, False)
+                                return mkg.make_collage(grid, sorted_imgs, False)
                             except:
                                 messagebox.showerror(
                                     "Error", traceback.format_exc())
@@ -488,11 +488,11 @@ if __name__ == "__main__":
     # right collage option panel ROW 9
     is_salient = BooleanVar()
     is_salient.set(False)
-    Checkbutton(right_collage_opt_panel, text="Salient objects only",
+    Checkbutton(right_col_opt_panel, text="Salient objects only",
                 variable=is_salient, command=attach_salient_opt).grid(row=9, columnspan=2, sticky="w")
 
     # right collage option panel ROW 10
-    salient_opt_panel = PanedWindow(right_collage_opt_panel)
+    salient_opt_panel = PanedWindow(right_col_opt_panel)
     salient_lower_thresh = StringVar()
     salient_lower_thresh.set("50")
     salient_opt_label = Label(salient_opt_panel, text="Lower threshold: ")
@@ -518,7 +518,7 @@ if __name__ == "__main__":
     salient_color_chooser.grid(row=1, columnspan=2, pady=(3, 1))
 
     # right collage option panel ROW 11
-    Button(right_collage_opt_panel, text=" Generate Collage ",
+    Button(right_col_opt_panel, text=" Generate Collage ",
            command=generate_collage).grid(row=11, columnspan=2, pady=(3, 5))
     # ------------------------ end right collage option panel --------------------
 
@@ -579,7 +579,7 @@ if __name__ == "__main__":
                 height=6 + math.floor((event.height - 500) / 80))
             log_entry.width = log_entry.initial_width + \
                 math.floor((event.width - 800) / 10)
-            make_img.pbar_ncols = log_entry.width
+            mkg.pbar_ncols = log_entry.width
             log_entry.update()
             w, h = event.width - right_panel_width - \
                 20, event.height - log_entry.winfo_height() - 15
