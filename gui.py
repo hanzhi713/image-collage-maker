@@ -126,7 +126,7 @@ if __name__ == "__main__":
         canvas.delete("all")
         canvas.create_image((width - w) // 2, (height - h) // 2,
                             image=root.preview, anchor=NW)
-        # print("Done")
+        print("Done")
 
     # --------------------- right panel's children ------------------------
     # right panel ROW 0
