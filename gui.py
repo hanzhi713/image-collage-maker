@@ -1,5 +1,5 @@
 from tkinter import *
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, colorchooser
 from tkinter.ttk import *
 from PIL import Image, ImageTk
 from concurrent.futures import ThreadPoolExecutor
@@ -156,7 +156,6 @@ if __name__ == "__main__":
         row=3, column=0, sticky="W", pady=(2, 3))
     OptionMenu(right_panel, resize_opt, "", "center", "stretch").grid(
         row=3, column=1, sticky="W", pady=(2, 3))
-    
 
     # right panel ROW 4
     recursive = BooleanVar()
@@ -342,11 +341,11 @@ if __name__ == "__main__":
                make_img.all_color_spaces).grid(row=4, column=1, sticky="W")
 
     # right collage option panel ROW 5:
-    distance_metric = StringVar()
-    distance_metric.set("euclidean")
+    dist_metric = StringVar()
+    dist_metric.set("euclidean")
     Label(right_collage_opt_panel, text="Metric: ").grid(
         row=5, column=0, sticky="W")
-    OptionMenu(right_collage_opt_panel, distance_metric, "", *
+    OptionMenu(right_collage_opt_panel, dist_metric, "", *
                make_img.all_metrics).grid(row=5, column=1, sticky="W")
 
     def attach_even():
@@ -385,11 +384,11 @@ if __name__ == "__main__":
 
     # collage even panel ROW 1
     Label(collage_even_panel, text="Duplicates: ").grid(
-        row=1, column=0, sticky="W")
+        row=1, column=0, sticky="W", pady=2)
     dup = IntVar()
     dup.set(1)
     Entry(collage_even_panel, textvariable=dup,
-          width=5).grid(row=1, column=1, sticky="W")
+          width=5).grid(row=1, column=1, sticky="W", pady=2)
     # ----------------------- end collage even panel ------------------------
 
     # ----------------------- start collage uneven panel --------------------
@@ -411,32 +410,66 @@ if __name__ == "__main__":
             return messagebox.showerror("No destination image", "Please first load the image that you're trying to fit")
         else:
             try:
-                if even.get() == "even":
-                    assert dup.get() > 0, "Duplication must be a positive number"
-                    assert float(sigma.get()) != 0, "Sigma must be non-zero"
+                if is_salient.get():
+                    lower_thresh = int(salient_lower_thresh.get())
+                    assert 0 < lower_thresh < 255, "Lower salient threshold must be between 0 and 255"
+                    if even.get() == "even":
+                        assert dup.get() > 0, "Duplication must be a positive number"
+                        assert float(
+                            sigma.get()) != 0, "Sigma must be non-zero"
 
-                    def action():
-                        try:
-                            grid, sorted_imgs, _ = make_img.calculate_collage_bipartite(dest_img_path.get(), imgs,
-                                                                                        dup.get(), color_space.get(),
-                                                                                        ctype.get(), float(sigma.get()),
-                                                                                        distance_metric.get(), out_wrapper)
-                            return make_img.make_collage(grid, sorted_imgs, False)
-                        except:
-                            messagebox.showerror(
-                                "Error", traceback.format_exc())
+                        def action():
+                            try:
+                                grid, sorted_imgs, _ = make_img.calculate_salient_collage_bipartite(dest_img_path.get(), imgs,
+                                                                                                    dup.get(), color_space.get(),
+                                                                                                    ctype.get(), float(sigma.get()),
+                                                                                                    dist_metric.get(), out_wrapper)
+                                # lower_thresh, out_wrapper)
+                                return make_img.make_collage(grid, sorted_imgs, False)
+                            except:
+                                messagebox.showerror(
+                                    "Error", traceback.format_exc())
+                    else:
+                        assert max_width.get() > 0, "Max width must be a positive number"
+
+                        def action():
+                            try:
+                                grid, sorted_imgs, _ = make_img.calculate_salient_collage_dup(dest_img_path.get(), imgs,
+                                                                                              max_width.get(), color_space.get(),
+                                                                                              float(sigma.get()), dist_metric.get())
+                                # lower_thresh)
+                                return make_img.make_collage(grid, sorted_imgs, False)
+                            except:
+                                messagebox.showerror(
+                                    "Error", traceback.format_exc())
                 else:
-                    assert max_width.get() > 0, "Max width must be a positive number"
+                    if even.get() == "even":
+                        assert dup.get() > 0, "Duplication must be a positive number"
+                        assert float(
+                            sigma.get()) != 0, "Sigma must be non-zero"
 
-                    def action():
-                        try:
-                            grid, sorted_imgs, _ = make_img.calculate_collage_dup(dest_img_path.get(), imgs,
-                                                                                  max_width.get(), color_space.get(),
-                                                                                  float(sigma.get()), distance_metric.get())
-                            return make_img.make_collage(grid, sorted_imgs, False)
-                        except:
-                            messagebox.showerror(
-                                "Error", traceback.format_exc())
+                        def action():
+                            try:
+                                grid, sorted_imgs, _ = make_img.calculate_collage_bipartite(dest_img_path.get(), imgs,
+                                                                                            dup.get(), color_space.get(),
+                                                                                            ctype.get(), float(sigma.get()),
+                                                                                            dist_metric.get(), out_wrapper)
+                                return make_img.make_collage(grid, sorted_imgs, False)
+                            except:
+                                messagebox.showerror(
+                                    "Error", traceback.format_exc())
+                    else:
+                        assert max_width.get() > 0, "Max width must be a positive number"
+
+                        def action():
+                            try:
+                                grid, sorted_imgs, _ = make_img.calculate_collage_dup(dest_img_path.get(), imgs,
+                                                                                      max_width.get(), color_space.get(),
+                                                                                      float(sigma.get()), dist_metric.get())
+                                return make_img.make_collage(grid, sorted_imgs, False)
+                            except:
+                                messagebox.showerror(
+                                    "Error", traceback.format_exc())
 
                 pool.submit(action).add_done_callback(
                     lambda f: show_img(f.result()))
@@ -446,9 +479,47 @@ if __name__ == "__main__":
             except:
                 return messagebox.showerror("Error", traceback.format_exc())
 
+    def attach_salient_opt():
+        if is_salient.get():
+            salient_opt_panel.grid(row=10, columnspan=2, pady=2, sticky="w")
+        else:
+            salient_opt_panel.grid_remove()
+
     # right collage option panel ROW 9
+    is_salient = BooleanVar()
+    is_salient.set(False)
+    Checkbutton(right_collage_opt_panel, text="Salient objects only",
+                variable=is_salient, command=attach_salient_opt).grid(row=9, columnspan=2, sticky="w")
+
+    # right collage option panel ROW 10
+    salient_opt_panel = PanedWindow(right_collage_opt_panel)
+    salient_lower_thresh = StringVar()
+    salient_lower_thresh.set("50")
+    salient_opt_label = Label(salient_opt_panel, text="Lower threshold: ")
+    salient_opt_entry = Entry(
+        salient_opt_panel, textvariable=salient_lower_thresh, width=8)
+    salient_opt_label.grid(row=0, column=0, sticky="w")
+    salient_opt_entry.grid(row=0, column=1, sticky="w")
+    salient_bg_color = np.array((255, 255, 255), np.uint8)
+    sty = Style()
+    sty.configure("My.TButton", background="#FFFFFF", padding=5)
+
+    def change_bg_color():
+        global salient_bg_color, last_resize_time
+        rbg_color, hex_color = colorchooser.askcolor(
+            color=tuple(salient_bg_color))
+        if hex_color:
+            last_resize_time = time.time()
+            salient_bg_color = np.array(rbg_color, np.uint8)
+            sty.configure("My.TButton", background=hex_color)
+
+    salient_color_chooser = Button(salient_opt_panel, text="Select Background Color",
+                                   style="My.TButton", command=change_bg_color)
+    salient_color_chooser.grid(row=1, columnspan=2, pady=(3, 1))
+
+    # right collage option panel ROW 11
     Button(right_collage_opt_panel, text=" Generate Collage ",
-           command=generate_collage).grid(row=9, columnspan=2, pady=(5, 5))
+           command=generate_collage).grid(row=11, columnspan=2, pady=(3, 5))
     # ------------------------ end right collage option panel --------------------
 
     # right panel ROW 9:
@@ -502,13 +573,16 @@ if __name__ == "__main__":
 
     def canvas_resize(event):
         global last_resize_time
-        if time.time() - last_resize_time > 0.25 and event.width >= 800 and event.height >= 500:
+        if time.time() - last_resize_time > 0.25 and event.width >= 850 and event.height >= 550:
             last_resize_time = time.time()
-            log_entry.configure(height=6 + math.floor((event.height - 500) / 80))
-            log_entry.width = log_entry.initial_width + math.floor((event.width - 800) / 10)
+            log_entry.configure(
+                height=6 + math.floor((event.height - 500) / 80))
+            log_entry.width = log_entry.initial_width + \
+                math.floor((event.width - 800) / 10)
             make_img.pbar_ncols = log_entry.width
             log_entry.update()
-            w, h = event.width - right_panel_width - 20, event.height - log_entry.winfo_height() - 15
+            w, h = event.width - right_panel_width - \
+                20, event.height - log_entry.winfo_height() - 15
             pw, ph = canvas.winfo_width(), canvas.winfo_height()
             w_scale, h_scale = w / pw, h / ph
             canvas.configure(width=w, height=h)
