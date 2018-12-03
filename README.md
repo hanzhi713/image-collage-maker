@@ -100,14 +100,33 @@ Add ```--uneven``` flag to enable this option. You can also specify ```--max_wid
 python3 make_img.py --path img --out collage-best-fit.png --collage img/1.png --size 25 --uneven
 ```
 
-| Original                                    | Fitting Result                                                   |
+| Original                                    | Fitting Result               
 | ------------------------------------------- | ---------------------------------------------------------------- |
 | <img src="examples/dest.png" width="400px"> | <img src="examples/collage-best-fit_bgr_-1.0.png" width="400px"> |
 
+##### Option 2.3 Display salient object only
+
+This fitting option only fit the pixel of the destination image that
+constitutes a salient object. 
+
+Add ```--salient``` flag to enable this option. You can still specify whether each image is used for the same amount of times or not with the ```--uneven``` flag. 
+
+Use ```--lower_reresh``` to specify the threshold for object detection. The threshold ranges from 0 to 225; higher threshold would lead to less object area. The default threshold is 75. If you choose to use each image for the same amount of time, the threshold may have to change so that number of source images and the number of pixel of the destination image is close enough.
+
+Use ```--background``` to specify the background color for the collaged image. The colorspace for the background option is bgr. Default backgound color is white, i.e. (255, 255, 255).
+
+
+| Original                        | Uneven-Fitting Result              |Even-Fitting Result           |
+| ------------------------------- | ---------------------------------- |------------------------------- |
+| <img src="examples/messi.jpg" width="400px"> | <img src="examples/messi_uneven.png" width="400px"> | <img src="examples/messi_even.png" width="400px">|
 
 #### Other options
 
-Use ```python3 make_img.py --help``` to get other optional arguments
+Use ```--sigma```to add a weight to source images; a positive sigma implies a higher weight for the pixels in the middle of the image.
+
+Use ```--exp``` to traverse every possible sigmas and colorspaces. If you use the option ```--salient```, use ```--exp``` to traverse thresholds from 40 to 190. 
+
+Use ```python3 make_img.py --help``` to get other optional arguments.
 
 ## Mechanism
 
@@ -116,6 +135,8 @@ A brief description of the mechanism is available [here](Mechanism.md)
 ## Credits (Names in alphabetical order)
 
 Hanzhi Zhou ([hanzhi713](https://github.com/hanzhi713/)) : Main algorithm and GUI implementation
+
+Kaiying Shan ([kaiyingshan](https://github.com/kaiyingshan)) : Saliency idea and implementation
 
 Xinyue Lin : Idea for the "Uneven distribution (best-fit)"
 
