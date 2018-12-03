@@ -117,6 +117,8 @@ A brief description of the mechanism is available [here](Mechanism.md)
 
 Hanzhi Zhou ([hanzhi713](https://github.com/hanzhi713/)) : Main algorithm and GUI implementation
 
+Kaiying Shan ([kaiyingshan](https://github.com/kaiyingshan)) : Saliency idea and implementation
+
 Xinyue Lin : Idea for the "Uneven distribution (best-fit)"
 
 Yufeng Chi ([T-K](https://github.com/T-K-233/)) : Initial Idea, crawler

@@ -349,7 +349,10 @@ def calc_salient_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int =
     dest_img = dest_img.reshape(grid[0] * grid[1], 3)
 
     # compute pair-wise distances
-    cost_matrix = cdist(img_keys, dest_img, metric=metric).astype(eval("np." + ctype))
+    cost_matrix = cdist(img_keys, dest_img, metric=metric)
+
+    np_ctype = eval("np." + ctype)
+    cost_matrix = np_ctype(cost_matrix)
 
     print("Computing optimal assignment on a {}x{} matrix...".format(
         cost_matrix.shape[0], cost_matrix.shape[1]))
@@ -385,15 +388,15 @@ def calc_salient_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int =
 
 def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
                                     colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
-                                    metric: str = "euclidean", lower_thresh: int = 120, background: list = [255, 255, 255], 
+                                    metric: str = "euclidean", lower_thresh: int = 50, background: list = [255, 255, 255], 
                                     v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     assert isfile(dest_img_path)
     from scipy.spatial.distance import cdist
 
     t = time.time()
+    print("Duplicating {} times".format(dup))
 
     # avoid modifying the original array
-    print("Duplicating {} times".format(dup))
     imgs = list(map(np.copy, imgs))
     imgs_copy = list(map(np.copy, imgs))
     for i in range(dup - 1):
@@ -486,7 +489,10 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
 
     dest_obj = dest_obj[0]
 
-    cost_matrix = cdist(img_keys, dest_obj, metric=metric).astype(eval("np." + ctype))
+    cost_matrix = cdist(img_keys, dest_obj, metric=metric)
+
+    np_ctype = eval("np." + ctype)
+    cost_matrix = np_ctype(cost_matrix)
 
     print("Computing optimal assignment on a {}x{} matrix...".format(
         cost_matrix.shape[0], cost_matrix.shape[1]))
@@ -551,10 +557,9 @@ def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
     assert isfile(dest_img_path)
     from scipy.spatial.distance import cdist
 
-    t = time.time()
+    print("Duplicating {} times".format(dup))
 
     # avoid modifying the original array
-    print("Duplicating {} times".format(dup))
     imgs = list(map(np.copy, imgs))
     imgs_copy = list(map(np.copy, imgs))
     for i in range(dup - 1):
@@ -581,6 +586,7 @@ def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
     dest_img = cv2.resize(dest_img, grid, cv2.INTER_AREA)
 
     weights = calc_decay_weights_normal(imgs[0].shape[:2], sigma)
+    t = time.time()
     print("Computing cost matrix...")
     if colorspace == "hsv":
         img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))
@@ -597,7 +603,10 @@ def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
     dest_img = dest_img.reshape(grid[0] * grid[1], 3)
 
     # compute pair-wise distances
-    cost_matrix = cdist(img_keys, dest_img, metric=metric).astype(eval("np." + ctype))
+    cost_matrix = cdist(img_keys, dest_img, metric=metric)
+
+    np_ctype = eval("np." + ctype)
+    cost_matrix = np_ctype(cost_matrix)
 
     print("Computing optimal assignment on a {}x{} matrix...".format(
         cost_matrix.shape[0], cost_matrix.shape[1]))
@@ -622,7 +631,7 @@ def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
     cost = cost[0]
 
     print("Total assignment cost:", cost)
-    print("Time taken: {}s".format(np.round(time.time() - t, 2)))
+    print("Time taken: {}s".format((np.round(time.time() - t), 2)))
 
     # sometimes the cost matrix may be extremely large
     # manually delete it to free memory
@@ -665,8 +674,10 @@ def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: 
             if thresh[i, j] < 10:
                 dest_img[i, j, :] = np.array([255, 255, 255], np.uint8)
 
-    white = np.ones(imgs[0].shape, np.uint8)
-    white[:, :, :] = background
+    white = np.ones(imgs[0].shape, np.uint8) * 255
+    white[:, :, 0] = background[0]
+    white[:, :, 1] = background[1]
+    white[:, :, 2] = background[2]
     imgs.append(white)
 
     print("Computing costs...")
@@ -685,8 +696,8 @@ def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: 
     dest_img = dest_img.reshape(grid[0] * grid[1], 3)
     sorted_imgs = []
     cost = 0
-    for pixel in tqdm(dest_img, desc="[Computing assignments]", unit="pixel", unit_divisor=1000, 
-                      unit_scale=True, ncols=pbar_ncols):
+    for pixel in tqdm(dest_img, desc="[Computing assignments]", unit="pixel", unit_divisor=1000, unit_scale=True,
+                      ncols=pbar_ncols):
         # Compute the distance between the current pixel and each image in the set
         dist = cdist(img_keys, np.array([pixel]), metric=metric)[:, 0]
 
@@ -720,7 +731,6 @@ def calc_col_dup(dest_img_path: str, imgs: list, max_width: int = 50, color_spac
     assert isfile(dest_img_path)
     from scipy.spatial.distance import cdist
 
-    t = time.time()
     dest_img = cv2.imread(dest_img_path)
 
     # Because we don't have a fixed total amount of images as we can used a single image
@@ -733,7 +743,7 @@ def calc_col_dup(dest_img_path: str, imgs: list, max_width: int = 50, color_spac
 
     weights = calc_decay_weights_normal(imgs[0].shape[:2], sigma)
     dest_img = cv2.resize(dest_img, grid, cv2.INTER_AREA)
-
+    t = time.time()
     print("Computing costs")
     if color_space == "hsv":
         img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))
@@ -989,50 +999,75 @@ if __name__ == "__main__":
                                   args.rev_row), args.out, "")
     else:
         if args.exp:
-            # noinspection PyUnresolvedReferences
             from mpl_toolkits.mplot3d import Axes3D
             import matplotlib.pyplot as plt
 
             pool = con.ProcessPoolExecutor(4)
             futures = []
 
-            total_steps = len(all_sigmas) * len(all_color_spaces)
+            all_thresholds = list(range(40, 200, 10))
+            cost_vis = {}
 
-            if args.uneven:
-                for sigma in all_sigmas:
-                    for color_space in all_color_spaces:
-                        f = pool.submit(calc_col_dup, args.collage, imgs,
-                                        args.max_width, color_space, sigma, args.metric)
-                        futures.append((f, sigma, color_space))
+            if args.salient:
+                if args.uneven:
+                    for i in all_thresholds:
+                        f = pool.submit(calc_salient_col_dup, args.collage, imgs, max_width = args.max_width, lower_thresh = i)
+                        futures.append((f, i))
+                else:
+                    for i in all_thresholds:
+                        f = pool.submit(calc_salient_col_even_fast, args.collage, imgs, dup = args.dup, lower_thresh = i)
+                        futures.append((f, i))
+
+                for f, i in tqdm(futures, desc="[Experimenting]", unit="exps", file=sys.__stdout__):
+                    suffix = "threshold_{}".format(i)
+                    grid, sorted_imgs, cost = f.result()
+                    save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, suffix)
+                    cost_vis[i] = cost
+
+                plt.figure()
+                plt.plot(cost_vis.keys(), cost_vis.values(), )
+                plt.xlabel("Threshold")
+                plt.ylabel("Cost")
+                plt.show()
+
             else:
-                for sigma in all_sigmas:
-                    for color_space in all_color_spaces:
-                        f = pool.submit(calc_col_even, args.collage, imgs, args.dup,
-                                        color_space, args.ctype, sigma, args.metric)
-                        futures.append((f, sigma, color_space))
+                total_steps = len(all_sigmas) * len(all_color_spaces)
 
-            cost_vis = np.zeros((len(all_sigmas), len(all_color_spaces)))
-            r, c = 0, 0
-            for (f, sigma, color_space) in tqdm(futures, desc="[Experimenting]", unit="exps", file=sys.__stdout__):
-                suffix = "{}_{}".format(color_space, np.round(sigma, 2))
-                grid, sorted_imgs, cost = f.result()
-                save_img(make_collage(grid, sorted_imgs,
-                                      args.rev_row), args.out, suffix)
-                cost_vis[r, c] = cost
-                c += 1
-                if c % len(all_color_spaces) == 0:
-                    r += 1
-                    c = 0
+                if args.uneven:
+                    for sigma in all_sigmas:
+                        for color_space in all_color_spaces:
+                            f = pool.submit(calc_col_dup, args.collage, imgs,
+                                            args.max_width, color_space, sigma, args.metric)
+                            futures.append((f, sigma, color_space))
+                else:
+                    for sigma in all_sigmas:
+                            for color_space in all_color_spaces:
+                                f = pool.submit(calc_col_even, args.collage, imgs, args.dup,
+                                                color_space, args.ctype, sigma, args.metric)
+                                futures.append((f, sigma, color_space))
 
-            fig = plt.figure()
-            ax = fig.gca(projection='3d')
-            X, Y = np.meshgrid(np.arange(len(all_color_spaces)), all_sigmas)
-            surf = ax.plot_surface(X, Y, cost_vis)
-            ax.set_xlabel("Color Space")
-            ax.set_ylabel("Sigma")
-            ax.set_zlabel("Cost")
-            plt.xticks(np.arange(len(all_color_spaces)), all_color_spaces)
-            plt.show()
+                cost_vis = np.zeros((len(all_sigmas), len(all_color_spaces)))
+                r, c = 0, 0
+                for (f, sigma, color_space) in tqdm(futures, desc="[Experimenting]", unit="exps", file=sys.__stdout__):
+                    suffix = "{}_{}".format(color_space, np.round(sigma, 2))
+                    grid, sorted_imgs, cost = f.result()
+                    save_img(make_collage(grid, sorted_imgs,
+                                        args.rev_row), args.out, suffix)
+                    cost_vis[r, c] = cost
+                    c += 1
+                    if c % len(all_color_spaces) == 0:
+                        r += 1
+                        c = 0
+
+                fig = plt.figure()
+                ax = fig.gca(projection='3d')
+                X, Y = np.meshgrid(np.arange(len(all_color_spaces)), all_sigmas)
+                surf = ax.plot_surface(X, Y, cost_vis)
+                ax.set_xlabel("Color Space")
+                ax.set_ylabel("Sigma")
+                ax.set_zlabel("Cost")
+                plt.xticks(np.arange(len(all_color_spaces)), all_color_spaces)
+                plt.show()
 
         else:
             if args.salient:
