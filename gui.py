@@ -313,7 +313,7 @@ if __name__ == "__main__":
                 try:
                     print("Destination image loaded from", fp)
                     dest_img = cv2.imread(fp)
-                    show_img(dest_img)
+                    show_img(dest_img, False)
                     dest_img_path.set(fp)
                 except:
                     messagebox.showerror("Error reading file",
