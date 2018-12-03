@@ -349,10 +349,7 @@ def calc_salient_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int =
     dest_img = dest_img.reshape(grid[0] * grid[1], 3)
 
     # compute pair-wise distances
-    cost_matrix = cdist(img_keys, dest_img, metric=metric)
-
-    np_ctype = eval("np." + ctype)
-    cost_matrix = np_ctype(cost_matrix)
+    cost_matrix = cdist(img_keys, dest_img, metric=metric).astype(eval("np." + ctype))
 
     print("Computing optimal assignment on a {}x{} matrix...".format(
         cost_matrix.shape[0], cost_matrix.shape[1]))
@@ -394,9 +391,9 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
     from scipy.spatial.distance import cdist
 
     t = time.time()
-    print("Duplicating {} times".format(dup))
 
     # avoid modifying the original array
+    print("Duplicating {} times".format(dup))
     imgs = list(map(np.copy, imgs))
     imgs_copy = list(map(np.copy, imgs))
     for i in range(dup - 1):
@@ -489,10 +486,7 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
 
     dest_obj = dest_obj[0]
 
-    cost_matrix = cdist(img_keys, dest_obj, metric=metric)
-
-    np_ctype = eval("np." + ctype)
-    cost_matrix = np_ctype(cost_matrix)
+    cost_matrix = cdist(img_keys, dest_obj, metric=metric).astype(eval("np." + ctype))
 
     print("Computing optimal assignment on a {}x{} matrix...".format(
         cost_matrix.shape[0], cost_matrix.shape[1]))
@@ -557,9 +551,10 @@ def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
     assert isfile(dest_img_path)
     from scipy.spatial.distance import cdist
 
-    print("Duplicating {} times".format(dup))
+    t = time.time()
 
     # avoid modifying the original array
+    print("Duplicating {} times".format(dup))
     imgs = list(map(np.copy, imgs))
     imgs_copy = list(map(np.copy, imgs))
     for i in range(dup - 1):
@@ -586,7 +581,6 @@ def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
     dest_img = cv2.resize(dest_img, grid, cv2.INTER_AREA)
 
     weights = calc_decay_weights_normal(imgs[0].shape[:2], sigma)
-    t = time.time()
     print("Computing cost matrix...")
     if colorspace == "hsv":
         img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))
@@ -603,10 +597,7 @@ def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
     dest_img = dest_img.reshape(grid[0] * grid[1], 3)
 
     # compute pair-wise distances
-    cost_matrix = cdist(img_keys, dest_img, metric=metric)
-
-    np_ctype = eval("np." + ctype)
-    cost_matrix = np_ctype(cost_matrix)
+    cost_matrix = cdist(img_keys, dest_img, metric=metric).astype(eval("np." + ctype))
 
     print("Computing optimal assignment on a {}x{} matrix...".format(
         cost_matrix.shape[0], cost_matrix.shape[1]))
@@ -631,7 +622,7 @@ def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
     cost = cost[0]
 
     print("Total assignment cost:", cost)
-    print("Time taken: {}s".format((np.round(time.time() - t), 2)))
+    print("Time taken: {}s".format(np.round(time.time() - t, 2)))
 
     # sometimes the cost matrix may be extremely large
     # manually delete it to free memory
@@ -674,10 +665,8 @@ def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: 
             if thresh[i, j] < 10:
                 dest_img[i, j, :] = np.array([255, 255, 255], np.uint8)
 
-    white = np.ones(imgs[0].shape, np.uint8) * 255
-    white[:, :, 0] = background[0]
-    white[:, :, 1] = background[1]
-    white[:, :, 2] = background[2]
+    white = np.ones(imgs[0].shape, np.uint8)
+    white[:, :, :] = background
     imgs.append(white)
 
     print("Computing costs...")
@@ -696,8 +685,8 @@ def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: 
     dest_img = dest_img.reshape(grid[0] * grid[1], 3)
     sorted_imgs = []
     cost = 0
-    for pixel in tqdm(dest_img, desc="[Computing assignments]", unit="pixel", unit_divisor=1000, unit_scale=True,
-                      ncols=pbar_ncols):
+    for pixel in tqdm(dest_img, desc="[Computing assignments]", unit="pixel", unit_divisor=1000, 
+                      unit_scale=True, ncols=pbar_ncols):
         # Compute the distance between the current pixel and each image in the set
         dist = cdist(img_keys, np.array([pixel]), metric=metric)[:, 0]
 
@@ -731,6 +720,7 @@ def calc_col_dup(dest_img_path: str, imgs: list, max_width: int = 50, color_spac
     assert isfile(dest_img_path)
     from scipy.spatial.distance import cdist
 
+    t = time.time()
     dest_img = cv2.imread(dest_img_path)
 
     # Because we don't have a fixed total amount of images as we can used a single image
@@ -743,7 +733,7 @@ def calc_col_dup(dest_img_path: str, imgs: list, max_width: int = 50, color_spac
 
     weights = calc_decay_weights_normal(imgs[0].shape[:2], sigma)
     dest_img = cv2.resize(dest_img, grid, cv2.INTER_AREA)
-    t = time.time()
+
     print("Computing costs")
     if color_space == "hsv":
         img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))

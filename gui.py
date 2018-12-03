@@ -111,7 +111,7 @@ if __name__ == "__main__":
     result_img = None
     # ------------------ end left panel ------------------------
 
-    def show_img(img: np.ndarray) -> None:
+    def show_img(img: np.ndarray, printDone: bool = True) -> None:
         global result_img
         result_img = img
         width, height = canvas.winfo_width(), canvas.winfo_height()
@@ -126,7 +126,8 @@ if __name__ == "__main__":
         canvas.delete("all")
         canvas.create_image((width - w) // 2, (height - h) // 2,
                             image=root.preview, anchor=NW)
-        print("Done")
+        if printDone:
+            print("Done")
 
     # --------------------- right panel's children ------------------------
     # right panel ROW 0
@@ -425,7 +426,6 @@ if __name__ == "__main__":
                                                                                       ctype.get(), float(sigma.get()),
                                                                                       dist_metric.get(), lower_thresh,
                                                                                       salient_bg_color, out_wrapper)
-                                # lower_thresh, out_wrapper)
                                 return mkg.make_collage(grid, sorted_imgs, False)
                             except:
                                 messagebox.showerror(
@@ -589,7 +589,7 @@ if __name__ == "__main__":
             canvas.configure(width=w, height=h)
             canvas.update()
             if result_img is not None:
-                show_img(result_img)
+                show_img(result_img, False)
 
     root.bind("<Configure>", canvas_resize)
     root.mainloop()
