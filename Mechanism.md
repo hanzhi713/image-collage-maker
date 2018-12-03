@@ -155,7 +155,7 @@ First, we compute a binary image ```thresh``` to indicate the location of the pi
 ```python
 #create a saliency object.
 saliency = cv2.saliency.StaticSaliencyFineGrained_create()
-#generate an image that dipicts the saliency of objects in an image with a float number from 0 to 1; the larger the number, the more salient the corresponding pixel.
+#generate an image that depicts the saliency of objects in an image with a float number from 0 to 1; the larger the number, the more salient the corresponding pixel.
 _, saliency_map = saliency.computeSaliency(dest_img)
 #generate a binary image. the pixel is white, i.e. 255, if the corresponding pixel in saliency_map is greater than the threshold, or else the pixel is black, i.e. 0.
 _, thresh = cv2.threshold(saliency_map * 255, lower_thresh, 255, cv2.THRESH_BINARY)
@@ -164,7 +164,7 @@ obj_area = np.count_nonzero(thresh.astype(np.uint8))
 ```
 Since we want to use as many source images as possible, and the number of pixels that constitutes an object (i.e. object area) cannot exceed the number of source images, we have to recalculate the size of the destination image according to the number of source images and the object area. 
 
-However, the proportion of object area to total area may be different after resizing. Thus, we use a while loop to adjust threshold dynamically, in order to make the number of source images and the object area close enough. Once they are close enough, and the object area does not exceed the number of source images, we no longer have to resize the destination image or change the threshold, and the resized destination image is ready to be filterred to dipict salient object only.
+However, the proportion of object area to total area may be different after resizing. Thus, we use a while loop to adjust threshold dynamically, in order to make the number of source images and the object area close enough. Once they are close enough, and the object area does not exceed the number of source images, we no longer have to resize the destination image or change the threshold, and the resized destination image is ready to be filtered to depict salient object only.
 ```python
 while True:
         #calculate total number of image based on number of source images and number of pixels that constitutes an object.
@@ -200,7 +200,7 @@ while True:
             threshold += 2
             if threshold > 254:
                 threshold = 254
-        #if the difference is small enough, and the number of pixels is less than the number of images, we no longer have to adjust the size of the desination image.
+        #if the difference is small enough, and the number of pixels is less than the number of images, we no longer have to adjust the size of the destination image.
         if diff >= 0 and diff < int(len(imgs) / dup / 2) or pbar.n > 100:
             break
 ``` 
