@@ -387,9 +387,25 @@ def calc_salient_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int =
 
 
 def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
-                                    colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
-                                    metric: str = "euclidean", lower_thresh: int = 50, background: list = [255, 255, 255], 
-                                    v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+                               colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
+                               metric: str = "euclidean", lower_thresh: int = 50, 
+                               background: Tuple[int, int, int] = (255, 255, 255), 
+                               v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+    """
+    Compute the optimal assignment between the set of images provided and the set of pixels constitute of salient objects of the
+    target image, with the restriction that every image should be used the same amount of times
+
+    :param dest_img_path: path to the destination image file
+    :param imgs: list of images
+    :param dup: number of times to duplicate the set of images
+    :param colorspace: name of the colorspace used
+    :param ctype: ctype of the cost matrix
+    :param sigma:
+    :param v: verbose
+    :return: [gird size, sorted images, total assignment cost]
+    :param lower_thresh: threshold for object detection
+    :background background color
+    """
     assert isfile(dest_img_path)
     from scipy.spatial.distance import cdist
 
@@ -421,7 +437,6 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
     while True:
         num_imgs = round(rh * rw / obj_area * len(imgs))
 
-        last_grid = grid
         grid = calc_grid_size(rw, rh, num_imgs)
    
         dest_img = cv2.resize(dest_img_copy, grid, cv2.INTER_AREA)
@@ -437,7 +452,7 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
         obj_area = np.count_nonzero(thresh_resized)
 
         diff = len(imgs) - obj_area
-        last_thresh = threshold
+        
         pbar.update(1)
 
         if diff > 0 :
@@ -640,9 +655,22 @@ def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
     return grid, np.array(imgs)[cols], cost
 
 
-def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: int = 50, 
-                         color_space="lab", sigma: float = 1.0, metric: str = "euclidean", 
-                         lower_thresh: int = 50, background: list = [255, 255, 255]) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+def calc_salient_col_dup (dest_img_path: str, imgs: List[np.ndarray], max_width: int = 50, 
+                         color_space="lab", sigma: float = 1.0, metric: str = "euclidean", lower_thresh: int = 50, 
+                         background: Tuple[int, int, int] = (255, 255, 255)) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+    """
+    Compute the optimal assignment between the set of images provided and the set of pixels that constitute 
+    of the salient objects of the target image, given that every image could be used arbitrary amount of times
+
+    :param dest_img_path: path to the dest_img file
+    :param imgs: list of images
+    :param max_width: max_width of the resulting dest_img
+    :param color_space: color space used
+    :param sigma:
+    :param lower_thresh: threshold for object detection
+    :background background color
+    :return: [gird size, sorted images, total assignment cost]
+    """
     assert isfile(dest_img_path)
     from scipy.spatial.distance import cdist
 
@@ -672,7 +700,7 @@ def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: 
     for i in range(rh):
         for j in range(rw):
             if thresh[i, j] < 10:
-                dest_img[i, j, :] = np.array([255, 255, 255], np.uint8)
+                dest_img[i, j, :] = np.array(background, np.uint8)
 
     white = np.ones(imgs[0].shape, np.uint8) * 255
     white[:, :, 0] = background[0]
@@ -954,11 +982,12 @@ if __name__ == "__main__":
                         help="Type of the cost matrix. "
                              "Float16 is a good compromise between computational time and accuracy",
                         choices=all_ctypes)
-    parser.add_argument("--sigma", type=float, default=1.0)
-    parser.add_argument("--exp", action="store_true")
-    parser.add_argument("--verbose", action="store_true")
-    parser.add_argument("--salient", action="store_true")
+    parser.add_argument("--sigma", type=float, default=1.0, help = "Add a weight to source images; a positive sigma implies a higher weight for the pixels in the middle of the image")
+    parser.add_argument("--exp", action="store_true", help = "Traverse all possible options.")
+    parser.add_argument("--verbose", action="store_true", help = "Print progress message to console")
+    parser.add_argument("--salient", action="store_true", help = "Collage salient object only")
     parser.add_argument("--lower_thresh", type=int, default=50)
+    parser.add_argument("--background", nargs = 3, type = int, default = (225, 225, 225), help = "Backgound color in BGR")
 
     args = parser.parse_args()
     if not args.verbose:
@@ -1074,13 +1103,13 @@ if __name__ == "__main__":
                 if args.uneven:
                     grid, sorted_imgs, _ = calc_salient_col_dup(args.collage, imgs, args.max_width,
                                                                 args.colorspace, args.sigma, args.metric,
-                                                                args.lower_thresh)
+                                                                args.lower_thresh, args.background)
                     save_img(make_collage(grid, sorted_imgs, args.rev_row),
                              args.out, "")
                 else:
                     grid, sorted_imgs, _ = calc_salient_col_even_fast(args.collage, imgs, args.dup,
                                                                            args.colorspace, args.ctype, args.sigma, 
-                                                                           args.metric, args.lower_thresh)
+                                                                           args.metric, args.lower_thresh, args.background)
                     save_img(make_collage(grid, sorted_imgs, args.rev_row),
                              args.out, "")
             else:
