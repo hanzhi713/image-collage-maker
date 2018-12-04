@@ -111,10 +111,18 @@ constitutes a salient object.
 
 Add ```--salient``` flag to enable this option. You can still specify whether each image is used for the same amount of times or not with the ```--uneven``` flag. 
 
-Use ```--lower_reresh``` to specify the threshold for object detection. The threshold ranges from 0 to 225; higher threshold would lead to less object area. The default threshold is 75. If you choose to use each image for the same amount of time, the threshold may have to change so that number of source images and the number of pixel of the destination image is close enough.
+Use ```--lower_thresh``` to specify the threshold for object detection. The threshold ranges from 0 to 225; higher threshold would lead to less object area. The default threshold is 75. If you choose to use each image for the same amount of time, the threshold may have to change so that number of source images and the number of pixel of the destination image is close enough.
 
-Use ```--background``` to specify the background color for the collaged image. The colorspace for the background option is bgr. Default backgound color is white, i.e. (255, 255, 255).
+Use ```--background``` to specify the background color for the collage. The colorspace for the background option is bgr. Default background color is white, i.e. (255, 255, 255).
 
+
+```bash
+python3 make_img.py --path img --out collage-best-fit.png --collage img/1.png --dup 16 --salient
+```
+
+```bash
+python3 make_img.py --path img --out collage-best-fit.png --collage img/1.png --size 25 --salient --uneven
+```
 
 | Original                        | Uneven-Fitting Result              |Even-Fitting Result           |
 | ------------------------------- | ---------------------------------- |------------------------------- |
