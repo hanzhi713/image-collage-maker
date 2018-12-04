@@ -39,7 +39,7 @@ source activate collage
 Install the packages that are not available in the Anaconda repo
 
 ```bash
-pip install lapjv wurlitzer pyinstaller
+pip install lapjv wurlitzer pyinstaller opencv-contrib-python
 ```
 
 ## Environment Setup: Windows
@@ -65,7 +65,7 @@ conda install -c conda-forge numpy
 Install rest of the packages using pip
 
 ```bash
-pip install pillow opencv-python tqdm scikit-learn lapjv pyinstaller
+pip install pillow opencv-python opencv-contrib-python tqdm scikit-learn lapjv pyinstaller
 ```
 
 ## Building Executable: MacOS
