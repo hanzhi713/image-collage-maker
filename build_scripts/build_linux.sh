@@ -1,5 +1,5 @@
 #!/bin/sh
-VERSION=1.4
+VERSION=2.0
 NAME="collage-maker-linux-x64"
 
 # change this to your anaconda installation path.
