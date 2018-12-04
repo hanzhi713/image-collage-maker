@@ -274,7 +274,7 @@ if __name__ == "__main__":
             def action():
                 try:
                     grid, sorted_imgs = mkg.sort_collage(imgs, (w, h), sort_method.get(),
-                                                              rev_sort.get())
+                                                         rev_sort.get())
                     return mkg.make_collage(grid, sorted_imgs, rev_row.get())
                 except:
                     messagebox.showerror("Error", traceback.format_exc())
@@ -437,7 +437,8 @@ if __name__ == "__main__":
                             try:
                                 grid, sorted_imgs, _ = mkg.calc_salient_col_dup(dest_img_path.get(), imgs,
                                                                                 max_width.get(), color_space.get(),
-                                                                                float(sigma.get()), dist_metric.get(), 
+                                                                                float(
+                                                                                    sigma.get()), dist_metric.get(),
                                                                                 lower_thresh, salient_bg_color)
                                 return mkg.make_collage(grid, sorted_imgs, False)
                             except:
@@ -452,9 +453,9 @@ if __name__ == "__main__":
                         def action():
                             try:
                                 grid, sorted_imgs, _ = mkg.calc_col_even(dest_img_path.get(), imgs,
-                                                                                            dup.get(), color_space.get(),
-                                                                                            ctype.get(), float(sigma.get()),
-                                                                                            dist_metric.get(), out_wrapper)
+                                                                         dup.get(), color_space.get(),
+                                                                         ctype.get(), float(sigma.get()),
+                                                                         dist_metric.get(), out_wrapper)
                                 return mkg.make_collage(grid, sorted_imgs, False)
                             except:
                                 messagebox.showerror(
@@ -465,8 +466,8 @@ if __name__ == "__main__":
                         def action():
                             try:
                                 grid, sorted_imgs, _ = mkg.calc_col_dup(dest_img_path.get(), imgs,
-                                                                                      max_width.get(), color_space.get(),
-                                                                                      float(sigma.get()), dist_metric.get())
+                                                                        max_width.get(), color_space.get(),
+                                                                        float(sigma.get()), dist_metric.get())
                                 return mkg.make_collage(grid, sorted_imgs, False)
                             except:
                                 messagebox.showerror(

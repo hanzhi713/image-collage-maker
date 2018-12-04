@@ -269,8 +269,8 @@ def chl_mean_lab(weights: np.ndarray) -> Callable:
 
 
 def calc_salient_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
-                               colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
-                               metric: str = "euclidean", lower_thresh: int = 50, v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+                          colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
+                          metric: str = "euclidean", lower_thresh: int = 50, v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     assert isfile(dest_img_path)
     from scipy.spatial.distance import cdist
 
@@ -388,8 +388,8 @@ def calc_salient_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int =
 
 def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
                                colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
-                               metric: str = "euclidean", lower_thresh: int = 50, 
-                               background: Tuple[int, int, int] = (255, 255, 255), 
+                               metric: str = "euclidean", lower_thresh: int = 50,
+                               background: Tuple[int, int, int] = (255, 255, 255),
                                v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels constitute of salient objects of the
@@ -438,7 +438,7 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
         num_imgs = round(rh * rw / obj_area * len(imgs))
 
         grid = calc_grid_size(rw, rh, num_imgs)
-   
+
         dest_img = cv2.resize(dest_img_copy, grid, cv2.INTER_AREA)
 
         saliency2 = cv2.saliency.StaticSaliencyFineGrained_create()
@@ -447,15 +447,15 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
             saliency_map_resized * 255, threshold, 255, cv2.THRESH_BINARY)
 
         rh, rw, _ = dest_img.shape
-        
+
         thresh_resized = thresh_resized.astype(np.uint8)
         obj_area = np.count_nonzero(thresh_resized)
 
         diff = len(imgs) - obj_area
-        
+
         pbar.update(1)
 
-        if diff > 0 :
+        if diff > 0:
             threshold -= 2
             if threshold < 1:
                 threshold = 1
@@ -483,7 +483,8 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
                 dest_img[i, j, :] = np.array([255, 255, 255], np.uint8)
 
     if len(imgs) > len(dest_obj):
-        print("Note:", len(imgs) - len(dest_obj), "images will be thrown away from the collage")
+        print("Note:", len(imgs) - len(dest_obj),
+              "images will be thrown away from the collage")
     imgs = imgs[:len(dest_obj)]
 
     print("Computing cost matrix...")
@@ -554,8 +555,8 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
 
 
 def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
-                       colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
-                       metric: str = "euclidean", v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+                  colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
+                  metric: str = "euclidean", v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
     with the restriction that every image should be used the same amount of times
@@ -655,8 +656,8 @@ def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
     return grid, np.array(imgs)[cols], cost
 
 
-def calc_salient_col_dup (dest_img_path: str, imgs: List[np.ndarray], max_width: int = 50, 
-                         color_space="lab", sigma: float = 1.0, metric: str = "euclidean", lower_thresh: int = 50, 
+def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: int = 50,
+                         color_space="lab", sigma: float = 1.0, metric: str = "euclidean", lower_thresh: int = 50,
                          background: Tuple[int, int, int] = (255, 255, 255)) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels that constitute 
@@ -744,7 +745,7 @@ def calc_salient_col_dup (dest_img_path: str, imgs: List[np.ndarray], max_width:
 
 
 def calc_col_dup(dest_img_path: str, imgs: list, max_width: int = 50, color_space="lab",
-                          sigma: float = 1.0, metric: str = "euclidean") -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+                 sigma: float = 1.0, metric: str = "euclidean") -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
     given that every image could be used arbitrary amount of times
@@ -982,12 +983,17 @@ if __name__ == "__main__":
                         help="Type of the cost matrix. "
                              "Float16 is a good compromise between computational time and accuracy",
                         choices=all_ctypes)
-    parser.add_argument("--sigma", type=float, default=1.0, help = "Add a weight to source images; a positive sigma implies a higher weight for the pixels in the middle of the image")
-    parser.add_argument("--exp", action="store_true", help = "Traverse all possible options.")
-    parser.add_argument("--verbose", action="store_true", help = "Print progress message to console")
-    parser.add_argument("--salient", action="store_true", help = "Collage salient object only")
+    parser.add_argument("--sigma", type=float, default=1.0,
+                        help="Add a weight to source images; a positive sigma implies a higher weight for the pixels in the middle of the image")
+    parser.add_argument("--exp", action="store_true",
+                        help="Traverse all possible options.")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Print progress message to console")
+    parser.add_argument("--salient", action="store_true",
+                        help="Collage salient object only")
     parser.add_argument("--lower_thresh", type=int, default=50)
-    parser.add_argument("--background", nargs = 3, type = int, default = (225, 225, 225), help = "Backgound color in BGR")
+    parser.add_argument("--background", nargs=3, type=int,
+                        default=(225, 225, 225), help="Backgound color in BGR")
 
     args = parser.parse_args()
     if not args.verbose:
@@ -1040,17 +1046,20 @@ if __name__ == "__main__":
             if args.salient:
                 if args.uneven:
                     for i in all_thresholds:
-                        f = pool.submit(calc_salient_col_dup, args.collage, imgs, max_width = args.max_width, lower_thresh = i)
+                        f = pool.submit(calc_salient_col_dup, args.collage,
+                                        imgs, max_width=args.max_width, lower_thresh=i)
                         futures.append((f, i))
                 else:
                     for i in all_thresholds:
-                        f = pool.submit(calc_salient_col_even_fast, args.collage, imgs, dup = args.dup, lower_thresh = i)
+                        f = pool.submit(
+                            calc_salient_col_even_fast, args.collage, imgs, dup=args.dup, lower_thresh=i)
                         futures.append((f, i))
 
                 for f, i in tqdm(futures, desc="[Experimenting]", unit="exps", file=sys.__stdout__):
                     suffix = "threshold_{}".format(i)
                     grid, sorted_imgs, cost = f.result()
-                    save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, suffix)
+                    save_img(make_collage(grid, sorted_imgs,
+                                          args.rev_row), args.out, suffix)
                     cost_vis[i] = cost
 
                 plt.figure()
@@ -1070,10 +1079,10 @@ if __name__ == "__main__":
                             futures.append((f, sigma, color_space))
                 else:
                     for sigma in all_sigmas:
-                            for color_space in all_color_spaces:
-                                f = pool.submit(calc_col_even, args.collage, imgs, args.dup,
-                                                color_space, args.ctype, sigma, args.metric)
-                                futures.append((f, sigma, color_space))
+                        for color_space in all_color_spaces:
+                            f = pool.submit(calc_col_even, args.collage, imgs, args.dup,
+                                            color_space, args.ctype, sigma, args.metric)
+                            futures.append((f, sigma, color_space))
 
                 cost_vis = np.zeros((len(all_sigmas), len(all_color_spaces)))
                 r, c = 0, 0
@@ -1081,7 +1090,7 @@ if __name__ == "__main__":
                     suffix = "{}_{}".format(color_space, np.round(sigma, 2))
                     grid, sorted_imgs, cost = f.result()
                     save_img(make_collage(grid, sorted_imgs,
-                                        args.rev_row), args.out, suffix)
+                                          args.rev_row), args.out, suffix)
                     cost_vis[r, c] = cost
                     c += 1
                     if c % len(all_color_spaces) == 0:
@@ -1090,7 +1099,8 @@ if __name__ == "__main__":
 
                 fig = plt.figure()
                 ax = fig.gca(projection='3d')
-                X, Y = np.meshgrid(np.arange(len(all_color_spaces)), all_sigmas)
+                X, Y = np.meshgrid(
+                    np.arange(len(all_color_spaces)), all_sigmas)
                 surf = ax.plot_surface(X, Y, cost_vis)
                 ax.set_xlabel("Color Space")
                 ax.set_ylabel("Sigma")
@@ -1108,8 +1118,8 @@ if __name__ == "__main__":
                              args.out, "")
                 else:
                     grid, sorted_imgs, _ = calc_salient_col_even_fast(args.collage, imgs, args.dup,
-                                                                           args.colorspace, args.ctype, args.sigma, 
-                                                                           args.metric, args.lower_thresh, args.background)
+                                                                      args.colorspace, args.ctype, args.sigma,
+                                                                      args.metric, args.lower_thresh, args.background)
                     save_img(make_collage(grid, sorted_imgs, args.rev_row),
                              args.out, "")
             else:
@@ -1121,6 +1131,6 @@ if __name__ == "__main__":
 
                 else:
                     grid, sorted_imgs, _ = calc_col_even(args.collage, imgs, args.dup,
-                                                              args.colorspace, args.ctype, args.sigma, args.metric)
+                                                         args.colorspace, args.ctype, args.sigma, args.metric)
                     save_img(make_collage(grid, sorted_imgs, args.rev_row),
                              args.out, "")
