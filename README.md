@@ -116,6 +116,14 @@ Use ```--lower_thresh``` to specify the threshold for object detection. The thre
 Use ```--background``` to specify the background color for the collage. The colorspace for the background option is bgr. Default background color is white, i.e. (255, 255, 255).
 
 
+```bash
+python3 make_img.py --path img --out collage-best-fit.png --collage img/1.png --dup 16 --salient
+```
+
+```bash
+python3 make_img.py --path img --out collage-best-fit.png --collage img/1.png --size 25 --salient --uneven
+```
+
 | Original                        | Uneven-Fitting Result              |Even-Fitting Result           |
 | ------------------------------- | ---------------------------------- |------------------------------- |
 | <img src="examples/messi.jpg" width="400px"> | <img src="examples/messi_uneven.png" width="400px"> | <img src="examples/messi_even.png" width="400px">|
