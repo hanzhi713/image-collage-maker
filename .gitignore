@@ -11,3 +11,4 @@ linux_builds/
 windows_builds/
 macos_builds/
 result.png
+.pylintrc
