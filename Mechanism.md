@@ -146,15 +146,15 @@ for pixel in dest_img:
 
 ### Salient Object Only
 
-Displaying only salient object in an image utilizes the saliency object in the opencv library.
+Displaying only salient object in an image utilizes the saliency object in the OpenCV library.
 
-#### Salient object only for even distribution.
+#### Salient object only for even distribution
 
 First, we compute a binary image ```thresh``` to indicate the location of the pixel in the destination image that constitutes a salient object.
 
 ```python
 
-#create a saliency object.
+# create a saliency object.
 saliency = cv2.saliency.StaticSaliencyFineGrained_create()
 
 """
@@ -165,22 +165,24 @@ the number, the more salient the corresponding pixel.
 _, saliency_map = saliency.computeSaliency(dest_img)
 
 """
-generate a binary image. the pixel is white, i.e. 255, 
-if the corresponding pixel in saliency_map is greater 
-than the threshold, or else the pixel is black, i.e. 0.
+generate a binary image. the pixel is white, i.e. has a value of 255, 
+if the corresponding pixel in saliency_map is greater than the threshold.
+Otherwise the pixel is black, i.e. has a value of 0.
 """
 _, thresh = cv2.threshold(saliency_map * 255, lower_thresh, 255, cv2.THRESH_BINARY)
 
-#store the number of pixels that constitute an object
+# store the number of pixels that constitute an object
 obj_area = np.count_nonzero(thresh.astype(np.uint8))
 ```
+
 Since we want to use as many source images as possible, and the number of pixels that constitutes an object (i.e. object area) cannot exceed the number of source images, we have to recalculate the size of the destination image according to the number of source images and the object area. 
 
-However, the proportion of object area to total area may be different after resizing. Thus, we use a while loop to adjust threshold dynamically, in order to make the number of source images and the object area close enough. Once they are close enough, and the object area does not exceed the number of source images, we no longer have to resize the destination image or change the threshold, and the resized destination image is ready to be filtered to depict salient object only.
+However, the ratio of the object area to the total area may be different after resizing. Thus, we use a while loop to adjust the threshold dynamically, in order to make the number of source images and the object area close enough. Once they are convergent, and the object area does not exceed the number of source images, we no longer have to resize the destination image or change the threshold, and the resized destination image is ready to be filtered to depict salient object only.
+
 ```python
 while True:
         """
-        calculate total number of image based on number 
+        calculate the total number of image based on the number 
         of source images and number of pixels that 
         constitutes an object.
         """
@@ -211,30 +213,34 @@ while True:
         
         """
         update threshold based on the difference
-        between number of source images and object area. 
+        between the number of source images and the object area. 
         if object area is smaller than the number of 
         images, we have to use a lower threshold so 
-        that more pixels would be detected as component 
+        that more pixels would be detected as a component 
         of objects, vice versa.
         """
-        if diff > 0 :
-            threshold -= 2
-            if threshold < 1:
-                threshold = 1
-        else:
-            threshold += 2
-            if threshold > 254:
-                threshold = 254
-        """        
+        if threshold != -1:
+            if diff > 0 :
+                threshold -= 2
+                if threshold < 1:
+                    threshold = 1
+            else:
+                threshold += 2
+                if threshold > 254:
+                    threshold = 254
+
+        """
         if the difference is small enough, and the 
         number of pixels is less than the number of 
         images, we no longer have to adjust the size of 
-        the destination image.
+        the destination image and recalculate the object area.
         """
         if diff >= 0 and diff < int(len(imgs) / dup / 2) or pbar.n > 100:
             break
 ```
+
 Record the coordinate and color value of the pixels that constitutes an object.
+
 ```python
 dest_obj = []
 coor = []
@@ -244,6 +250,7 @@ for i in range(rh):
         if thresh_resized[i, j] != 0:
             coor.append(i * rw + j)
 ```
+
 Compute the optimal assignment and make the collage.
 
 ```python
@@ -268,9 +275,10 @@ for i in range(grid[0] * grid[1]):
     else:
         filled.append(white)
 ```
+
 #### Salient object only for uneven distribution
 
-The are are only two notable differences between this option and the uneven option without the ```--salient``` flag. 
+There are only two notable differences between this option and the uneven option without the ```--salient``` flag.
 
 Convert the destination image into a binary image, and extract area containing salient objects using the binary image.
 
@@ -281,17 +289,17 @@ saliency = cv2.saliency.StaticSaliencyFineGrained_create()
         saliency_map * 255, lower_thresh, 255, cv2.THRESH_BINARY)
 
 ```
+
 ```python
 for i in range(rh):
         for j in range(rw):
             if thresh[i, j] < 10:
-                """
-                background is a tuple containing the information about 
-                background color
-                """
+                # background is a tuple of RGB values
                 dest_img[i, j, :] = np.array(background, np.uint8)
 ```
-Add a blank image to the array of source images.
+
+Add a blank image with the designated background color to the array of source images.
+
 ```python
 white = np.ones(imgs[0].shape, np.uint8)
 white[:, :, :] = background
