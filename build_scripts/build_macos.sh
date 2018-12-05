@@ -1,5 +1,5 @@
 #!/bin/sh
-VERSION=2.0
+VERSION=2.1
 NAME="collage-maker-macos-x64"
 rm -rf macos_builds/$VERSION
 pyinstaller -y --onefile --additional-hooks-dir . --distpath macos_builds/$VERSION \
