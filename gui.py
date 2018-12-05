@@ -1,18 +1,20 @@
 from tkinter import *
 from tkinter import filedialog, messagebox, colorchooser
 from tkinter.ttk import *
-from PIL import Image, ImageTk
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import Queue, freeze_support
 from typing import Tuple, List
+import argparse
 import traceback
 import math
 import sys
 import os
+import time
+
 import cv2
 import numpy as np
-import time
 import make_img as mkg
+from PIL import Image, ImageTk
 
 
 def limit_wh(w: int, h: int, max_width: int, max_height: int) -> Tuple[int, int]:
@@ -72,6 +74,16 @@ if __name__ == "__main__":
     pool = ThreadPoolExecutor(1)
     root = Tk()
     root.title("Collage Maker")
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-D", action="store_true")
+    parser.add_argument("--init_dir", "-d", type=str, default=os.path.dirname(__file__))
+    parser.add_argument("--src", "-s", type=str, default=os.path.join(os.path.dirname(__file__), "img"))
+    parser.add_argument("--collage", "-c", type=str, default=os.path.join(os.path.dirname(__file__), "examples", "dest.png"))
+    cmd_args = parser.parse_args()
+    init_dir = cmd_args.init_dir
+    if not os.path.isdir(init_dir):
+        init_dir = os.path.dirname(__file__)
 
     # ---------------- initialization -----------------
     left_panel = PanedWindow(root)
@@ -170,7 +182,7 @@ if __name__ == "__main__":
     def load_images():
         global imgs, current_image
         fp = filedialog.askdirectory(
-            initialdir=os.path.dirname(__file__), title="Select folder of source images")
+            initialdir=init_dir, title="Select folder of source images")
         if len(fp) > 0 and os.path.isdir(fp):
             file_path.set(fp)
         else:
@@ -306,13 +318,13 @@ if __name__ == "__main__":
             messagebox.showerror(
                 "Empty set", "Please first load source images")
         else:
-            fp = filedialog.askopenfilename(initialdir=os.path.dirname(__file__), title="Select destination image",
+            fp = filedialog.askopenfilename(initialdir=init_dir, title="Select destination image",
                                             filetypes=(("images", "*.jpg"), ("images", "*.png"), ("images", "*.gif"),
                                                        ("all files", "*.*")))
             if fp is not None and len(fp) > 0 and os.path.isfile(fp):
                 try:
                     print("Destination image loaded from", fp)
-                    dest_img = cv2.imread(fp)
+                    dest_img = mkg.imread(fp)
                     show_img(dest_img, False)
                     dest_img_path.set(fp)
                 except:
@@ -412,8 +424,9 @@ if __name__ == "__main__":
         else:
             try:
                 if is_salient.get():
-                    lower_thresh = int(salient_lower_thresh.get())
-                    assert 0 < lower_thresh < 255, "Lower salient threshold must be between 0 and 255"
+                    lower_thresh = salient_lower_thresh.get()
+                    assert 0 <= lower_thresh < 255 or lower_thresh == -1, \
+                        "Lower salient threshold must be -1 (auto) or between 0 and 255"
                     if even.get() == "even":
                         assert dup.get() > 0, "Duplication must be a positive number"
                         assert float(
@@ -495,8 +508,8 @@ if __name__ == "__main__":
 
     # right collage option panel ROW 10
     salient_opt_panel = PanedWindow(right_col_opt_panel)
-    salient_lower_thresh = StringVar()
-    salient_lower_thresh.set("50")
+    salient_lower_thresh = IntVar()
+    salient_lower_thresh.set(127)
     salient_opt_label = Label(salient_opt_panel, text="Lower threshold: ")
     salient_opt_entry = Entry(
         salient_opt_panel, textvariable=salient_lower_thresh, width=8)
@@ -545,7 +558,7 @@ if __name__ == "__main__":
                 except:
                     messagebox.showerror("Error", traceback.format_exc())
 
-            fp = filedialog.asksaveasfilename(initialdir=os.path.dirname(__file__), title="Save your collage",
+            fp = filedialog.asksaveasfilename(initialdir=init_dir, title="Save your collage",
                                               filetypes=(
                                                   ("images", "*.jpg"), ("images", "*.png")),
                                               defaultextension=".png", initialfile="result.png")
@@ -593,4 +606,28 @@ if __name__ == "__main__":
                 show_img(result_img, False)
 
     root.bind("<Configure>", canvas_resize)
+
+    if cmd_args.D:
+        def debug_act(fp):
+            global imgs
+            try:
+                imgs = mkg.read_images(
+                    fp, (40, 40), True, 4, "center")
+                grid = mkg.calc_grid_size(
+                    16, 10, len(imgs))
+                return mkg.make_collage(grid, imgs, False)
+            except:
+                messagebox.showerror("Error", traceback.format_exc())
+
+        file_path.set(cmd_args.src)
+        print("Loading source images from", cmd_args.src)
+        pool.submit(debug_act, cmd_args.src).add_done_callback(
+            lambda f: show_img(f.result()))
+
+        print("Destination image loaded from", cmd_args.collage)
+        dest_img = mkg.imread(cmd_args.collage)
+        show_img(dest_img, False)
+        dest_img_path.set(cmd_args.collage)
+        
+
     root.mainloop()
