@@ -92,29 +92,28 @@ python3 make_img.py --path img --collage img/1.png --size 25 --dup 10 --out coll
 
 ##### Option 2.2: Best fit
 
-This fitting option just selects the best subset of images you provided to approximate your destination images. Each image in that subset will be used for arbitrary number of times.
+This fitting option just selects the best subset of images you provided to approximate your destination images. Each image in that subset will be used for an arbitrary number of times.
 
-Add ```--uneven``` flag to enable this option. You can also specify ```--max_width``` to change the width of the grid. The height will be automatically calculated based on the max_width provided. Generally, a larger grid will give better result. The default value is 50.
+Add ```--uneven``` flag to enable this option. You can also specify ```--max_width``` to change the width of the grid. The height will be automatically calculated based on the max_width provided. Generally, a larger grid will give a better result. The default value is 50.
 
 ```bash
 python3 make_img.py --path img --out collage-best-fit.png --collage img/1.png --size 25 --uneven
 ```
 
-| Original                                    | Fitting Result               
+| Original                                    | Fitting Result                                                   |
 | ------------------------------------------- | ---------------------------------------------------------------- |
 | <img src="examples/dest.png" width="400px"> | <img src="examples/collage-best-fit_bgr_-1.0.png" width="400px"> |
 
 ##### Option 2.3 Display salient object only
 
-This fitting option only fit the pixel of the destination image that
-constitutes a salient object. 
+This fitting option only fits the source images with the pixels of the destination image that
+constitute salient objects.
 
-Add ```--salient``` flag to enable this option. You can still specify whether each image is used for the same amount of times or not with the ```--uneven``` flag. 
+Add ```--salient``` flag to enable this option. You can still specify whether each image is used for the same amount of times with the ```--uneven``` flag.
 
-Use ```--lower_thresh``` to specify the threshold for object detection. The threshold ranges from 0 to 225; higher threshold would lead to less object area. The default threshold is 75. If you choose to use each image for the same amount of time, the threshold may have to change so that number of source images and the number of pixel of the destination image is close enough.
+Use ```--lower_thresh``` to specify the threshold for object detection. The threshold ranges from 0 to 225; a higher threshold would lead to less object area. The default threshold is 75. If you choose to use each image for the same amount of time, the threshold may have to change so that the number of source images and the number of pixels in the destination can converge. You may use ```--lower_thresh -1``` to enable adaptive thresholding (new in v.2.1).
 
-Use ```--background``` to specify the background color for the collage. The colorspace for the background option is bgr. Default background color is white, i.e. (255, 255, 255).
-
+Use ```--background``` to specify the background color for the collage. The color space for the background option is bgr. The default background color is white, i.e. (255, 255, 255).
 
 ```bash
 python3 make_img.py --path img --out collage-best-fit.png --collage img/1.png --dup 16 --salient
@@ -124,15 +123,15 @@ python3 make_img.py --path img --out collage-best-fit.png --collage img/1.png --
 python3 make_img.py --path img --out collage-best-fit.png --collage img/1.png --size 25 --salient --uneven
 ```
 
-| Original                        | Uneven-Fitting Result              |Even-Fitting Result           |
-| ------------------------------- | ---------------------------------- |------------------------------- |
-| <img src="examples/messi.jpg" width="400px"> | <img src="examples/messi_uneven.png" width="400px"> | <img src="examples/messi_even.png" width="400px">|
+| Original                                     | Uneven-Fitting Result                               | Even-Fitting Result                               |
+| -------------------------------------------- | --------------------------------------------------- | ------------------------------------------------- |
+| <img src="examples/messi.jpg" width="400px"> | <img src="examples/messi_uneven.png" width="400px"> | <img src="examples/messi_even.png" width="400px"> |
 
 #### Other options
 
-Use ```--sigma```to add a weight to source images; a positive sigma implies a higher weight for the pixels in the middle of the image.
+Use ```--sigma```to specify the multiplier of the identity matrix used as the covariance matrix of the bivariate normal distribution from which the weights of each pixel are sampled. A positive sigma implies a higher weight for the pixels in the middle of the image. A negative sigma indicates higher weight for the pixels close to the edge of the image. The greater the absolute value of the sigma, the greater the difference of weights between the pixels in the middle and the pixels on the edge will be.
 
-Use ```--exp``` to traverse every possible sigmas and colorspaces. If you use the option ```--salient```, use ```--exp``` to traverse thresholds from 40 to 190. 
+Use ```--exp``` to traverse every possible sigmas and colorspace. If you use the option ```--salient```, use ```--exp``` to traverse thresholds from 40 to 190.
 
 Use ```python3 make_img.py --help``` to get other optional arguments.
 
@@ -142,10 +141,10 @@ A brief description of the mechanism is available [here](Mechanism.md)
 
 ## Credits (Names in alphabetical order)
 
-Hanzhi Zhou ([hanzhi713](https://github.com/hanzhi713/)) : Main algorithm and GUI implementation
+Hanzhi Zhou ([hanzhi713](https://github.com/hanzhi713/)): Main algorithm and GUI implementation
 
-Kaiying Shan ([kaiyingshan](https://github.com/kaiyingshan)) : Saliency idea and implementation
+Kaiying Shan ([kaiyingshan](https://github.com/kaiyingshan)): Saliency idea and implementation
 
-Xinyue Lin : Idea for the "Uneven distribution (best-fit)"
+Xinyue Lin: Idea for the "Uneven distribution (best-fit)"
 
 Yufeng Chi ([T-K](https://github.com/T-K-233/)) : Initial Idea, crawler
