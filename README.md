@@ -113,7 +113,7 @@ Add ```--salient``` flag to enable this option. You can still specify whether ea
 
 Use ```--lower_thresh``` to specify the threshold for object detection. The threshold ranges from 0 to 225; a higher threshold would lead to less object area. The default threshold is 75. If you choose to use each image for the same amount of time, the threshold may have to change so that the number of source images and the number of pixels in the destination can converge. You may use ```--lower_thresh -1``` to enable adaptive thresholding (new in v.2.1).
 
-Use ```--background``` to specify the background color for the collage. The color space for the background option is bgr. The default background color is white, i.e. (255, 255, 255).
+Use ```--background``` to specify the background color for the collage. The color space for the background option is RGB. The default background color is white, i.e. (255, 255, 255).
 
 ```bash
 python3 make_img.py --path img --out collage-best-fit.png --collage img/1.png --dup 16 --salient
