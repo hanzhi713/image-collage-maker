@@ -17,6 +17,10 @@ from scipy.stats import truncnorm
 from scipy.spatial.distance import cdist
 
 
+if mp.current_process().name != "MainProcess":
+    sys.stdout = open(os.devnull, "w")
+    sys.stderr = sys.stdout
+
 pbar_ncols = None
 
 
@@ -207,19 +211,28 @@ def calc_decay_weights_normal(shape: Tuple[int, int], sigma: float = 1.0) -> np.
     with mean=0 and sigma=sigma
 
     Generate an "upside-down" bivariate normal if sigma is negative.
+
+    Use sigma=0 to generate a matrix with uniform weights
     """
-    assert sigma != 0
     h, w = shape
-    h_arr = truncnorm.pdf(np.linspace(-1, 1, h), -1,
-                          1, loc=0, scale=abs(sigma))
-    w_arr = truncnorm.pdf(np.linspace(-1, 1, w), -1,
-                          1, loc=0, scale=abs(sigma))
-    h_arr, w_arr = np.meshgrid(h_arr, w_arr)
-    if sigma > 0:
-        weights = h_arr * w_arr
+    if sigma == 0:
+        return np.ones((h, w))
     else:
-        weights = 1 - h_arr * w_arr
-    return weights
+        h_arr = truncnorm.pdf(np.linspace(-1, 1, h), -1,
+                            1, loc=0, scale=abs(sigma))
+        w_arr = truncnorm.pdf(np.linspace(-1, 1, w), -1,
+                            1, loc=0, scale=abs(sigma))
+        h_arr, w_arr = np.meshgrid(h_arr, w_arr)
+        if sigma > 0:
+            weights = h_arr * w_arr
+        else:
+            weights = 1 - h_arr * w_arr
+        
+        # if the sum of weights is too small, return a matrix with uniform weights
+        if abs(np.sum(weights)) > 0.00001:
+            return weights
+        else:
+            return np.ones((h, w))
 
 
 def sort_collage(imgs: List[np.ndarray], ratio: Tuple[int, int], sort_method="pca_lab", 
@@ -520,7 +533,7 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
             filled.append(white)
 
     print("Total assignment cost:", cost)
-    print("Time taken: {}s".format(np.round(time.time() - t)))
+    print("Time taken: {}s".format((np.round(time.time() - t, 2))))
 
     return grid, filled, cost
 
@@ -617,7 +630,7 @@ def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
     cost = cost[0]
 
     print("Total assignment cost:", cost)
-    print("Time taken: {}s".format((np.round(time.time() - t), 2)))
+    print("Time taken: {}s".format((np.round(time.time() - t, 2))))
 
     # sometimes the cost matrix may be extremely large
     # manually delete it to free memory
@@ -626,7 +639,7 @@ def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
     return grid, np.array(imgs)[cols], cost
 
 
-def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: int = 50,
+def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: int = 80,
                          color_space="lab", sigma: float = 1.0, metric: str = "euclidean", lower_thresh: int = 127,
                          background: Tuple[int, int, int] = (255, 255, 255)) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     """
@@ -701,7 +714,7 @@ def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: 
     return grid, sorted_imgs, cost
 
 
-def calc_col_dup(dest_img_path: str, imgs: list, max_width: int = 50, color_space="lab",
+def calc_col_dup(dest_img_path: str, imgs: list, max_width: int = 80, color_space="lab",
                  sigma: float = 1.0, metric: str = "euclidean") -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
@@ -900,7 +913,7 @@ all_metrics = ["euclidean", "cityblock", "chebyshev"]
 if __name__ == "__main__":
     mp.freeze_support()
     all_sigmas = np.concatenate(
-        (np.arange(-1, -0.45, 0.05), np.arange(0.5, 1.05, 0.05)))
+        (np.arange(-1, -0.06, 0.05), np.arange(0.1, 1.05, 0.05)))
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--path", help="Path to the downloaded head images",
@@ -933,7 +946,7 @@ if __name__ == "__main__":
                         help="Distance metric used when evaluating the distance between two color vectors")
     parser.add_argument("--uneven", action="store_true",
                         help="Whether to use each image only once")
-    parser.add_argument("--max_width", type=int, default=50,
+    parser.add_argument("--max_width", type=int, default=80,
                         help="Maximum width of the collage")
     parser.add_argument("--dup", type=int, default=1,
                         help="Duplicate the set of images by how many times")
@@ -955,8 +968,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     if not args.verbose:
-        sys.stdout = open(os.devnull, 'w')
-        sys.stderr = sys.stdout
+        sys.stdout = open(os.devnull, "w")
 
     if len(args.out) > 0:
         folder, file_name = os.path.split(args.out)
@@ -979,8 +991,8 @@ if __name__ == "__main__":
                 futures[pool.submit(sort_collage, imgs, args.ratio,
                                     sort_method, args.rev_sort)] = sort_method
 
-            for future in tqdm(con.as_completed(futures.keys()), total=len(all_sort_methods), desc="[Experimenting]",
-                               unit="exps", file=sys.__stderr__):
+            for future in tqdm(con.as_completed(futures.keys()), total=len(all_sort_methods), 
+                               desc="[Experimenting]", unit="exps"):
                 grid, sorted_imgs = future.result()
                 combined_img = make_collage(grid, sorted_imgs, args.rev_row)
                 save_img(combined_img, args.out, futures[future])
@@ -995,33 +1007,35 @@ if __name__ == "__main__":
             from mpl_toolkits.mplot3d import Axes3D
             import matplotlib.pyplot as plt
 
-            pool = con.ProcessPoolExecutor(4)
-            futures = []
+            pool = con.ProcessPoolExecutor(5)
+            futures = {}
 
             all_thresholds = list(range(40, 200, 10))
 
             if args.salient:
                 if args.uneven:
-                    for i in all_thresholds:
+                    for thresh in all_thresholds:
                         f = pool.submit(calc_salient_col_dup, args.collage,
-                                        imgs, max_width=args.max_width, lower_thresh=i)
-                        futures.append((f, i))
+                                        imgs, max_width=args.max_width, lower_thresh=thresh)
+                        futures[f] = thresh
                 else:
-                    for i in all_thresholds:
+                    for thresh in all_thresholds:
                         f = pool.submit(
-                            calc_salient_col_even_fast, args.collage, imgs, dup=args.dup, lower_thresh=i)
-                        futures.append((f, i))
+                            calc_salient_col_even_fast, args.collage, imgs, dup=args.dup, lower_thresh=thresh)
+                        futures[f] = thresh
                 
                 cost_vis = {}
-                for f, i in tqdm(futures, desc="[Experimenting]", unit="exps", file=sys.__stdout__):
-                    suffix = "threshold_{}".format(i)
+                for f in tqdm(con.as_completed(futures.keys()), desc="[Experimenting]", 
+                              total=len(all_thresholds), unit="exps"):
+                    thresh = futures[f]
+                    suffix = "threshold_{}".format(f)
                     grid, sorted_imgs, cost = f.result()
                     save_img(make_collage(grid, sorted_imgs,
                                           args.rev_row), args.out, suffix)
-                    cost_vis[i] = cost
+                    cost_vis[thresh] = cost
 
                 plt.figure()
-                plt.plot(cost_vis.keys(), cost_vis.values(), )
+                plt.plot(cost_vis.keys(), cost_vis.values())
                 plt.xlabel("Threshold")
                 plt.ylabel("Cost")
                 plt.show()
@@ -1034,17 +1048,19 @@ if __name__ == "__main__":
                         for color_space in all_color_spaces:
                             f = pool.submit(calc_col_dup, args.collage, imgs,
                                             args.max_width, color_space, sigma, args.metric)
-                            futures.append((f, sigma, color_space))
+                            futures[f] = (sigma, color_space)
                 else:
                     for sigma in all_sigmas:
                         for color_space in all_color_spaces:
                             f = pool.submit(calc_col_even, args.collage, imgs, args.dup,
                                             color_space, args.ctype, sigma, args.metric)
-                            futures.append((f, sigma, color_space))
+                            futures[f] = (sigma, color_space)
 
                 cost_vis = np.zeros((len(all_sigmas), len(all_color_spaces)))
                 r, c = 0, 0
-                for (f, sigma, color_space) in tqdm(futures, desc="[Experimenting]", unit="exps", file=sys.__stdout__):
+                for f in tqdm(con.as_completed(futures.keys()), desc="[Experimenting]", 
+                              total=total_steps, unit="exps"):
+                    sigma, color_space = futures[f]
                     suffix = "{}_{}".format(color_space, np.round(sigma, 2))
                     grid, sorted_imgs, cost = f.result()
                     save_img(make_collage(grid, sorted_imgs,
@@ -1059,7 +1075,7 @@ if __name__ == "__main__":
                 ax = fig.gca(projection='3d')
                 X, Y = np.meshgrid(
                     np.arange(len(all_color_spaces)), all_sigmas)
-                surf = ax.plot_surface(X, Y, cost_vis)
+                surf = ax.plot_surface(X, Y, cost_vis, cmap="jet")
                 ax.set_xlabel("Color Space")
                 ax.set_ylabel("Sigma")
                 ax.set_zlabel("Cost")
