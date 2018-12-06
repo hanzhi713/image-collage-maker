@@ -518,19 +518,13 @@ if __name__ == "__main__":
     salient_opt_entry.grid(row=0, column=1, sticky="w")
     salient_bg_color = np.array((255, 255, 255), np.uint8)
 
-    def rgb_to_bgr(rgb: Tuple[int, int, int]) -> Tuple[int, int, int]:
-        return rgb[2], rgb[1], rgb[0]
-    
-    def bgr_to_rgb(bgr: Tuple[int, int, int]) -> Tuple[int, int, int]:
-        return bgr[2], bgr[1], bgr[0]
-
     def change_bg_color():
         global salient_bg_color, last_resize_time
         rbg_color, hex_color = colorchooser.askcolor(
-            color=bgr_to_rgb(tuple(salient_bg_color)))
+            color=tuple(salient_bg_color))
         if hex_color:
             last_resize_time = time.time()
-            salient_bg_color = np.array(rgb_to_bgr(rbg_color), np.uint8)
+            salient_bg_color = np.array(rbg_color, np.uint8)
             salient_bg_chooser["bg"] = hex_color
             salient_bg_chooser.update()
 
