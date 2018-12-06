@@ -451,7 +451,7 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
                 dest_obj.append(dest_img[i, j, :])
                 coor.append(i * rw + j)
             else:
-                dest_img[i, j, :] = np.array(background, np.uint8)
+                dest_img[i, j, :] = np.array([background[2], background[1], background[0]], np.uint8)
 
     if len(imgs) > len(dest_obj):
         print("Note:", len(imgs) - len(dest_obj),
@@ -508,7 +508,7 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
     paired = np.array(imgs)[cols]
 
     white = np.ones(imgs[0].shape, np.uint8)
-    white[:, :, :] = background
+    white[:, :, :] = [background[2], background[1], background[0]]
 
     filled = []
     counter = 0
