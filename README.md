@@ -94,7 +94,7 @@ python3 make_img.py --path img --collage img/1.png --size 25 --dup 10 --out coll
 
 This fitting option just selects the best subset of images you provided to approximate your destination images. Each image in that subset will be used for an arbitrary number of times.
 
-Add ```--uneven``` flag to enable this option. You can also specify ```--max_width``` to change the width of the grid. The height will be automatically calculated based on the max_width provided. Generally, a larger grid will give a better result. The default value is 50.
+Add ```--uneven``` flag to enable this option. You can also specify ```--max_width``` to change the width of the grid. The height will be automatically calculated based on the max_width provided. Generally, a larger grid will give a better result. The default value is 80.
 
 ```bash
 python3 make_img.py --path img --out collage-best-fit.png --collage img/1.png --size 25 --uneven
