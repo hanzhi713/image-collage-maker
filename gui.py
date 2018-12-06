@@ -1,3 +1,4 @@
+import tkinter as tk
 from tkinter import *
 from tkinter import filedialog, messagebox, colorchooser
 from tkinter.ttk import *
@@ -37,7 +38,7 @@ class SafeText(Text):
         self.queue = Queue()
         self.encoding = "utf-8"
         self.gui = True
-        self.initial_width = 80
+        self.initial_width = 85
         self.width = self.initial_width
         self.update_me()
 
@@ -411,7 +412,7 @@ if __name__ == "__main__":
     Label(collage_uneven_panel, text="Max width: ").grid(
         row=0, column=0, sticky="W")
     max_width = IntVar()
-    max_width.set(50)
+    max_width.set(80)
     Entry(collage_uneven_panel, textvariable=max_width,
           width=5).grid(row=0, column=1, sticky="W")
     # ----------------------- end collage uneven panel ----------------------
@@ -516,21 +517,26 @@ if __name__ == "__main__":
     salient_opt_label.grid(row=0, column=0, sticky="w")
     salient_opt_entry.grid(row=0, column=1, sticky="w")
     salient_bg_color = np.array((255, 255, 255), np.uint8)
-    sty = Style()
-    sty.configure("My.TButton", background="#FFFFFF", padding=5)
+
+    def rgb_to_bgr(rgb: Tuple[int, int, int]) -> Tuple[int, int, int]:
+        return rgb[2], rgb[1], rgb[0]
+    
+    def bgr_to_rgb(bgr: Tuple[int, int, int]) -> Tuple[int, int, int]:
+        return bgr[2], bgr[1], bgr[0]
 
     def change_bg_color():
         global salient_bg_color, last_resize_time
         rbg_color, hex_color = colorchooser.askcolor(
-            color=tuple(salient_bg_color))
+            color=bgr_to_rgb(tuple(salient_bg_color)))
         if hex_color:
             last_resize_time = time.time()
-            salient_bg_color = np.array(rbg_color, np.uint8)
-            sty.configure("My.TButton", background=hex_color)
+            salient_bg_color = np.array(rgb_to_bgr(rbg_color), np.uint8)
+            salient_bg_chooser["bg"] = hex_color
+            salient_bg_chooser.update()
 
-    salient_color_chooser = Button(salient_opt_panel, text="Select Background Color",
-                                   style="My.TButton", command=change_bg_color)
-    salient_color_chooser.grid(row=1, columnspan=2, pady=(3, 1))
+    salient_bg_chooser = tk.Button(salient_opt_panel, text="Select Background Color",
+                                  command=change_bg_color, bg="#FFFFFF")
+    salient_bg_chooser.grid(row=1, columnspan=2, pady=(3, 1))
 
     # right collage option panel ROW 11
     Button(right_col_opt_panel, text=" Generate Collage ",
