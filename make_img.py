@@ -660,10 +660,10 @@ def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: 
     weights = calc_decay_weights_normal(imgs[0].shape[:2], sigma)
     dest_img = cv2.resize(dest_img, grid, cv2.INTER_AREA)
 
-    dest_img, _, _ = calc_saliency_map(dest_img, lower_thresh, True, background)
+    dest_img, _, _ = calc_saliency_map(dest_img, lower_thresh, True, [background[2],background[1],background[0]])
 
     white = np.ones(imgs[0].shape, np.uint8) * 255
-    white[:, :, :] = background
+    white[:, :, :] = [background[2], background[1], background[0]]
     imgs.append(white)
 
     print("Computing costs...")
@@ -951,7 +951,7 @@ if __name__ == "__main__":
                         help="Collage salient object only")
     parser.add_argument("--lower_thresh", type=int, default=127)
     parser.add_argument("--background", nargs=3, type=int,
-                        default=(225, 225, 225), help="Backgound color in BGR")
+                        default=(225, 225, 225), help="Backgound color in RGB")
 
     args = parser.parse_args()
     if not args.verbose:
