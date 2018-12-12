@@ -1,6 +1,6 @@
 #!/bin/sh
 VERSION=2.1
-NAME="collage-maker-linux-x64"
+NAME=collage-maker-linux-x64
 
 # change this to your anaconda installation path.
 CONDA=$HOME/anaconda3 

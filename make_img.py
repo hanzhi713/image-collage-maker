@@ -402,7 +402,7 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
     :param sigma:
     :param v: verbose
     :param lower_thresh: lower threshold for object detection
-    :param background: background color
+    :param background: background color in rgb format
     :return: [gird size, sorted images, total assignment cost]
     """
     assert os.path.isfile(dest_img_path)
@@ -652,7 +652,7 @@ def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: 
     :param color_space: color space used
     :param sigma:
     :param lower_thresh: threshold for object detection
-    :background background color
+    :background background color in rgb format
     :return: [gird size, sorted images, total assignment cost]
     """
     assert os.path.isfile(dest_img_path)
@@ -673,7 +673,7 @@ def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: 
     weights = calc_decay_weights_normal(imgs[0].shape[:2], sigma)
     dest_img = cv2.resize(dest_img, grid, cv2.INTER_AREA)
 
-    dest_img, _, _ = calc_saliency_map(dest_img, lower_thresh, True, [background[2],background[1],background[0]])
+    dest_img, _, _ = calc_saliency_map(dest_img, lower_thresh, True, (background[2],background[1],background[0]))
 
     white = np.ones(imgs[0].shape, np.uint8) * 255
     white[:, :, :] = [background[2], background[1], background[0]]

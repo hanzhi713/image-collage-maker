@@ -34,11 +34,11 @@ sorted_imgs = np.array(imgs)[np.argsort(img_keys)]
 The dimensionality reduction techniques available to use include [Principal Component Analysis (PCA)](https://en.wikipedia.org/wiki/Principal_component_analysis), [t-Distributed Stochastic Neighbor Embedding (t-SNE)](https://lvdmaaten.github.io/tsne/) and [Uniform Manifold Approximation and Projection](https://github.com/lmcinnes/umap). They will be applied to an array of flattened images (reshape from (n, h, w, 3) to (n, w\*h)), producing a 1-D array of size n.
 
 ```python
-# sort_function converts each image of shape (h, w, 3) 
-# to a flattened array of shape (1, h * w) 
+# sort_function converts each image of shape (h, w, 3)
+# to a flattened array of shape (1, h * w)
 flattened_imgs = np.array(list(map(sort_function, imgs)))
 
-# Use one of the selected dimensionality reduction techniques 
+# Use one of the selected dimensionality reduction techniques
 # to reduce each image to a simple number
 img_keys = PCA(1).fit_transform(flattened_imgs)[:, 0]
 
@@ -50,7 +50,7 @@ sorted_imgs = np.array(imgs)[np.argsort(img_keys)]
 
 ### Even distribution
 
-Without the ```--uneven``` option, a collage will be produced with each image being used for the same number of times. This number depends on your ```--dup``` option.
+Without the `--uneven` option, a collage will be produced with each image being used for the same number of times. This number depends on your `--dup` option.
 
 The collage maker, in this case, will manage to find an optimal assignment between the source images and the pixels of the destination image. It's based on the minimal weight bipartite matching (linear sum assignment) on a cost matrix of color distances. I used [an implementation of the Jonker-Volgenant algorithm](https://github.com/src-d/lapjv) to solve this problem. It runs in O(n<sup>3</sup>) and can solve 5000x5000 case in less than 30s using float32.
 
@@ -65,9 +65,9 @@ result_grid = calculate_grid_size(rw, rh, num_imgs, v)
 dest_img = cv2.resize(dest_img, result_grid, cv2.INTER_AREA)
 
 """
-Each pixel of the destination image is represented as a 3D vector [a, b, c] 
-where the numerical values of a, b and c depend on the color space used. 
-We need to map each image, which is an array of shape (h, w, 3), 
+Each pixel of the destination image is represented as a 3D vector [a, b, c]
+where the numerical values of a, b and c depend on the color space used.
+We need to map each image, which is an array of shape (h, w, 3),
 to also 3-D vector [a, b, c], so we can compute the distance between them.
 """
 
@@ -107,7 +107,7 @@ An image can be better fitted if we don't restrict the number of times that each
 ```python
 dest_img = cv2.imread(dest_img_path)
 
-# Because we don't have a fixed total amount of images as we can use a single image for 
+# Because we don't have a fixed total amount of images as we can use a single image for
 # arbitrary amount of times, we need the user to specify the maximum width in order to determine the grid size.
 rh, rw, _ = dest_img.shape
 rh = round(rh * max_width / rw)
@@ -132,17 +132,17 @@ cost = 0
 for pixel in dest_img:
     # Compute the distance between the current pixel and each image in the set
     dist = cdist(img_keys, np.array([pixel]), metric="euclidean")[:, 0]
-    
+
     # Find the index of the image which best approximates the current pixel
     idx = np.argmin(dist)
-    
+
     # Store that image
     sorted_imgs.append(imgs[idx])
-    
+
     # Accumulate the distance to get the total cost
     cost += dist[idx]
 
-``` 
+```
 
 ### Salient Object Only
 
@@ -150,7 +150,7 @@ Displaying only salient object in an image utilizes the saliency object in the O
 
 #### Salient object only for even distribution
 
-First, we compute a binary image ```thresh``` to indicate the location of the pixel in the destination image that constitutes a salient object.
+First, we compute a binary image `thresh` to indicate the location of the pixel in the destination image that constitutes a salient object.
 
 ```python
 
@@ -158,14 +158,14 @@ First, we compute a binary image ```thresh``` to indicate the location of the pi
 saliency = cv2.saliency.StaticSaliencyFineGrained_create()
 
 """
-generate an image that depicts the saliency of objects 
-in an image with a float number from 0 to 1; the larger 
+generate an image that depicts the saliency of objects
+in an image with a float number from 0 to 1; the larger
 the number, the more salient the corresponding pixel.
 """
 _, saliency_map = saliency.computeSaliency(dest_img)
 
 """
-generate a binary image. the pixel is white, i.e. has a value of 255, 
+generate a binary image. the pixel is white, i.e. has a value of 255,
 if the corresponding pixel in saliency_map is greater than the threshold.
 Otherwise the pixel is black, i.e. has a value of 0.
 """
@@ -175,25 +175,25 @@ _, thresh = cv2.threshold(saliency_map * 255, lower_thresh, 255, cv2.THRESH_BINA
 obj_area = np.count_nonzero(thresh.astype(np.uint8))
 ```
 
-Since we want to use as many source images as possible, and the number of pixels that constitutes an object (i.e. object area) cannot exceed the number of source images, we have to recalculate the size of the destination image according to the number of source images and the object area. 
+Since we want to use as many source images as possible, and the number of pixels that constitutes an object (i.e. object area) cannot exceed the number of source images, we have to recalculate the size of the destination image according to the number of source images and the object area.
 
 However, the ratio of the object area to the total area may be different after resizing. Thus, we use a while loop to adjust the threshold dynamically, in order to make the number of source images and the object area close enough. Once they are convergent, and the object area does not exceed the number of source images, we no longer have to resize the destination image or change the threshold, and the resized destination image is ready to be filtered to depict salient object only.
 
 ```python
 while True:
         """
-        calculate the total number of image based on the number 
-        of source images and number of pixels that 
+        calculate the total number of image based on the number
+        of source images and number of pixels that
         constitutes an object.
         """
         num_imgs = round(rh * rw / obj_area * len(imgs))
 
         grid = calc_grid_size(rw, rh, num_imgs)
-   
+
         dest_img = cv2.resize(dest_img_copy, grid, cv2.INTER_AREA)
 
         """
-        again, generate the binary graph and calculate 
+        again, generate the binary graph and calculate
         object area after resized.
         """
         saliency2 = cv2.saliency.StaticSaliencyFineGrained_create()
@@ -202,21 +202,21 @@ while True:
             saliency_map_resized * 255, threshold, 255, cv2.THRESH_BINARY)
 
         rh, rw, _ = dest_img.shape
-        
+
         thresh_resized = thresh_resized.astype(np.uint8)
         obj_area = np.count_nonzero(thresh_resized)
 
 
         diff = len(imgs) - obj_area
-        
+
         pbar.update(1)
-        
+
         """
         update threshold based on the difference
-        between the number of source images and the object area. 
-        if object area is smaller than the number of 
-        images, we have to use a lower threshold so 
-        that more pixels would be detected as a component 
+        between the number of source images and the object area.
+        if object area is smaller than the number of
+        images, we have to use a lower threshold so
+        that more pixels would be detected as a component
         of objects, vice versa.
         """
         if threshold != -1:
@@ -230,9 +230,9 @@ while True:
                     threshold = 254
 
         """
-        if the difference is small enough, and the 
-        number of pixels is less than the number of 
-        images, we no longer have to adjust the size of 
+        if the difference is small enough, and the
+        number of pixels is less than the number of
+        images, we no longer have to adjust the size of
         the destination image and recalculate the object area.
         """
         if diff >= 0 and diff < int(len(imgs) / dup / 2) or pbar.n > 100:
@@ -264,9 +264,9 @@ white[:, :, :] = background
 filled = []
 counter = 0
 for i in range(grid[0] * grid[1]):
-    
+
     """
-    if the pixel indicated by i is one that constitutes an object, append its 
+    if the pixel indicated by i is one that constitutes an object, append its
     corresponding source image to the collage
     """
     if i in coor:
@@ -278,7 +278,7 @@ for i in range(grid[0] * grid[1]):
 
 #### Salient object only for uneven distribution
 
-There are only two notable differences between this option and the uneven option without the ```--salient``` flag.
+There are only two notable differences between this option and the uneven option without the `--salient` flag.
 
 Convert the destination image into a binary image, and extract area containing salient objects using the binary image.
 
