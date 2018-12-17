@@ -219,15 +219,15 @@ def calc_decay_weights_normal(shape: Tuple[int, int], sigma: float = 1.0) -> np.
         return np.ones((h, w))
     else:
         h_arr = truncnorm.pdf(np.linspace(-1, 1, h), -1,
-                            1, loc=0, scale=abs(sigma))
+                              1, loc=0, scale=abs(sigma))
         w_arr = truncnorm.pdf(np.linspace(-1, 1, w), -1,
-                            1, loc=0, scale=abs(sigma))
+                              1, loc=0, scale=abs(sigma))
         h_arr, w_arr = np.meshgrid(h_arr, w_arr)
         if sigma > 0:
             weights = h_arr * w_arr
         else:
             weights = 1 - h_arr * w_arr
-        
+
         # if the sum of weights is too small, return a matrix with uniform weights
         if abs(np.sum(weights)) > 0.00001:
             return weights
@@ -235,7 +235,7 @@ def calc_decay_weights_normal(shape: Tuple[int, int], sigma: float = 1.0) -> np.
             return np.ones((h, w))
 
 
-def sort_collage(imgs: List[np.ndarray], ratio: Tuple[int, int], sort_method="pca_lab", 
+def sort_collage(imgs: List[np.ndarray], ratio: Tuple[int, int], sort_method="pca_lab",
                  rev_sort=False) -> Tuple[Tuple[int, int], np.ndarray]:
     """
     :param imgs: list of images
@@ -345,8 +345,8 @@ def chl_mean_lab(weights: np.ndarray) -> Callable:
     return f
 
 
-def calc_saliency_map(dest_img: np.ndarray, lower_thresh: int = 50, fill_bg: bool = False, 
-                      bg_color: Tuple[int,int,int] = (255, 255, 255)) -> Tuple[np.ndarray, np.ndarray, int]:
+def calc_saliency_map(dest_img: np.ndarray, lower_thresh: int = 50, fill_bg: bool = False,
+                      bg_color: Tuple[int, int, int] = (255, 255, 255)) -> Tuple[np.ndarray, np.ndarray, int]:
     """
     :param dest_img: the destination image
     :param lower_thresh: lower threshold for salient object detection. 
@@ -361,14 +361,14 @@ def calc_saliency_map(dest_img: np.ndarray, lower_thresh: int = 50, fill_bg: boo
     if lower_thresh == -1:
         lower_thresh = 0
         flag = flag | cv2.THRESH_OTSU
-    
+
     dest_img = np.copy(dest_img)
     saliency = cv2.saliency.StaticSaliencyFineGrained_create()
     _, saliency_map = saliency.computeSaliency(dest_img)
     saliency_map = (saliency_map * 255).astype(np.uint8)
     _, thresh = cv2.threshold(saliency_map, lower_thresh, 255, flag)
     thresh = thresh.astype(np.uint8)
-    
+
     h, w, _ = dest_img.shape
     obj_area = 0
 
@@ -406,7 +406,7 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
     :return: [gird size, sorted images, total assignment cost]
     """
     assert os.path.isfile(dest_img_path)
-    
+
     t = time.time()
     print("Duplicating {} times".format(dup))
 
@@ -422,9 +422,10 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
     threshold = lower_thresh
     _, threshed_map, obj_area = calc_saliency_map(dest_img, threshold)
 
-    dest_img_copy = np.copy(dest_img)    
+    dest_img_copy = np.copy(dest_img)
     grid = (0, 0)
-    pbar = tqdm(unit=" iteration", desc="[Computing saliency & grid]", ncols=pbar_ncols)
+    pbar = tqdm(unit=" iteration",
+                desc="[Computing saliency & grid]", ncols=pbar_ncols)
     while True:
         num_imgs = round(rh * rw / obj_area * len(imgs))
 
@@ -464,7 +465,7 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
                 dest_obj.append(dest_img[i, j, :])
                 coor.append(i * rw + j)
             else:
-                dest_img[i, j, :] = np.array([background[2], background[1], background[0]], np.uint8)
+                dest_img[i, j, :] = np.array(background[::-1], np.uint8)
 
     if len(imgs) > len(dest_obj):
         print("Note:", len(imgs) - len(dest_obj),
@@ -673,10 +674,11 @@ def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: 
     weights = calc_decay_weights_normal(imgs[0].shape[:2], sigma)
     dest_img = cv2.resize(dest_img, grid, cv2.INTER_AREA)
 
-    dest_img, _, _ = calc_saliency_map(dest_img, lower_thresh, True, (background[2],background[1],background[0]))
+    dest_img, _, _ = calc_saliency_map(
+        dest_img, lower_thresh, True, background[::-1])
 
     white = np.ones(imgs[0].shape, np.uint8) * 255
-    white[:, :, :] = [background[2], background[1], background[0]]
+    white[:, :, :] = np.array(background[::-1], np.uint8)
     imgs.append(white)
 
     print("Computing costs...")
@@ -964,7 +966,7 @@ if __name__ == "__main__":
                         help="Collage salient object only")
     parser.add_argument("--lower_thresh", type=int, default=127)
     parser.add_argument("--background", nargs=3, type=int,
-                        default=(225, 225, 225), help="Backgound color in RGB")
+                        default=(255, 255, 255), help="Background color in RGB")
 
     args = parser.parse_args()
     if not args.verbose:
@@ -991,7 +993,7 @@ if __name__ == "__main__":
                 futures[pool.submit(sort_collage, imgs, args.ratio,
                                     sort_method, args.rev_sort)] = sort_method
 
-            for future in tqdm(con.as_completed(futures.keys()), total=len(all_sort_methods), 
+            for future in tqdm(con.as_completed(futures.keys()), total=len(all_sort_methods),
                                desc="[Experimenting]", unit="exps"):
                 grid, sorted_imgs = future.result()
                 combined_img = make_collage(grid, sorted_imgs, args.rev_row)
@@ -1023,9 +1025,9 @@ if __name__ == "__main__":
                         f = pool.submit(
                             calc_salient_col_even_fast, args.collage, imgs, dup=args.dup, lower_thresh=thresh)
                         futures[f] = thresh
-                
+
                 cost_vis = {}
-                for f in tqdm(con.as_completed(futures.keys()), desc="[Experimenting]", 
+                for f in tqdm(con.as_completed(futures.keys()), desc="[Experimenting]",
                               total=len(all_thresholds), unit="exps"):
                     thresh = futures[f]
                     suffix = "threshold_{}".format(f)
@@ -1058,7 +1060,7 @@ if __name__ == "__main__":
 
                 cost_vis = np.zeros((len(all_sigmas), len(all_color_spaces)))
                 r, c = 0, 0
-                for f in tqdm(con.as_completed(futures.keys()), desc="[Experimenting]", 
+                for f in tqdm(con.as_completed(futures.keys()), desc="[Experimenting]",
                               total=total_steps, unit="exps"):
                     sigma, color_space = futures[f]
                     suffix = "{}_{}".format(color_space, np.round(sigma, 2))

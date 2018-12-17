@@ -78,9 +78,12 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-D", action="store_true")
-    parser.add_argument("--init_dir", "-d", type=str, default=os.path.dirname(__file__))
-    parser.add_argument("--src", "-s", type=str, default=os.path.join(os.path.dirname(__file__), "img"))
-    parser.add_argument("--collage", "-c", type=str, default=os.path.join(os.path.dirname(__file__), "examples", "dest.png"))
+    parser.add_argument("--init_dir", "-d", type=str,
+                        default=os.path.dirname(__file__))
+    parser.add_argument("--src", "-s", type=str,
+                        default=os.path.join(os.path.dirname(__file__), "img"))
+    parser.add_argument("--collage", "-c", type=str,
+                        default=os.path.join(os.path.dirname(__file__), "examples", "dest.png"))
     cmd_args = parser.parse_args()
     init_dir = cmd_args.init_dir
     if not os.path.isdir(init_dir):
@@ -88,11 +91,11 @@ if __name__ == "__main__":
 
     # ---------------- initialization -----------------
     left_panel = PanedWindow(root)
-    left_panel.grid(row=0, column=0, sticky="nsew")
+    left_panel.grid(row=0, column=0, sticky="NSEW")
     # left_panel.rowconfigure(0, weight=1)
     # left_panel.columnconfigure(0, weight=1)
     Separator(root, orient="vertical").grid(
-        row=0, column=1, sticky="nsew", padx=(5, 5))
+        row=0, column=1, sticky="NSEW", padx=(5, 5))
     right_panel = PanedWindow(root)
     right_panel.grid(row=0, column=2, sticky="N")
     # ---------------- end initialization -----------------
@@ -104,7 +107,7 @@ if __name__ == "__main__":
 
     # left panel ROW 1
     Separator(left_panel, orient="horizontal").grid(
-        row=1, columnspan=2, sticky="nsew", pady=(5, 5))
+        row=1, columnspan=2, sticky="NSEW", pady=(5, 5))
 
     # left panel ROW 2
     log_panel = PanedWindow(left_panel)
@@ -113,10 +116,10 @@ if __name__ == "__main__":
     log_entry = SafeText(log_panel, height=6, bd=0)
     mkg.pbar_ncols = log_entry.width
     # log_entry.configure(font=("", 10, ""))
-    log_entry.grid(row=1, column=0, sticky="nsew")
+    log_entry.grid(row=1, column=0, sticky="NSEW")
     scroll = Scrollbar(log_panel, orient="vertical", command=log_entry.yview)
     log_entry.config(yscrollcommand=scroll.set)
-    scroll.grid(row=1, column=1, sticky="nsew")
+    scroll.grid(row=1, column=1, sticky="NSEW")
 
     out_wrapper = log_entry
     sys.stdout = out_wrapper
@@ -529,7 +532,7 @@ if __name__ == "__main__":
             salient_bg_chooser.update()
 
     salient_bg_chooser = tk.Button(salient_opt_panel, text="Select Background Color",
-                                  command=change_bg_color, bg="#FFFFFF")
+                                   command=change_bg_color, bg="#FFFFFF")
     salient_bg_chooser.grid(row=1, columnspan=2, pady=(3, 1))
 
     # right collage option panel ROW 11
@@ -628,6 +631,5 @@ if __name__ == "__main__":
         dest_img = mkg.imread(cmd_args.collage)
         show_img(dest_img, False)
         dest_img_path.set(cmd_args.collage)
-        
 
     root.mainloop()
