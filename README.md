@@ -49,13 +49,19 @@ python3 extract_img.py --dir img --clean
 
 ### 2\. Use [make_img.py](make_img.py) to make a collage
 
-You can run the GUI (experimental) to make the collage. Simply type
+You can run the GUI to make the collage. Simply type
 
 ```bash
 python3 gui.py
 ```
 
-If you're using Windows or MacOS, you may want to try the [binaries](https://github.com/hanzhi713/image-collage-maker/releases) built by PyInstaller
+You may also want to try the [binaries](https://github.com/hanzhi713/image-collage-maker/releases) built by PyInstaller
+
+On MacOS or Linux, after downloading the binary, you may need to add executing permission before launching it. Go to the file's directory and type
+
+```bash
+chmod +x ./collage-maker-macos-x64
+```
 
 Or, read the following part for the usage of the command-line tool.
 
