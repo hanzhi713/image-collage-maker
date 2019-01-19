@@ -18,7 +18,7 @@
 ### Install dependencies
 
 ```bash
-pip3 install itchat pillow opencv-python opencv-contrib-python tqdm scikit-learn umap-learn matplotlib lapjv wurlitzer
+pip3 install itchat pillow opencv-contrib-python tqdm scikit-learn umap-learn matplotlib lapjv wurlitzer
 ```
 
 >Note: You should not install "wurlitzer" if you're on Windows. It helps to visualize the progress of the linear sum assignment by redirecting output from the C++ code to python's stdout, but it does not work on Windows.
