@@ -11,11 +11,25 @@
 
 # Image Collage Maker
 
-## System Requirements
+<img src="./examples/gui.png" width="720px" alt="gui demo">
 
-- Python >= 3.5
+## Getting Started
 
-### Install dependencies
+You can either use our pre-built binary files or directly run our python script.
+
+### Using the pre-built binary
+
+Binaries can be downloaded from [release](https://github.com/hanzhi713/image-collage-maker/releases).
+
+On Windows, my program may be blocked by Windows Defender because it is not signed. Don't worry as there is no security risk. On MacOS or Linux, after downloading the binary, you may need to add executing permission. Go to the file's directory and type
+
+```bash
+chmod +x ./collage-maker-macos-x64
+```
+
+### Running Python script directly
+
+First, you need Python >= 3.5. Then, install dependencies by running
 
 ```bash
 pip3 install itchat pillow opencv-contrib-python tqdm scikit-learn umap-learn matplotlib lapjv wurlitzer
@@ -23,7 +37,13 @@ pip3 install itchat pillow opencv-contrib-python tqdm scikit-learn umap-learn ma
 
 >Note: You should not install "wurlitzer" if you're on Windows. It helps to visualize the progress of the linear sum assignment by redirecting output from the C++ code to python's stdout, but it does not work on Windows.
 
-## How to use
+Finally, you can launch the GUI by running
+
+```bash
+python3 gui.py
+```
+
+## Command line usage
 
 >Note: If you already have a set of images to work with, you can skip step 1. The collage maker can be applied to any folder which contains a sufficient amount of images, not limited to your WeChat friends' profile pictures.
 
@@ -49,22 +69,6 @@ python3 extract_img.py --dir img --clean
 
 ### 2\. Use [make_img.py](make_img.py) to make a collage
 
-You can run the GUI to make the collage. Simply type
-
-```bash
-python3 gui.py
-```
-
-You may also want to try the [binaries](https://github.com/hanzhi713/image-collage-maker/releases) built by PyInstaller
-
-On MacOS or Linux, after downloading the binary, you may need to add executing permission before launching it. Go to the file's directory and type
-
-```bash
-chmod +x ./collage-maker-macos-x64
-```
-
-Or, read the following part for the usage of the command-line tool.
-
 #### Option 1: Sorting
 
 ```bash
@@ -89,7 +93,7 @@ This fitting option ensures that each image is used for the same amount of times
 python3 make_img.py --path img --collage img/1.png --size 25 --dup 10 --out collage.png
 ```
 
-```--dup 10``` allows each source image to be used 10 times. Increase that number if you don't have enough source images or you want a better fitting result. Note that a large number of images may result in long computational time.
+```--dup 10``` allows each source image to be used 10 times. Increase that number if you don't have enough source images or you want a better fitting result. Note that a large number of images may result in long computational time. To make sure the computation completes within a reasonable amount of time, please make sure that you are using less than 6000 images after duplication.
 
 | Original                                    | Fitting Result                                 |
 | ------------------------------------------- | ---------------------------------------------- |
