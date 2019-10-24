@@ -303,16 +303,14 @@ def chl_mean_lab(weights: np.ndarray) -> Callable[[np.ndarray], np.ndarray]:
     return lambda img: np.average(cv2.cvtColor(img, cv2.COLOR_BGR2Lab), axis=(0, 1), weights=weights)
 
 
-def calc_saliency_map(dest_img: np.ndarray, lower_thresh = 50, fill_bg = False,
-                      bg_color: Tuple[int, int, int] = (255, 255, 255)) -> Tuple[np.ndarray, np.ndarray, int]:
+def calc_saliency_map(dest_img: np.ndarray, lower_thresh = 50,) -> Tuple[np.ndarray, np.ndarray]:
     """
     :param dest_img: the destination image
     :param lower_thresh: lower threshold for salient object detection. 
                          If it's -1, then the threshold value will be adaptive
     :param fill_bg: whether to fill the background with the color specified
     :param bg_color: background color
-    :return: [the copy of the destination image with background filled (if fill_bg), 
-            threshold map, object area in pixels]
+    :return: [the copy of the destination image with background filled (if fill_bg), threshold map]
     """
 
     flag = cv2.THRESH_BINARY
@@ -327,9 +325,7 @@ def calc_saliency_map(dest_img: np.ndarray, lower_thresh = 50, fill_bg = False,
     _, thresh = cv2.threshold(saliency_map, lower_thresh, 255, flag)
     thresh = thresh.astype(np.uint8)
 
-    if fill_bg:
-        dest_img[thresh[i, j] != 0] = bg_color
-    return dest_img, thresh, np.count_nonzero(thresh)
+    return dest_img, thresh
 
 
 def cvt_colorspace(colorspace: str, weights: np.ndarray, imgs: List[np.ndarray], dest_obj: np.ndarray):
@@ -400,20 +396,22 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup=1
     rh, rw, _ = dest_img.shape
 
     threshold = lower_thresh
-    _, threshed_map, obj_area = calc_saliency_map(dest_img, threshold)
+    _, threshed_map = calc_saliency_map(dest_img, threshold)
+    nonzero_idx = np.nonzero(threshed_map)
 
     dest_img_copy = np.copy(dest_img)
     pbar = tqdm(unit=" iteration", desc="[Computing saliency & grid]", ncols=pbar_ncols)
     while True:
-        num_imgs = round(rh * rw / obj_area * len(imgs))
+        num_imgs = round(rh * rw / len(nonzero_idx[0]) * len(imgs))
 
         grid = calc_grid_size(rw, rh, num_imgs)
 
         dest_img = cv2.resize(dest_img_copy, grid, cv2.INTER_AREA)
         rh, rw, _ = dest_img.shape
 
-        _, threshed_map, obj_area = calc_saliency_map(dest_img, threshold)
-        diff = len(imgs) - obj_area
+        _, threshed_map = calc_saliency_map(dest_img, threshold)
+        nonzero_idx = np.nonzero(threshed_map)
+        diff = len(imgs) - len(nonzero_idx[0])
 
         if threshold != -1:
             if diff > 0:
@@ -435,23 +433,16 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup=1
 
     print("Grid size {} calculated in {} iterations".format(grid, pbar.n))
 
-    dest_obj = []
-    coor = []
-    for i in range(rh):
-        for j in range(rw):
-            if threshed_map[i, j] != 0:
-                dest_obj.append(dest_img[i, j, :])
-                coor.append(i * rw + j)
-            else:
-                dest_img[i, j, :] = background[::-1]
+    dest_obj = dest_img[nonzero_idx]
+    dest_img[threshed_map == 0] = background[::-1]
+    nonzero_idx = np.ravel_multi_index(nonzero_idx, threshed_map.shape) # flatten indices
 
     if len(imgs) > len(dest_obj):
         print("Note:", len(imgs) - len(dest_obj), "images will be thrown away from the collage")
     imgs = imgs[:len(dest_obj)]
 
     print("Computing cost matrix...")
-    dest_obj = np.array([dest_obj], np.uint8)
-    dest_obj, img_keys = cvt_colorspace(colorspace, calc_decay_weights_normal(imgs[0].shape[:2], sigma), imgs, dest_obj)
+    dest_obj, img_keys = cvt_colorspace(colorspace, calc_decay_weights_normal(imgs[0].shape[:2], sigma), imgs, dest_obj[np.newaxis])
     dest_obj = dest_obj[0]
 
     cost_matrix = cdist(img_keys, dest_obj, metric=metric).astype(ctype)
@@ -468,7 +459,7 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup=1
     filled = []
     counter = 0
     for i in range(grid[0] * grid[1]):
-        if i in coor:
+        if i in nonzero_idx:
             filled.append(paired[counter])
             counter += 1
         else:
@@ -589,7 +580,8 @@ def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width=8
     print("Calculated grid size based on the aspect ratio of the image provided:", grid)
 
     dest_img = cv2.resize(dest_img, grid, cv2.INTER_AREA)
-    dest_img, _, _ = calc_saliency_map(dest_img, lower_thresh, True, background[::-1])
+    dest_img, thresh_map = calc_saliency_map(dest_img, lower_thresh)
+    dest_img[thresh_map == 0] = background[::-1]
 
     white = np.ones(imgs[0].shape, np.uint8)
     white[:, :, :] = background[::-1]
