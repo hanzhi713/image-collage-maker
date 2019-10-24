@@ -24,13 +24,6 @@ if mp.current_process().name != "MainProcess":
 pbar_ncols = None
 
 
-def bgr_chl_sum(img: np.ndarray) -> Tuple[float, float, float]:
-    """
-    compute the channel-wise sum of the BGR color space
-    """
-    return np.sum(img[:, :, 0]), np.sum(img[:, :, 1]), np.sum(img[:, :, 2])
-
-
 def bgr_sum(img: np.ndarray) -> float:
     """
     compute the sum of all RGB values across an image
@@ -52,15 +45,6 @@ def av_sat(img: np.ndarray) -> float:
     """
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     return np.mean(hsv[:, :, 1])
-
-
-def hsv(img: np.ndarray) -> Tuple[float, float, float]:
-    """
-    compute the channel-wise average of the image in HSV color space
-    """
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    return np.mean(hsv[:, :, 0]), np.mean(hsv[:, :, 1]), np.mean(hsv[:, :, 2])
-
 
 def av_lum(img) -> float:
     """
@@ -202,7 +186,7 @@ def make_collage(grid: Tuple[int, int], sorted_imgs: List[np.ndarray], rev: bool
     return combined_img
 
 
-def calc_decay_weights_normal(shape: Tuple[int, int], sigma: float = 1.0) -> np.ndarray:
+def calc_decay_weights_normal(shape: Tuple[int, int], sigma = 1.0, c = 3) -> np.ndarray:
     """
     Generate a matrix of probabilities (as weights) sampled from a truncated bivariate normal distribution
     centered at (0, 0) whose covariance matrix is equal to sigma times the identity matrix
@@ -216,7 +200,7 @@ def calc_decay_weights_normal(shape: Tuple[int, int], sigma: float = 1.0) -> np.
     """
     h, w = shape
     if sigma == 0:
-        return np.ones((h, w))
+        return np.ones((h, w, c))
     else:
         h_arr = truncnorm.pdf(np.linspace(-1, 1, h), -1,
                               1, loc=0, scale=abs(sigma))
@@ -230,13 +214,12 @@ def calc_decay_weights_normal(shape: Tuple[int, int], sigma: float = 1.0) -> np.
 
         # if the sum of weights is too small, return a matrix with uniform weights
         if abs(np.sum(weights)) > 0.00001:
-            return weights
+            return np.repeat(weights[:, :, np.newaxis], c, axis=2)
         else:
-            return np.ones((h, w))
+            return np.ones((h, w, c))
 
 
-def sort_collage(imgs: List[np.ndarray], ratio: Tuple[int, int], sort_method="pca_lab",
-                 rev_sort=False) -> Tuple[Tuple[int, int], np.ndarray]:
+def sort_collage(imgs: List[np.ndarray], ratio: Tuple[int, int], sort_method="pca_lab", rev_sort=False) -> Tuple[Tuple[int, int], np.ndarray]:
     """
     :param imgs: list of images
     :param ratio: The aspect ratio of the collage
@@ -248,8 +231,7 @@ def sort_collage(imgs: List[np.ndarray], ratio: Tuple[int, int], sort_method="pc
     grid = calc_grid_size(ratio[0], ratio[1], num_imgs)
 
     print("Calculated grid size based on your aspect ratio:", grid)
-    print("Note that", num_imgs - grid[0] * grid[1],
-          "images will be thrown away from the collage")
+    print("Note that", num_imgs - grid[0] * grid[1], "images will be thrown away from the collage")
     print("Sorting images...")
     t = time.time()
     if sort_method.startswith("pca_"):
@@ -286,66 +268,42 @@ def sort_collage(imgs: List[np.ndarray], ratio: Tuple[int, int], sort_method="pc
         sorted_imgs = list(reversed(sorted_imgs))
 
     print("Time taken: {}s".format(np.round(time.time() - t, 2)))
-
     return grid, sorted_imgs
 
 
-def chl_mean_hsv(weights: np.ndarray) -> Callable:
+def chl_mean_hsv(weights: np.ndarray) -> Callable[[np.ndarray], np.ndarray]:
     """
     return a function that can calculate the channel-wise average 
     of the input picture in HSV color space
     """
-    def f(img: np.ndarray) -> Tuple[float, float, float]:
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        return np.average(img[:, :, 0], weights=weights), \
-            np.average(img[:, :, 1], weights=weights), \
-            np.average(img[:, :, 2], weights=weights)
-
-    return f
+    return lambda img: np.average(cv2.cvtColor(img, cv2.COLOR_BGR2HSV), axis=(0, 1), weights=weights)
 
 
-def chl_mean_hsl(weights: np.ndarray) -> Callable:
+def chl_mean_hsl(weights: np.ndarray) -> Callable[[np.ndarray], np.ndarray]:
     """
     return a function that can calculate the channel-wise average 
     of the input picture in HSL color space
     """
-    def f(img: np.ndarray) -> Tuple[float, float, float]:
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
-        return np.average(img[:, :, 0], weights=weights), \
-            np.average(img[:, :, 1], weights=weights), \
-            np.average(img[:, :, 2], weights=weights)
-
-    return f
+    return lambda img: np.average(cv2.cvtColor(img, cv2.COLOR_BGR2HLS), axis=(0, 1), weights=weights)
 
 
-def chl_mean_bgr(weights: np.ndarray) -> Callable:
+def chl_mean_bgr(weights: np.ndarray) -> Callable[[np.ndarray], np.ndarray]:
     """
     return a function that can calculate the channel-wise average 
     of the input picture in BGR color space
     """
-    def f(img: np.ndarray) -> Tuple[float, float, float]:
-        return np.average(img[:, :, 0], weights=weights), \
-            np.average(img[:, :, 1], weights=weights), \
-            np.average(img[:, :, 2], weights=weights)
-
-    return f
+    return lambda img: np.average(img, axis=(0, 1), weights=weights)
 
 
-def chl_mean_lab(weights: np.ndarray) -> Callable:
+def chl_mean_lab(weights: np.ndarray) -> Callable[[np.ndarray], np.ndarray]:
     """
     return a function that can calculate the channel-wise average 
     of the input picture in LAB color space
     """
-    def f(img: np.ndarray) -> Tuple[float, float, float]:
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2Lab)
-        return np.average(img[:, :, 0], weights=weights), \
-            np.average(img[:, :, 1], weights=weights), \
-            np.average(img[:, :, 2], weights=weights)
-
-    return f
+    return lambda img: np.average(cv2.cvtColor(img, cv2.COLOR_BGR2Lab), axis=(0, 1), weights=weights)
 
 
-def calc_saliency_map(dest_img: np.ndarray, lower_thresh: int = 50, fill_bg: bool = False,
+def calc_saliency_map(dest_img: np.ndarray, lower_thresh = 50, fill_bg = False,
                       bg_color: Tuple[int, int, int] = (255, 255, 255)) -> Tuple[np.ndarray, np.ndarray, int]:
     """
     :param dest_img: the destination image
@@ -369,20 +327,9 @@ def calc_saliency_map(dest_img: np.ndarray, lower_thresh: int = 50, fill_bg: boo
     _, thresh = cv2.threshold(saliency_map, lower_thresh, 255, flag)
     thresh = thresh.astype(np.uint8)
 
-    h, w, _ = dest_img.shape
-    obj_area = 0
-
     if fill_bg:
-        for i in range(h):
-            for j in range(w):
-                if thresh[i, j] != 0:
-                    obj_area += 1
-                else:
-                    dest_img[i, j, :] = np.array(bg_color, np.uint8)
-    else:
-        obj_area = np.count_nonzero(thresh)
-
-    return dest_img, thresh, obj_area
+        dest_img[thresh[i, j] != 0] = bg_color
+    return dest_img, thresh, np.count_nonzero(thresh)
 
 
 def cvt_colorspace(colorspace: str, weights: np.ndarray, imgs: List[np.ndarray], dest_obj: np.ndarray):
@@ -420,11 +367,9 @@ def solve_lap(cost_matrix: np.ndarray, v=None):
     cost = cost[0]
     return cols, cost
 
-def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
-                               colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
-                               metric: str = "euclidean", lower_thresh: int = 50,
-                               background: Tuple[int, int, int] = (255, 255, 255),
-                               v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup=1, colorspace="lab", 
+                               ctype ="float16", sigma = 1.0, metric = "euclidean", lower_thresh = 50,
+                               background = (255, 255, 255), v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels constitute of salient objects of the
     target image, with the restriction that every image should be used the same amount of times
@@ -498,7 +443,7 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
                 dest_obj.append(dest_img[i, j, :])
                 coor.append(i * rw + j)
             else:
-                dest_img[i, j, :] = np.array(background[::-1], np.uint8)
+                dest_img[i, j, :] = background[::-1]
 
     if len(imgs) > len(dest_obj):
         print("Note:", len(imgs) - len(dest_obj), "images will be thrown away from the collage")
@@ -531,13 +476,11 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
 
     print("Total assignment cost:", cost)
     print("Time taken: {}s".format((np.round(time.time() - t, 2))))
-
     return grid, filled, cost
 
 
-def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
-                  colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
-                  metric: str = "euclidean", v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup=1, colorspace="lab", 
+                  ctype="float16", sigma=1.0, metric="euclidean", v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
     with the restriction that every image should be used the same amount of times
@@ -615,9 +558,9 @@ def solve_dup(sorted_imgs: List[np.ndarray], dest_img: np.ndarray, img_keys: Lis
     return cost
 
 
-def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: int = 80,
-                         colorspace="lab", sigma: float = 1.0, metric: str = "euclidean", lower_thresh: int = 127,
-                         background: Tuple[int, int, int] = (255, 255, 255)) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width=80,
+                         colorspace="lab", sigma=1.0, metric="euclidean", lower_thresh=127,
+                         background=(255, 255, 255)) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels that constitute 
     of the salient objects of the target image, given that every image could be used arbitrary amount of times
@@ -662,8 +605,8 @@ def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: 
     return grid, sorted_imgs, cost
 
 
-def calc_col_dup(dest_img_path: str, imgs: list, max_width: int = 80, colorspace="lab",
-                 sigma: float = 1.0, metric: str = "euclidean") -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+def calc_col_dup(dest_img_path: str, imgs: list, max_width=80, colorspace="lab",
+                 sigma=1.0, metric="euclidean") -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
     given that every image could be used arbitrary amount of times
@@ -721,8 +664,7 @@ def save_img(img: np.ndarray, path: str, suffix: str) -> None:
         imwrite(path, img)
 
 
-def read_images(pic_path: str, img_size: Tuple[int, int], recursive: bool = False,
-                num_process: int = 1, flag: str = "stretch") -> List[np.ndarray]:
+def read_images(pic_path: str, img_size: Tuple[int, int], recursive=False, num_process=1, flag="stretch") -> List[np.ndarray]:
     assert os.path.isdir(pic_path), "Directory " + pic_path + "is non-existent"
     files = []
     if recursive:
@@ -772,7 +714,6 @@ def read_images(pic_path: str, img_size: Tuple[int, int], recursive: bool = Fals
         imgs.extend(future.result())
 
     pbar.close()
-
     return imgs
 
 
@@ -781,7 +722,7 @@ def imread(filename: str) -> np.ndarray:
     return cv2.imdecode(np.fromfile(filename, np.uint8), cv2.IMREAD_COLOR)
 
 
-def read_img_helper(files: List[str], img_size: Tuple[int, int], queue: mp.Queue, flag: str = "center") -> List[np.ndarray]:
+def read_img_helper(files: List[str], img_size: Tuple[int, int], queue: mp.Queue, flag="center") -> List[np.ndarray]:
     imgs = []
     for img_file in files:
         try:
