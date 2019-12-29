@@ -24,13 +24,6 @@ if mp.current_process().name != "MainProcess":
 pbar_ncols = None
 
 
-def bgr_chl_sum(img: np.ndarray) -> Tuple[float, float, float]:
-    """
-    compute the channel-wise sum of the BGR color space
-    """
-    return np.sum(img[:, :, 0]), np.sum(img[:, :, 1]), np.sum(img[:, :, 2])
-
-
 def bgr_sum(img: np.ndarray) -> float:
     """
     compute the sum of all RGB values across an image
@@ -52,15 +45,6 @@ def av_sat(img: np.ndarray) -> float:
     """
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     return np.mean(hsv[:, :, 1])
-
-
-def hsv(img: np.ndarray) -> Tuple[float, float, float]:
-    """
-    compute the channel-wise average of the image in HSV color space
-    """
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    return np.mean(hsv[:, :, 0]), np.mean(hsv[:, :, 1]), np.mean(hsv[:, :, 2])
-
 
 def av_lum(img) -> float:
     """
@@ -202,7 +186,7 @@ def make_collage(grid: Tuple[int, int], sorted_imgs: List[np.ndarray], rev: bool
     return combined_img
 
 
-def calc_decay_weights_normal(shape: Tuple[int, int], sigma: float = 1.0) -> np.ndarray:
+def calc_decay_weights_normal(shape: Tuple[int, int], sigma = 1.0, c = 3) -> np.ndarray:
     """
     Generate a matrix of probabilities (as weights) sampled from a truncated bivariate normal distribution
     centered at (0, 0) whose covariance matrix is equal to sigma times the identity matrix
@@ -216,7 +200,7 @@ def calc_decay_weights_normal(shape: Tuple[int, int], sigma: float = 1.0) -> np.
     """
     h, w = shape
     if sigma == 0:
-        return np.ones((h, w))
+        return np.ones((h, w, c))
     else:
         h_arr = truncnorm.pdf(np.linspace(-1, 1, h), -1,
                               1, loc=0, scale=abs(sigma))
@@ -230,13 +214,12 @@ def calc_decay_weights_normal(shape: Tuple[int, int], sigma: float = 1.0) -> np.
 
         # if the sum of weights is too small, return a matrix with uniform weights
         if abs(np.sum(weights)) > 0.00001:
-            return weights
+            return np.repeat(weights[:, :, np.newaxis], c, axis=2)
         else:
-            return np.ones((h, w))
+            return np.ones((h, w, c))
 
 
-def sort_collage(imgs: List[np.ndarray], ratio: Tuple[int, int], sort_method="pca_lab",
-                 rev_sort=False) -> Tuple[Tuple[int, int], np.ndarray]:
+def sort_collage(imgs: List[np.ndarray], ratio: Tuple[int, int], sort_method="pca_lab", rev_sort=False) -> Tuple[Tuple[int, int], np.ndarray]:
     """
     :param imgs: list of images
     :param ratio: The aspect ratio of the collage
@@ -248,8 +231,7 @@ def sort_collage(imgs: List[np.ndarray], ratio: Tuple[int, int], sort_method="pc
     grid = calc_grid_size(ratio[0], ratio[1], num_imgs)
 
     print("Calculated grid size based on your aspect ratio:", grid)
-    print("Note that", num_imgs - grid[0] * grid[1],
-          "images will be thrown away from the collage")
+    print("Note that", num_imgs - grid[0] * grid[1], "images will be thrown away from the collage")
     print("Sorting images...")
     t = time.time()
     if sort_method.startswith("pca_"):
@@ -286,75 +268,49 @@ def sort_collage(imgs: List[np.ndarray], ratio: Tuple[int, int], sort_method="pc
         sorted_imgs = list(reversed(sorted_imgs))
 
     print("Time taken: {}s".format(np.round(time.time() - t, 2)))
-
     return grid, sorted_imgs
 
 
-def chl_mean_hsv(weights: np.ndarray) -> Callable:
+def chl_mean_hsv(weights: np.ndarray) -> Callable[[np.ndarray], np.ndarray]:
     """
     return a function that can calculate the channel-wise average 
     of the input picture in HSV color space
     """
-    def f(img: np.ndarray) -> Tuple[float, float, float]:
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        return np.average(img[:, :, 0], weights=weights), \
-            np.average(img[:, :, 1], weights=weights), \
-            np.average(img[:, :, 2], weights=weights)
-
-    return f
+    return lambda img: np.average(cv2.cvtColor(img, cv2.COLOR_BGR2HSV), axis=(0, 1), weights=weights)
 
 
-def chl_mean_hsl(weights: np.ndarray) -> Callable:
+def chl_mean_hsl(weights: np.ndarray) -> Callable[[np.ndarray], np.ndarray]:
     """
     return a function that can calculate the channel-wise average 
     of the input picture in HSL color space
     """
-    def f(img: np.ndarray) -> Tuple[float, float, float]:
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
-        return np.average(img[:, :, 0], weights=weights), \
-            np.average(img[:, :, 1], weights=weights), \
-            np.average(img[:, :, 2], weights=weights)
-
-    return f
+    return lambda img: np.average(cv2.cvtColor(img, cv2.COLOR_BGR2HLS), axis=(0, 1), weights=weights)
 
 
-def chl_mean_bgr(weights: np.ndarray) -> Callable:
+def chl_mean_bgr(weights: np.ndarray) -> Callable[[np.ndarray], np.ndarray]:
     """
     return a function that can calculate the channel-wise average 
     of the input picture in BGR color space
     """
-    def f(img: np.ndarray) -> Tuple[float, float, float]:
-        return np.average(img[:, :, 0], weights=weights), \
-            np.average(img[:, :, 1], weights=weights), \
-            np.average(img[:, :, 2], weights=weights)
-
-    return f
+    return lambda img: np.average(img, axis=(0, 1), weights=weights)
 
 
-def chl_mean_lab(weights: np.ndarray) -> Callable:
+def chl_mean_lab(weights: np.ndarray) -> Callable[[np.ndarray], np.ndarray]:
     """
     return a function that can calculate the channel-wise average 
     of the input picture in LAB color space
     """
-    def f(img: np.ndarray) -> Tuple[float, float, float]:
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2Lab)
-        return np.average(img[:, :, 0], weights=weights), \
-            np.average(img[:, :, 1], weights=weights), \
-            np.average(img[:, :, 2], weights=weights)
-
-    return f
+    return lambda img: np.average(cv2.cvtColor(img, cv2.COLOR_BGR2Lab), axis=(0, 1), weights=weights)
 
 
-def calc_saliency_map(dest_img: np.ndarray, lower_thresh: int = 50, fill_bg: bool = False,
-                      bg_color: Tuple[int, int, int] = (255, 255, 255)) -> Tuple[np.ndarray, np.ndarray, int]:
+def calc_saliency_map(dest_img: np.ndarray, lower_thresh = 50,) -> Tuple[np.ndarray, np.ndarray]:
     """
     :param dest_img: the destination image
     :param lower_thresh: lower threshold for salient object detection. 
                          If it's -1, then the threshold value will be adaptive
     :param fill_bg: whether to fill the background with the color specified
     :param bg_color: background color
-    :return: [the copy of the destination image with background filled (if fill_bg), 
-            threshold map, object area in pixels]
+    :return: [the copy of the destination image with background filled (if fill_bg), threshold map]
     """
 
     flag = cv2.THRESH_BINARY
@@ -369,27 +325,47 @@ def calc_saliency_map(dest_img: np.ndarray, lower_thresh: int = 50, fill_bg: boo
     _, thresh = cv2.threshold(saliency_map, lower_thresh, 255, flag)
     thresh = thresh.astype(np.uint8)
 
-    h, w, _ = dest_img.shape
-    obj_area = 0
+    return dest_img, thresh
 
-    if fill_bg:
-        for i in range(h):
-            for j in range(w):
-                if thresh[i, j] != 0:
-                    obj_area += 1
-                else:
-                    dest_img[i, j, :] = np.array(bg_color, np.uint8)
+
+def cvt_colorspace(colorspace: str, weights: np.ndarray, imgs: List[np.ndarray], dest_obj: np.ndarray):
+    if colorspace == "hsv":
+        img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))
+        dest_obj = cv2.cvtColor(dest_obj, cv2.COLOR_BGR2HSV)
+    elif colorspace == "hsl":
+        img_keys = np.array(list(map(chl_mean_hsl(weights), imgs)))
+        dest_obj = cv2.cvtColor(dest_obj, cv2.COLOR_BGR2HLS)
+    elif colorspace == "bgr":
+        img_keys = np.array(list(map(chl_mean_bgr(weights), imgs)))
+    elif colorspace == "lab":
+        img_keys = np.array(list(map(chl_mean_lab(weights), imgs)))
+        dest_obj = cv2.cvtColor(dest_obj, cv2.COLOR_BGR2Lab)
     else:
-        obj_area = np.count_nonzero(thresh)
+        raise ValueError("Unknown colorspace " + colorspace)
+    return dest_obj, img_keys
 
-    return dest_img, thresh, obj_area
 
+def solve_lap(cost_matrix: np.ndarray, v=None):
+    from lapjv import lapjv
+    if v is not None and (platform.system() == "Linux" or platform.system() == "Darwin") and v.gui:
+        try:
+            from wurlitzer import pipes, STDOUT
+            from wurlitzer import Wurlitzer
+            Wurlitzer.flush_interval = 0.1
+            wrapper = JVOutWrapper(v)
+            with pipes(stdout=wrapper, stderr=STDOUT):
+                _, cols, cost = lapjv(cost_matrix, verbose=1)
+                wrapper.finish()
+        except ImportError:
+            _, cols, cost = lapjv(cost_matrix)
+    else:
+        _, cols, cost = lapjv(cost_matrix)
+    cost = cost[0]
+    return cols, cost
 
-def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
-                               colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
-                               metric: str = "euclidean", lower_thresh: int = 50,
-                               background: Tuple[int, int, int] = (255, 255, 255),
-                               v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup=1, colorspace="lab", 
+                               ctype ="float16", sigma = 1.0, metric = "euclidean", lower_thresh = 50,
+                               background = (255, 255, 255), v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels constitute of salient objects of the
     target image, with the restriction that every image should be used the same amount of times
@@ -412,30 +388,30 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
 
     # avoid modifying the original array
     imgs = list(map(np.copy, imgs))
-    imgs_copy = list(map(np.copy, imgs))
+    _copy = imgs.copy()
     for i in range(dup - 1):
-        imgs.extend(imgs_copy)
+        imgs.extend(_copy)
 
     dest_img = imread(dest_img_path)
     rh, rw, _ = dest_img.shape
 
     threshold = lower_thresh
-    _, threshed_map, obj_area = calc_saliency_map(dest_img, threshold)
+    _, threshed_map = calc_saliency_map(dest_img, threshold)
+    nonzero_idx = np.nonzero(threshed_map)
 
     dest_img_copy = np.copy(dest_img)
-    grid = (0, 0)
-    pbar = tqdm(unit=" iteration",
-                desc="[Computing saliency & grid]", ncols=pbar_ncols)
+    pbar = tqdm(unit=" iteration", desc="[Computing saliency & grid]", ncols=pbar_ncols)
     while True:
-        num_imgs = round(rh * rw / obj_area * len(imgs))
+        num_imgs = round(rh * rw / len(nonzero_idx[0]) * len(imgs))
 
         grid = calc_grid_size(rw, rh, num_imgs)
 
         dest_img = cv2.resize(dest_img_copy, grid, cv2.INTER_AREA)
         rh, rw, _ = dest_img.shape
 
-        _, threshed_map, obj_area = calc_saliency_map(dest_img, threshold)
-        diff = len(imgs) - obj_area
+        _, threshed_map = calc_saliency_map(dest_img, threshold)
+        nonzero_idx = np.nonzero(threshed_map)
+        diff = len(imgs) - len(nonzero_idx[0])
 
         if threshold != -1:
             if diff > 0:
@@ -448,7 +424,7 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
                     threshold = 254
 
         pbar.update(1)
-        if diff >= 0 and diff < ceil(len(imgs) / dup / 3) or pbar.n > 50:
+        if diff >= 0 and (diff < ceil(len(imgs) / dup / 3) or pbar.n > 50):
             break
 
     pbar.close()
@@ -457,77 +433,33 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
 
     print("Grid size {} calculated in {} iterations".format(grid, pbar.n))
 
-    dest_obj = []
-    coor = []
-    for i in range(rh):
-        for j in range(rw):
-            if threshed_map[i, j] != 0:
-                dest_obj.append(dest_img[i, j, :])
-                coor.append(i * rw + j)
-            else:
-                dest_img[i, j, :] = np.array(background[::-1], np.uint8)
+    dest_obj = dest_img[nonzero_idx]
+    dest_img[threshed_map == 0] = background[::-1]
+    nonzero_idx = np.ravel_multi_index(nonzero_idx, threshed_map.shape) # flatten indices
 
     if len(imgs) > len(dest_obj):
-        print("Note:", len(imgs) - len(dest_obj),
-              "images will be thrown away from the collage")
+        print("Note:", len(imgs) - len(dest_obj), "images will be thrown away from the collage")
     imgs = imgs[:len(dest_obj)]
 
     print("Computing cost matrix...")
-
-    dest_obj = np.array([dest_obj], np.uint8)
-    weights = calc_decay_weights_normal(imgs[0].shape[:2], sigma)
-    if colorspace == "hsv":
-        img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))
-        dest_obj = cv2.cvtColor(dest_obj, cv2.COLOR_BGR2HSV)
-    elif colorspace == "hsl":
-        img_keys = np.array(list(map(chl_mean_hsl(weights), imgs)))
-        dest_obj = cv2.cvtColor(dest_obj, cv2.COLOR_BGR2HLS)
-    elif colorspace == "bgr":
-        img_keys = np.array(list(map(chl_mean_bgr(weights), imgs)))
-    elif colorspace == "lab":
-        img_keys = np.array(list(map(chl_mean_lab(weights), imgs)))
-        dest_obj = cv2.cvtColor(dest_obj, cv2.COLOR_BGR2Lab)
-
+    dest_obj, img_keys = cvt_colorspace(colorspace, calc_decay_weights_normal(imgs[0].shape[:2], sigma), imgs, dest_obj[np.newaxis])
     dest_obj = dest_obj[0]
 
-    cost_matrix = cdist(img_keys, dest_obj, metric=metric)
+    cost_matrix = cdist(img_keys, dest_obj, metric=metric).astype(ctype)
 
-    np_ctype = eval("np." + ctype)
-    cost_matrix = np_ctype(cost_matrix)
-
-    print("Computing optimal assignment on a {}x{} matrix...".format(
-        cost_matrix.shape[0], cost_matrix.shape[1]))
-
-    from lapjv import lapjv
-
-    if v is not None and (platform.system() == "Linux" or platform.system() == "Darwin") and v.gui:
-        try:
-            from wurlitzer import pipes, STDOUT
-            from wurlitzer import Wurlitzer
-            Wurlitzer.flush_interval = 0.1
-            wrapper = JVOutWrapper(v)
-            with pipes(stdout=wrapper, stderr=STDOUT):
-                _, cols, cost = lapjv(cost_matrix, verbose=1)
-                wrapper.finish()
-        except ImportError:
-            _, cols, cost = lapjv(cost_matrix)
-
-    else:
-        _, cols, cost = lapjv(cost_matrix)
-
-    cost = cost[0]
-
+    print("Computing optimal assignment on a {}x{} matrix...".format(cost_matrix.shape[0], cost_matrix.shape[1]))
+    cols, cost = solve_lap(cost_matrix, v)
     del cost_matrix
 
     paired = np.array(imgs)[cols]
 
     white = np.ones(imgs[0].shape, np.uint8)
-    white[:, :, :] = [background[2], background[1], background[0]]
+    white[:, :, :] = background[::-1]
 
     filled = []
     counter = 0
     for i in range(grid[0] * grid[1]):
-        if i in coor:
+        if i in nonzero_idx:
             filled.append(paired[counter])
             counter += 1
         else:
@@ -535,13 +467,11 @@ def calc_salient_col_even_fast(dest_img_path: str, imgs: List[np.ndarray], dup: 
 
     print("Total assignment cost:", cost)
     print("Time taken: {}s".format((np.round(time.time() - t, 2))))
-
     return grid, filled, cost
 
 
-def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
-                  colorspace: str = "lab", ctype: str = "float16", sigma: float = 1.0,
-                  metric: str = "euclidean", v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup=1, colorspace="lab", 
+                  ctype="float16", sigma=1.0, metric="euclidean", v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
     with the restriction that every image should be used the same amount of times
@@ -561,9 +491,9 @@ def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
 
     # avoid modifying the original array
     imgs = list(map(np.copy, imgs))
-    imgs_copy = list(map(np.copy, imgs))
+    _copy = imgs.copy()
     for i in range(dup - 1):
-        imgs.extend(imgs_copy)
+        imgs.extend(_copy)
 
     num_imgs = len(imgs)
 
@@ -571,78 +501,57 @@ def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup: int = 1,
     dest_img = imread(dest_img_path)
     rh, rw, _ = dest_img.shape
     grid = calc_grid_size(rw, rh, num_imgs)
+    total = grid[0] * grid[1]
 
-    print("Calculated grid size based on the aspect ratio of the image provided:",
-          grid)
-    print("Note:", num_imgs - grid[0] * grid[1],
-          "images will be thrown away from the collage")
+    print("Calculated grid size based on the aspect ratio of the image provided:", grid)
+    print("Note:", num_imgs - total, "images will be thrown away from the collage")
 
     # it's VERY important to remove redundant images
     # this makes sure that cost_matrix is a square
-    imgs = imgs[:grid[0] * grid[1]]
+    imgs = imgs[:total]
 
     # Resize the destination image so that it has the same size as the grid
     # This makes sure that each image in the list of images corresponds to a pixel of the destination image
     dest_img = cv2.resize(dest_img, grid, cv2.INTER_AREA)
 
-    weights = calc_decay_weights_normal(imgs[0].shape[:2], sigma)
     t = time.time()
     print("Computing cost matrix...")
-    if colorspace == "hsv":
-        img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))
-        dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2HSV)
-    elif colorspace == "hsl":
-        img_keys = np.array(list(map(chl_mean_hsl(weights), imgs)))
-        dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2HLS)
-    elif colorspace == "bgr":
-        img_keys = np.array(list(map(chl_mean_bgr(weights), imgs)))
-    elif colorspace == "lab":
-        img_keys = np.array(list(map(chl_mean_lab(weights), imgs)))
-        dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2Lab)
-
-    dest_img = dest_img.reshape(grid[0] * grid[1], 3)
+    dest_img, img_keys = cvt_colorspace(colorspace, calc_decay_weights_normal(imgs[0].shape[:2], sigma), imgs, dest_img)
+    dest_img = dest_img.reshape(total, 3)
 
     # compute pair-wise distances
-    cost_matrix = cdist(img_keys, dest_img, metric=metric)
+    cost_matrix = cdist(img_keys, dest_img, metric=metric).astype(ctype)
 
-    np_ctype = eval("np." + ctype)
-    cost_matrix = np_ctype(cost_matrix)
-
-    print("Computing optimal assignment on a {}x{} matrix...".format(
-        cost_matrix.shape[0], cost_matrix.shape[1]))
-
-    from lapjv import lapjv
-
-    if v is not None and (platform.system() == "Linux" or platform.system() == "Darwin") and v.gui:
-        try:
-            from wurlitzer import pipes, STDOUT
-            from wurlitzer import Wurlitzer
-            Wurlitzer.flush_interval = 0.1
-            wrapper = JVOutWrapper(v)
-            with pipes(stdout=wrapper, stderr=STDOUT):
-                _, cols, cost = lapjv(cost_matrix, verbose=1)
-                wrapper.finish()
-        except ImportError:
-            _, cols, cost = lapjv(cost_matrix)
-
-    else:
-        _, cols, cost = lapjv(cost_matrix)
-
-    cost = cost[0]
+    print("Computing optimal assignment on a {}x{} matrix...".format(cost_matrix.shape[0], cost_matrix.shape[1]))
+    cols, cost = solve_lap(cost_matrix, v)
+    del cost_matrix # free memory
 
     print("Total assignment cost:", cost)
     print("Time taken: {}s".format((np.round(time.time() - t, 2))))
-
-    # sometimes the cost matrix may be extremely large
-    # manually delete it to free memory
-    del cost_matrix
-
     return grid, np.array(imgs)[cols], cost
 
 
-def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: int = 80,
-                         color_space="lab", sigma: float = 1.0, metric: str = "euclidean", lower_thresh: int = 127,
-                         background: Tuple[int, int, int] = (255, 255, 255)) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+def solve_dup(sorted_imgs: List[np.ndarray], dest_img: np.ndarray, img_keys: List[np.ndarray], imgs: List[np.ndarray], metric: str) -> float:
+    cost = 0
+    for pixel in tqdm(dest_img, desc="[Computing assignments]", unit="pixel", unit_divisor=1000, unit_scale=True,
+                      ncols=pbar_ncols):
+        # Compute the distance between the current pixel and each image in the set
+        dist = cdist(img_keys, np.array([pixel]), metric=metric)[:, 0]
+
+        # Find the index of the image which best approximates the current pixel
+        idx = np.argmin(dist)
+
+        # Store that image
+        sorted_imgs.append(imgs[idx])
+
+        # Accumulate the distance to get the total cot
+        cost += dist[idx]
+    return cost
+
+
+def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width=80,
+                         colorspace="lab", sigma=1.0, metric="euclidean", lower_thresh=127,
+                         background=(255, 255, 255)) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels that constitute 
     of the salient objects of the target image, given that every image could be used arbitrary amount of times
@@ -650,7 +559,7 @@ def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: 
     :param dest_img_path: path to the dest_img file
     :param imgs: list of images
     :param max_width: max_width of the resulting dest_img
-    :param color_space: color space used
+    :param colorspace: color space used
     :param sigma:
     :param lower_thresh: threshold for object detection
     :background background color in rgb format
@@ -665,59 +574,31 @@ def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width: 
     dest_img = imread(dest_img_path)
 
     rh, rw, _ = dest_img.shape
-
     rh = round(rh * max_width / rw)
     grid = (max_width, rh)
 
     print("Calculated grid size based on the aspect ratio of the image provided:", grid)
 
-    weights = calc_decay_weights_normal(imgs[0].shape[:2], sigma)
     dest_img = cv2.resize(dest_img, grid, cv2.INTER_AREA)
+    dest_img, thresh_map = calc_saliency_map(dest_img, lower_thresh)
+    dest_img[thresh_map == 0] = background[::-1]
 
-    dest_img, _, _ = calc_saliency_map(
-        dest_img, lower_thresh, True, background[::-1])
-
-    white = np.ones(imgs[0].shape, np.uint8) * 255
-    white[:, :, :] = np.array(background[::-1], np.uint8)
+    white = np.ones(imgs[0].shape, np.uint8)
+    white[:, :, :] = background[::-1]
     imgs.append(white)
 
     print("Computing costs...")
-    if color_space == "hsv":
-        img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))
-        dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2HSV)
-    elif color_space == "hsl":
-        img_keys = np.array(list(map(chl_mean_hsl(weights), imgs)))
-        dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2HLS)
-    elif color_space == "bgr":
-        img_keys = np.array(list(map(chl_mean_bgr(weights), imgs)))
-    elif color_space == "lab":
-        img_keys = np.array(list(map(chl_mean_lab(weights), imgs)))
-        dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2Lab)
-
+    dest_img, img_keys = cvt_colorspace(colorspace, calc_decay_weights_normal(imgs[0].shape[:2], sigma), imgs, dest_img)
     dest_img = dest_img.reshape(grid[0] * grid[1], 3)
     sorted_imgs = []
-    cost = 0
-    for pixel in tqdm(dest_img, desc="[Computing assignments]", unit="pixel", unit_divisor=1000, unit_scale=True,
-                      ncols=pbar_ncols):
-        # Compute the distance between the current pixel and each image in the set
-        dist = cdist(img_keys, np.array([pixel]), metric=metric)[:, 0]
-
-        # Find the index of the image which best approximates the current pixel
-        idx = np.argmin(dist)
-
-        # Store that image
-        sorted_imgs.append(imgs[idx])
-
-        # Accumulate the distance to get the total cot
-        cost += dist[idx]
+    cost = solve_dup(sorted_imgs, dest_img, img_keys, imgs, metric)
 
     print("Time taken: {}s".format(np.round(time.time() - t, 2)))
-
     return grid, sorted_imgs, cost
 
 
-def calc_col_dup(dest_img_path: str, imgs: list, max_width: int = 80, color_space="lab",
-                 sigma: float = 1.0, metric: str = "euclidean") -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+def calc_col_dup(dest_img_path: str, imgs: list, max_width=80, colorspace="lab",
+                 sigma=1.0, metric="euclidean") -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
     given that every image could be used arbitrary amount of times
@@ -725,7 +606,7 @@ def calc_col_dup(dest_img_path: str, imgs: list, max_width: int = 80, color_spac
     :param dest_img_path: path to the dest_img file
     :param imgs: list of images
     :param max_width: max_width of the resulting dest_img
-    :param color_space: color space used
+    :param colorspace: color space used
     :param sigma:
     :return: [gird size, sorted images, total assignment cost]
     """
@@ -738,45 +619,17 @@ def calc_col_dup(dest_img_path: str, imgs: list, max_width: int = 80, color_spac
     rh, rw, _ = dest_img.shape
     rh = round(rh * max_width / rw)
     grid = (max_width, rh)
-
     print("Calculated grid size based on the aspect ratio of the image provided:", grid)
 
-    weights = calc_decay_weights_normal(imgs[0].shape[:2], sigma)
-    dest_img = cv2.resize(dest_img, grid, cv2.INTER_AREA)
     t = time.time()
     print("Computing costs")
-    if color_space == "hsv":
-        img_keys = np.array(list(map(chl_mean_hsv(weights), imgs)))
-        dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2HSV)
-    elif color_space == "hsl":
-        img_keys = np.array(list(map(chl_mean_hsl(weights), imgs)))
-        dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2HLS)
-    elif color_space == "bgr":
-        img_keys = np.array(list(map(chl_mean_bgr(weights), imgs)))
-    elif color_space == "lab":
-        img_keys = np.array(list(map(chl_mean_lab(weights), imgs)))
-        dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2Lab)
-
+    dest_img = cv2.resize(dest_img, grid, cv2.INTER_AREA)
+    dest_img, img_keys = cvt_colorspace(colorspace, calc_decay_weights_normal(imgs[0].shape[:2], sigma), imgs, dest_img)
     dest_img = dest_img.reshape(grid[0] * grid[1], 3)
-
     sorted_imgs = []
-    cost = 0
-    for pixel in tqdm(dest_img, desc="[Computing assignments]", unit="pixel", unit_divisor=1000, unit_scale=True,
-                      ncols=pbar_ncols):
-        # Compute the distance between the current pixel and each image in the set
-        dist = cdist(img_keys, np.array([pixel]), metric=metric)[:, 0]
-
-        # Find the index of the image which best approximates the current pixel
-        idx = np.argmin(dist)
-
-        # Store that image
-        sorted_imgs.append(imgs[idx])
-
-        # Accumulate the distance to get the total cot
-        cost += dist[idx]
+    cost = solve_dup(sorted_imgs, dest_img, img_keys, imgs, metric)
 
     print("Time taken: {}s".format(np.round(time.time() - t, 2)))
-
     return grid, sorted_imgs, cost
 
 
@@ -803,8 +656,7 @@ def save_img(img: np.ndarray, path: str, suffix: str) -> None:
         imwrite(path, img)
 
 
-def read_images(pic_path: str, img_size: Tuple[int, int], recursive: bool = False,
-                num_process: int = 1, flag: str = "stretch") -> List[np.ndarray]:
+def read_images(pic_path: str, img_size: Tuple[int, int], recursive=False, num_process=1, flag="stretch") -> List[np.ndarray]:
     assert os.path.isdir(pic_path), "Directory " + pic_path + "is non-existent"
     files = []
     if recursive:
@@ -854,7 +706,6 @@ def read_images(pic_path: str, img_size: Tuple[int, int], recursive: bool = Fals
         imgs.extend(future.result())
 
     pbar.close()
-
     return imgs
 
 
@@ -863,7 +714,7 @@ def imread(filename: str) -> np.ndarray:
     return cv2.imdecode(np.fromfile(filename, np.uint8), cv2.IMREAD_COLOR)
 
 
-def read_img_helper(files: List[str], img_size: Tuple[int, int], queue: mp.Queue, flag: str = "center") -> List[np.ndarray]:
+def read_img_helper(files: List[str], img_size: Tuple[int, int], queue: mp.Queue, flag="center") -> List[np.ndarray]:
     imgs = []
     for img_file in files:
         try:
@@ -876,18 +727,15 @@ def read_img_helper(files: List[str], img_size: Tuple[int, int], queue: mp.Queue
                 else:
                     if w > h:
                         ratio = img_size[1] / h
-                        img = cv2.resize(
-                            img, (round(w * ratio), img_size[1]), interpolation=cv2.INTER_AREA)
-                        s = int((w * ratio - img_size[0]) // 2)
+                        img = cv2.resize(img, (round(w * ratio), img_size[1]), interpolation=cv2.INTER_AREA)
+                        s = int((w * ratio - img_size[0]) / 2)
                         img = img[:, s:s + img_size[0], :]
                     else:
                         ratio = img_size[0] / w
-                        img = cv2.resize(img, (img_size[0], round(
-                            h * ratio)), interpolation=cv2.INTER_AREA)
-                        s = int((h * ratio - img_size[1]) // 2)
+                        img = cv2.resize(img, (img_size[0], round(h * ratio)), interpolation=cv2.INTER_AREA)
+                        s = int((h * ratio - img_size[1]) / 2)
                         img = img[s:s + img_size[1], :, :]
                     imgs.append(img)
-
             else:
                 imgs.append(cv2.resize(img, img_size,
                                        interpolation=cv2.INTER_AREA))
@@ -906,7 +754,7 @@ all_sort_methods.extend(["pca_bgr", "pca_hsv", "pca_lab", "pca_gray", "pca_lum",
 # these require scikit-learn and umap-learn
 # all_sort_methods.extend(["umap_bgr", "umap_hsv", "umap_lab", "umap_gray", "umap_lum", "umap_sat", "umap_hue"])
 
-all_color_spaces = ["hsv", "hsl", "bgr", "lab"]
+all_colorspaces = ["hsv", "hsl", "bgr", "lab"]
 
 all_ctypes = ["float16", "float32", "float64"]
 
@@ -914,8 +762,7 @@ all_metrics = ["euclidean", "cityblock", "chebyshev"]
 
 if __name__ == "__main__":
     mp.freeze_support()
-    all_sigmas = np.concatenate(
-        (np.arange(-1, -0.06, 0.05), np.arange(0.1, 1.05, 0.05)))
+    all_sigmas = np.concatenate((np.arange(-1, -0.06, 0.05), np.arange(0.1, 1.05, 0.05)))
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--path", help="Path to the downloaded head images",
@@ -942,7 +789,7 @@ if __name__ == "__main__":
                         action="store_true")
     parser.add_argument("--collage", type=str, default="",
                         help="If you want to fit an image, specify the image path here")
-    parser.add_argument("--colorspace", type=str, default="lab", choices=all_color_spaces,
+    parser.add_argument("--colorspace", type=str, default="lab", choices=all_colorspaces,
                         help="Methods to use when fitting an image")
     parser.add_argument("--metric", type=str, default="euclidean", choices=all_metrics,
                         help="Distance metric used when evaluating the distance between two color vectors")
@@ -975,13 +822,11 @@ if __name__ == "__main__":
     if len(args.out) > 0:
         folder, file_name = os.path.split(args.out)
         if len(folder) > 0:
-            assert os.path.isdir(
-                folder), "The output path {} does not exist!".format(folder)
+            assert os.path.isdir(folder), "The output path {} does not exist!".format(folder)
         # ext = os.path.splitext(file_name)[-1]
         # assert ext.lower() == ".jpg" or ext.lower() == ".png", "The file extension must be .jpg or .png"
 
-    imgs = read_images(args.path, (args.size, args.size),
-                       args.recursive, args.num_process)
+    imgs = read_images(args.path, (args.size, args.size), args.recursive, args.num_process)
 
     if len(args.collage) == 0:
         if args.exp:
@@ -1043,45 +888,43 @@ if __name__ == "__main__":
                 plt.show()
 
             else:
-                total_steps = len(all_sigmas) * len(all_color_spaces)
+                total_steps = len(all_sigmas) * len(all_colorspaces)
 
                 if args.uneven:
                     for sigma in all_sigmas:
-                        for color_space in all_color_spaces:
+                        for colorspace in all_colorspaces:
                             f = pool.submit(calc_col_dup, args.collage, imgs,
-                                            args.max_width, color_space, sigma, args.metric)
-                            futures[f] = (sigma, color_space)
+                                            args.max_width, colorspace, sigma, args.metric)
+                            futures[f] = (sigma, colorspace)
                 else:
                     for sigma in all_sigmas:
-                        for color_space in all_color_spaces:
+                        for colorspace in all_colorspaces:
                             f = pool.submit(calc_col_even, args.collage, imgs, args.dup,
-                                            color_space, args.ctype, sigma, args.metric)
-                            futures[f] = (sigma, color_space)
+                                            colorspace, args.ctype, sigma, args.metric)
+                            futures[f] = (sigma, colorspace)
 
-                cost_vis = np.zeros((len(all_sigmas), len(all_color_spaces)))
+                cost_vis = np.zeros((len(all_sigmas), len(all_colorspaces)))
                 r, c = 0, 0
                 for f in tqdm(con.as_completed(futures.keys()), desc="[Experimenting]",
                               total=total_steps, unit="exps"):
-                    sigma, color_space = futures[f]
-                    suffix = "{}_{}".format(color_space, np.round(sigma, 2))
+                    sigma, colorspace = futures[f]
+                    suffix = "{}_{}".format(colorspace, np.round(sigma, 2))
                     grid, sorted_imgs, cost = f.result()
-                    save_img(make_collage(grid, sorted_imgs,
-                                          args.rev_row), args.out, suffix)
+                    save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, suffix)
                     cost_vis[r, c] = cost
                     c += 1
-                    if c % len(all_color_spaces) == 0:
+                    if c % len(all_colorspaces) == 0:
                         r += 1
                         c = 0
 
                 fig = plt.figure()
                 ax = fig.gca(projection='3d')
-                X, Y = np.meshgrid(
-                    np.arange(len(all_color_spaces)), all_sigmas)
+                X, Y = np.meshgrid(np.arange(len(all_colorspaces)), all_sigmas)
                 surf = ax.plot_surface(X, Y, cost_vis, cmap="jet")
                 ax.set_xlabel("Color Space")
                 ax.set_ylabel("Sigma")
                 ax.set_zlabel("Cost")
-                plt.xticks(np.arange(len(all_color_spaces)), all_color_spaces)
+                plt.xticks(np.arange(len(all_colorspaces)), all_colorspaces)
                 plt.show()
 
         else:
@@ -1090,23 +933,19 @@ if __name__ == "__main__":
                     grid, sorted_imgs, _ = calc_salient_col_dup(args.collage, imgs, args.max_width,
                                                                 args.colorspace, args.sigma, args.metric,
                                                                 args.lower_thresh, args.background)
-                    save_img(make_collage(grid, sorted_imgs, args.rev_row),
-                             args.out, "")
+                    save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
                 else:
                     grid, sorted_imgs, _ = calc_salient_col_even_fast(args.collage, imgs, args.dup,
                                                                       args.colorspace, args.ctype, args.sigma,
                                                                       args.metric, args.lower_thresh, args.background)
-                    save_img(make_collage(grid, sorted_imgs, args.rev_row),
-                             args.out, "")
+                    save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
             else:
                 if args.uneven:
                     grid, sorted_imgs, _ = calc_col_dup(args.collage, imgs, args.max_width,
                                                         args.colorspace, args.sigma, args.metric)
-                    save_img(make_collage(grid, sorted_imgs, args.rev_row),
-                             args.out, "")
+                    save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
 
                 else:
                     grid, sorted_imgs, _ = calc_col_even(args.collage, imgs, args.dup,
                                                          args.colorspace, args.ctype, args.sigma, args.metric)
-                    save_img(make_collage(grid, sorted_imgs, args.rev_row),
-                             args.out, "")
+                    save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")

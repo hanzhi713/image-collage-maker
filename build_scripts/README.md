@@ -27,13 +27,13 @@ conda-env remove -n collage
 Create a conda environment without mkl. We don't want mkl because it's a huge library which takes a lot of space.
 
 ```bash
-conda create -n collage python=3.6 nomkl numpy scipy scikit-learn pillow tqdm
+conda create -n collage python nomkl numpy scipy scikit-learn pillow tqdm
 ```
 
 Activate the conda environment
 
 ```bash
-source activate collage
+conda activate collage
 ```
 
 Install the packages that are not available in the Anaconda repo
@@ -47,7 +47,7 @@ pip install lapjv wurlitzer pyinstaller opencv-contrib-python
 Create a conda environment
 
 ```bash
-conda create -n collage python=3.6
+conda create -n collage python
 ```
 
 Activate the conda environment
@@ -73,7 +73,7 @@ pip install pillow opencv-contrib-python tqdm scikit-learn lapjv pyinstaller
 ```bash
 git clone https://github.com/hanzhi713/image-collage-maker
 cd image-collage-maker/build_scripts
-source activate collage
+conda activate collage
 sh build_macos.sh
 ```
 
@@ -86,7 +86,7 @@ This script requires the Anaconda path because it needs to append the library fi
 ```bash
 git clone https://github.com/hanzhi713/image-collage-maker
 cd image-collage-maker/build_scripts
-source activate collage
+conda activate collage
 sh build_linux.sh
 ```
 
@@ -97,6 +97,6 @@ Assuming you have git installed and have it in your path, open the command promp
 ```
 git clone https://github.com/hanzhi713/image-collage-maker
 cd image-collage-maker/build_scripts
-activate collage
+conda activate collage
 build_windows.bat
 ```

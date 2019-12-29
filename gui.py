@@ -350,12 +350,12 @@ if __name__ == "__main__":
         row=3, column=1, sticky="W", pady=(5, 2))
 
     # right collage option panel ROW 4:
-    color_space = StringVar()
-    color_space.set("lab")
+    colorspace = StringVar()
+    colorspace.set("lab")
     Label(right_col_opt_panel, text="Colorspace: ").grid(
         row=4, column=0, sticky="W")
-    OptionMenu(right_col_opt_panel, color_space, "", *
-               mkg.all_color_spaces).grid(row=4, column=1, sticky="W")
+    OptionMenu(right_col_opt_panel, colorspace, "", *
+               mkg.all_colorspaces).grid(row=4, column=1, sticky="W")
 
     # right collage option panel ROW 5:
     dist_metric = StringVar()
@@ -439,7 +439,7 @@ if __name__ == "__main__":
                         def action():
                             try:
                                 grid, sorted_imgs, _ = mkg.calc_salient_col_even_fast(dest_img_path.get(), imgs,
-                                                                                      dup.get(), color_space.get(),
+                                                                                      dup.get(), colorspace.get(),
                                                                                       ctype.get(), float(sigma.get()),
                                                                                       dist_metric.get(), lower_thresh,
                                                                                       salient_bg_color, out_wrapper)
@@ -453,7 +453,7 @@ if __name__ == "__main__":
                         def action():
                             try:
                                 grid, sorted_imgs, _ = mkg.calc_salient_col_dup(dest_img_path.get(), imgs,
-                                                                                max_width.get(), color_space.get(),
+                                                                                max_width.get(), colorspace.get(),
                                                                                 float(
                                                                                     sigma.get()), dist_metric.get(),
                                                                                 lower_thresh, salient_bg_color)
@@ -470,7 +470,7 @@ if __name__ == "__main__":
                         def action():
                             try:
                                 grid, sorted_imgs, _ = mkg.calc_col_even(dest_img_path.get(), imgs,
-                                                                         dup.get(), color_space.get(),
+                                                                         dup.get(), colorspace.get(),
                                                                          ctype.get(), float(sigma.get()),
                                                                          dist_metric.get(), out_wrapper)
                                 return mkg.make_collage(grid, sorted_imgs, False)
@@ -483,7 +483,7 @@ if __name__ == "__main__":
                         def action():
                             try:
                                 grid, sorted_imgs, _ = mkg.calc_col_dup(dest_img_path.get(), imgs,
-                                                                        max_width.get(), color_space.get(),
+                                                                        max_width.get(), colorspace.get(),
                                                                         float(sigma.get()), dist_metric.get())
                                 return mkg.make_collage(grid, sorted_imgs, False)
                             except:
