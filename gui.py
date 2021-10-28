@@ -472,7 +472,7 @@ if __name__ == "__main__":
                                 grid, sorted_imgs, _ = mkg.calc_col_even(dest_img_path.get(), imgs,
                                                                          dup.get(), colorspace.get(),
                                                                          ctype.get(), float(sigma.get()),
-                                                                         dist_metric.get(), out_wrapper)
+                                                                         dist_metric.get(), is_block.get(), out_wrapper)
                                 return mkg.make_collage(grid, sorted_imgs, False)
                             except:
                                 messagebox.showerror(
@@ -498,19 +498,45 @@ if __name__ == "__main__":
             except:
                 return messagebox.showerror("Error", traceback.format_exc())
 
+    def attach_block_opt():
+        if is_block.get():
+            block_size_label.grid(row=10, column=0, sticky="W", pady=2)
+            block_size_entry.grid(row=10, column=1, sticky="W", pady=2)
+            is_salient_check.grid_remove()
+            is_salient.set(False)
+        else:
+            block_size_label.grid_remove()
+            block_size_entry.grid_remove()
+            is_salient_check.grid(row=11, columnspan=2, sticky="w")
+        
+        attach_salient_opt()
+    
+    # right collage option panel ROW 9
+    is_block = BooleanVar()
+    is_block.set(False)
+    Checkbutton(right_col_opt_panel, text="Block match",
+                variable=is_block, command=attach_block_opt).grid(row=9, columnspan=2, sticky="w")
+
+    # right collage option panel ROW 10
+    block_size = IntVar()
+    block_size.set(50)
+    block_size_label = Label(right_col_opt_panel, text="Block size: ")
+    block_size_entry = Entry(right_col_opt_panel, width=5, textvariable=img_size)
+
     def attach_salient_opt():
         if is_salient.get():
-            salient_opt_panel.grid(row=10, columnspan=2, pady=2, sticky="w")
+            salient_opt_panel.grid(row=12, columnspan=2, pady=2, sticky="w")
         else:
             salient_opt_panel.grid_remove()
 
-    # right collage option panel ROW 9
+    # right collage option panel ROW 11
     is_salient = BooleanVar()
     is_salient.set(False)
-    Checkbutton(right_col_opt_panel, text="Salient objects only",
-                variable=is_salient, command=attach_salient_opt).grid(row=9, columnspan=2, sticky="w")
+    is_salient_check = Checkbutton(right_col_opt_panel, text="Salient objects only",
+                variable=is_salient, command=attach_salient_opt)
+    is_salient_check.grid(row=11, columnspan=2, sticky="w")
 
-    # right collage option panel ROW 10
+    # right collage option panel ROW 12
     salient_opt_panel = PanedWindow(right_col_opt_panel)
     salient_lower_thresh = IntVar()
     salient_lower_thresh.set(127)
@@ -535,9 +561,9 @@ if __name__ == "__main__":
                                    command=change_bg_color, bg="#FFFFFF")
     salient_bg_chooser.grid(row=1, columnspan=2, pady=(3, 1))
 
-    # right collage option panel ROW 11
+    # right collage option panel ROW 13
     Button(right_col_opt_panel, text=" Generate Collage ",
-           command=generate_collage).grid(row=11, columnspan=2, pady=(3, 5))
+           command=generate_collage).grid(row=13, columnspan=2, pady=(3, 5))
     # ------------------------ end right collage option panel --------------------
 
     # right panel ROW 9:

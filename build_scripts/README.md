@@ -27,7 +27,7 @@ conda-env remove -n collage
 Create a conda environment without mkl. We don't want mkl because it's a huge library which takes a lot of space.
 
 ```bash
-conda create -n collage python nomkl numpy scipy scikit-learn pillow tqdm
+conda create -n collage python=3.7 nomkl numpy scipy scikit-learn pillow tqdm
 ```
 
 Activate the conda environment
@@ -47,7 +47,7 @@ pip install lapjv wurlitzer pyinstaller opencv-contrib-python
 Create a conda environment
 
 ```bash
-conda create -n collage python
+conda create -n collage python=3.7
 ```
 
 Activate the conda environment
@@ -59,7 +59,7 @@ activate collage
 Install numpy from conda-forge to avoid installing mkl
 
 ```bash
-conda install -c conda-forge numpy
+conda install -c conda-forge nomkl numpy
 ```
 
 Install rest of the packages using pip
