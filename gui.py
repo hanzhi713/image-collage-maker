@@ -341,14 +341,6 @@ if __name__ == "__main__":
     Button(right_col_opt_panel, text="Load destination image",
            command=load_dest_img).grid(row=2, columnspan=2, pady=(3, 2))
 
-    # right collage option panel ROW 3:
-    sigma = StringVar()
-    sigma.set("1.0")
-    Label(right_col_opt_panel, text="Sigma: ").grid(
-        row=3, column=0, sticky="W", pady=(5, 2))
-    Entry(right_col_opt_panel, textvariable=sigma, width=8).grid(
-        row=3, column=1, sticky="W", pady=(5, 2))
-
     # right collage option panel ROW 4:
     colorspace = StringVar()
     colorspace.set("lab")
@@ -395,7 +387,7 @@ if __name__ == "__main__":
     Label(collage_even_panel, text="C Types: ").grid(
         row=0, column=0, sticky="W")
     ctype = StringVar()
-    ctype.set("float16")
+    ctype.set("float32")
     OptionMenu(collage_even_panel, ctype, "", *
                mkg.all_ctypes).grid(row=0, column=1, sticky="W")
 
@@ -412,12 +404,25 @@ if __name__ == "__main__":
     collage_uneven_panel = PanedWindow(right_col_opt_panel)
 
     # collage uneven panel ROW 0
-    Label(collage_uneven_panel, text="Max width: ").grid(
-        row=0, column=0, sticky="W")
+    Label(collage_uneven_panel, text="Max width: ").grid(row=0, column=0, sticky="W")
     max_width = IntVar()
     max_width.set(80)
-    Entry(collage_uneven_panel, textvariable=max_width,
-          width=5).grid(row=0, column=1, sticky="W")
+    Entry(collage_uneven_panel, textvariable=max_width, width=5).grid(row=0, column=1, sticky="W")
+
+    # collage uneven panel ROW 1
+    Label(collage_uneven_panel, text="Window: ").grid(row=1, column=0, sticky="W")
+    redunt_window = IntVar()
+    redunt_window.set(0)
+    Entry(collage_uneven_panel, textvariable=redunt_window, width=5).grid(row=1, column=1, sticky="W")
+
+    Label(collage_uneven_panel, text="Freq Mul: ").grid(row=2, column=0, sticky="W")
+    freq_mul = DoubleVar()
+    freq_mul.set(1)
+    Entry(collage_uneven_panel, textvariable=freq_mul, width=5).grid(row=2, column=1, sticky="W")
+
+    randomize = BooleanVar()
+    randomize.set(True)
+    Checkbutton(collage_uneven_panel, text="Randomize", variable=randomize).grid(row=3, columnspan=2, sticky="w")
     # ----------------------- end collage uneven panel ----------------------
 
     def generate_collage():
@@ -433,16 +438,13 @@ if __name__ == "__main__":
                         "Lower salient threshold must be -1 (auto) or between 0 and 255"
                     if even.get() == "even":
                         assert dup.get() > 0, "Duplication must be a positive number"
-                        assert float(
-                            sigma.get()) != 0, "Sigma must be non-zero"
 
                         def action():
                             try:
-                                grid, sorted_imgs, _ = mkg.calc_salient_col_even_fast(dest_img_path.get(), imgs,
-                                                                                      dup.get(), colorspace.get(),
-                                                                                      ctype.get(), float(sigma.get()),
-                                                                                      dist_metric.get(), lower_thresh,
-                                                                                      salient_bg_color, out_wrapper)
+                                grid, sorted_imgs, _ = mkg.calc_salient_col_even(dest_img_path.get(), imgs,
+                                                                                dup.get(), colorspace.get(),
+                                                                                ctype.get(), dist_metric.get(), lower_thresh,
+                                                                                salient_bg_color, out_wrapper)
                                 return mkg.make_collage(grid, sorted_imgs, False)
                             except:
                                 messagebox.showerror(
@@ -454,8 +456,7 @@ if __name__ == "__main__":
                             try:
                                 grid, sorted_imgs, _ = mkg.calc_salient_col_dup(dest_img_path.get(), imgs,
                                                                                 max_width.get(), colorspace.get(),
-                                                                                float(
-                                                                                    sigma.get()), dist_metric.get(),
+                                                                                dist_metric.get(),
                                                                                 lower_thresh, salient_bg_color)
                                 return mkg.make_collage(grid, sorted_imgs, False)
                             except:
@@ -464,27 +465,26 @@ if __name__ == "__main__":
                 else:
                     if even.get() == "even":
                         assert dup.get() > 0, "Duplication must be a positive number"
-                        assert float(
-                            sigma.get()) != 0, "Sigma must be non-zero"
 
                         def action():
                             try:
                                 grid, sorted_imgs, _ = mkg.calc_col_even(dest_img_path.get(), imgs,
                                                                          dup.get(), colorspace.get(),
-                                                                         ctype.get(), float(sigma.get()),
-                                                                         dist_metric.get(), is_block.get(), out_wrapper)
+                                                                         ctype.get(), dist_metric.get(), out_wrapper)
                                 return mkg.make_collage(grid, sorted_imgs, False)
                             except:
                                 messagebox.showerror(
                                     "Error", traceback.format_exc())
                     else:
-                        assert max_width.get() > 0, "Max width must be a positive number"
+                        assert max_width.get() > 0, "Max width must be a positive integer"
+                        assert redunt_window.get() >= 0, "Max width must be a nonnegative integer"
+                        assert freq_mul.get() >= 0, "Max width must be a nonnegative real number"
 
                         def action():
                             try:
-                                grid, sorted_imgs, _ = mkg.calc_col_dup(dest_img_path.get(), imgs,
-                                                                        max_width.get(), colorspace.get(),
-                                                                        float(sigma.get()), dist_metric.get())
+                                grid, sorted_imgs, _ = mkg.calc_col_dup(
+                                    dest_img_path.get(), imgs, max_width.get(), colorspace.get(), dist_metric.get(), 
+                                    redunt_window.get(), freq_mul.get(), randomize.get())
                                 return mkg.make_collage(grid, sorted_imgs, False)
                             except:
                                 messagebox.showerror(
@@ -498,30 +498,30 @@ if __name__ == "__main__":
             except:
                 return messagebox.showerror("Error", traceback.format_exc())
 
-    def attach_block_opt():
-        if is_block.get():
-            block_size_label.grid(row=10, column=0, sticky="W", pady=2)
-            block_size_entry.grid(row=10, column=1, sticky="W", pady=2)
-            is_salient_check.grid_remove()
-            is_salient.set(False)
-        else:
-            block_size_label.grid_remove()
-            block_size_entry.grid_remove()
-            is_salient_check.grid(row=11, columnspan=2, sticky="w")
+    # def attach_block_opt():
+    #     if is_block.get():
+    #         block_size_label.grid(row=10, column=0, sticky="W", pady=2)
+    #         block_size_entry.grid(row=10, column=1, sticky="W", pady=2)
+    #         is_salient_check.grid_remove()
+    #         is_salient.set(False)
+    #     else:
+    #         block_size_label.grid_remove()
+    #         block_size_entry.grid_remove()
+    #         is_salient_check.grid(row=11, columnspan=2, sticky="w")
         
-        attach_salient_opt()
+    #     attach_salient_opt()
     
-    # right collage option panel ROW 9
-    is_block = BooleanVar()
-    is_block.set(False)
-    Checkbutton(right_col_opt_panel, text="Block match",
-                variable=is_block, command=attach_block_opt).grid(row=9, columnspan=2, sticky="w")
+    # # right collage option panel ROW 9
+    # is_block = BooleanVar()
+    # is_block.set(False)
+    # Checkbutton(right_col_opt_panel, text="Block match",
+    #             variable=is_block, command=attach_block_opt).grid(row=9, columnspan=2, sticky="w")
 
-    # right collage option panel ROW 10
-    block_size = IntVar()
-    block_size.set(50)
-    block_size_label = Label(right_col_opt_panel, text="Block size: ")
-    block_size_entry = Entry(right_col_opt_panel, width=5, textvariable=img_size)
+    # # right collage option panel ROW 10
+    # block_size = IntVar()
+    # block_size.set(50)
+    # block_size_label = Label(right_col_opt_panel, text="Block size: ")
+    # block_size_entry = Entry(right_col_opt_panel, width=5, textvariable=img_size)
 
     def attach_salient_opt():
         if is_salient.get():
