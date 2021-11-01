@@ -427,76 +427,62 @@ if __name__ == "__main__":
 
     def generate_collage():
         if imgs is None:
-            return messagebox.showerror("Empty set", "Please first load source images")
+            return messagebox.showerror("No source images", "Please first load source images")
         if not os.path.isfile(dest_img_path.get()):
             return messagebox.showerror("No destination image", "Please first load the image that you're trying to fit")
-        else:
-            try:
+        try:
+            if is_salient.get():
+                lower_thresh = salient_lower_thresh.get()
+                assert 0 <= lower_thresh < 255 or lower_thresh == -1, \
+                    "Lower salient threshold must be -1 (auto threshold) or between 0 and 255"
+            else:
+                lower_thresh = None
+            
+            if even.get() == "even":
+                assert dup.get() > 0, "Duplication must be a positive number"
+                
                 if is_salient.get():
-                    lower_thresh = salient_lower_thresh.get()
-                    assert 0 <= lower_thresh < 255 or lower_thresh == -1, \
-                        "Lower salient threshold must be -1 (auto) or between 0 and 255"
-                    if even.get() == "even":
-                        assert dup.get() > 0, "Duplication must be a positive number"
+                    def action():
+                        # TODO
+                        try:
+                            raise NotImplementedError("Not implemented")
+                            grid, sorted_imgs, _ = mkg.calc_salient_col_even(dest_img_path.get(), imgs,
+                                                                            dup.get(), colorspace.get(),
+                                                                            ctype.get(), dist_metric.get(), lower_thresh,
+                                                                            salient_bg_color, out_wrapper)
+                            return mkg.make_collage(grid, sorted_imgs, False)
+                        except:
+                            messagebox.showerror("Error", traceback.format_exc())
+                else:               
+                    def action():
+                        try:
+                            grid, sorted_imgs, _ = mkg.calc_col_even(
+                                dest_img_path.get(), imgs, dup.get(), colorspace.get(),
+                                ctype.get(), dist_metric.get(), out_wrapper)
+                            return mkg.make_collage(grid, sorted_imgs, False)
+                        except:
+                            messagebox.showerror("Error", traceback.format_exc())
+            else:
+                assert max_width.get() > 0, "Max width must be a positive number"
+                assert redunt_window.get() >= 0, "Max width must be a nonnegative integer"
+                assert freq_mul.get() >= 0, "Max width must be a nonnegative real number"
 
-                        def action():
-                            try:
-                                grid, sorted_imgs, _ = mkg.calc_salient_col_even(dest_img_path.get(), imgs,
-                                                                                dup.get(), colorspace.get(),
-                                                                                ctype.get(), dist_metric.get(), lower_thresh,
-                                                                                salient_bg_color, out_wrapper)
-                                return mkg.make_collage(grid, sorted_imgs, False)
-                            except:
-                                messagebox.showerror(
-                                    "Error", traceback.format_exc())
-                    else:
-                        assert max_width.get() > 0, "Max width must be a positive number"
+                def action():
+                    try:
+                        grid, sorted_imgs, _ = mkg.calc_col_dup(
+                            dest_img_path.get(), imgs, max_width.get(), colorspace.get(), dist_metric.get(), 
+                            lower_thresh, salient_bg_color, 
+                            redunt_window.get(), freq_mul.get(), randomize.get())
+                        return mkg.make_collage(grid, sorted_imgs, False)
+                    except:
+                        messagebox.showerror("Error", traceback.format_exc())
 
-                        def action():
-                            try:
-                                grid, sorted_imgs, _ = mkg.calc_salient_col_dup(dest_img_path.get(), imgs,
-                                                                                max_width.get(), colorspace.get(),
-                                                                                dist_metric.get(),
-                                                                                lower_thresh, salient_bg_color)
-                                return mkg.make_collage(grid, sorted_imgs, False)
-                            except:
-                                messagebox.showerror(
-                                    "Error", traceback.format_exc())
-                else:
-                    if even.get() == "even":
-                        assert dup.get() > 0, "Duplication must be a positive number"
+            pool.submit(action).add_done_callback(lambda f: show_img(f.result()))
 
-                        def action():
-                            try:
-                                grid, sorted_imgs, _ = mkg.calc_col_even(dest_img_path.get(), imgs,
-                                                                         dup.get(), colorspace.get(),
-                                                                         ctype.get(), dist_metric.get(), out_wrapper)
-                                return mkg.make_collage(grid, sorted_imgs, False)
-                            except:
-                                messagebox.showerror(
-                                    "Error", traceback.format_exc())
-                    else:
-                        assert max_width.get() > 0, "Max width must be a positive integer"
-                        assert redunt_window.get() >= 0, "Max width must be a nonnegative integer"
-                        assert freq_mul.get() >= 0, "Max width must be a nonnegative real number"
-
-                        def action():
-                            try:
-                                grid, sorted_imgs, _ = mkg.calc_col_dup(
-                                    dest_img_path.get(), imgs, max_width.get(), colorspace.get(), dist_metric.get(), 
-                                    redunt_window.get(), freq_mul.get(), randomize.get())
-                                return mkg.make_collage(grid, sorted_imgs, False)
-                            except:
-                                messagebox.showerror(
-                                    "Error", traceback.format_exc())
-
-                pool.submit(action).add_done_callback(
-                    lambda f: show_img(f.result()))
-
-            except AssertionError as e:
-                return messagebox.showerror("Error", e)
-            except:
-                return messagebox.showerror("Error", traceback.format_exc())
+        except AssertionError as e:
+            return messagebox.showerror("Error", e)
+        except:
+            return messagebox.showerror("Error", traceback.format_exc())
 
     # def attach_block_opt():
     #     if is_block.get():
@@ -572,28 +558,19 @@ if __name__ == "__main__":
 
     def save_img():
         if result_img is None:
-            messagebox.showerror(
-                "Error", "You don't have any image to save yet!")
-        else:
-
-            def imwrite(filename, img):
-                try:
-                    ext = os.path.splitext(filename)[1]
-                    result, n = cv2.imencode(ext, img)
-
-                    if result:
-                        with open(filename, mode='wb') as f:
-                            n.tofile(f)
-                except:
-                    messagebox.showerror("Error", traceback.format_exc())
-
-            fp = filedialog.asksaveasfilename(initialdir=init_dir, title="Save your collage",
-                                              filetypes=(
-                                                  ("images", "*.jpg"), ("images", "*.png")),
-                                              defaultextension=".png", initialfile="result.png")
-            if fp is not None and len(fp) > 0 and os.path.isdir(os.path.dirname(fp)):
-                print("Image saved to", fp)
-                imwrite(fp, result_img)
+            messagebox.showerror("Error", "You don't have any image to save yet!")
+            return
+        
+        fp = filedialog.asksaveasfilename(initialdir=init_dir, title="Save your collage",
+                                          filetypes=(("images", "*.jpg"), ("images", "*.png")),
+                                          defaultextension=".png", initialfile="result.png")
+        if fp is not None and len(fp) > 0 and os.path.isdir(os.path.dirname(fp)):
+            print("Saving image to", fp)
+            try:
+                mkg.imwrite(fp, result_img)
+                print("Saved!")
+            except:
+                messagebox.showerror("Error", traceback.format_exc())
 
     # right panel ROW 10:
     Button(right_panel, text=" Save image ",

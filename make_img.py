@@ -6,7 +6,7 @@ import multiprocessing as mp
 import sys
 import time
 import platform
-from typing import List, Tuple, Callable
+from typing import List, Tuple
 import itertools
 from math import ceil
 
@@ -267,7 +267,7 @@ def cvt_colorspace(colorspace: str, imgs: List[np.ndarray], dest_obj: np.ndarray
     if colorspace == "hsv":
         flag = cv2.COLOR_BGR2HSV
     elif colorspace == "hsl":
-        flag = cv2.cv2.COLOR_BGR2HLS
+        flag = cv2.COLOR_BGR2HLS
     elif colorspace == "bgr":
         return dest_obj, imgs
     elif colorspace == "lab":
@@ -445,9 +445,9 @@ def solve_dup(dest_img: np.ndarray, img_keys: List[np.ndarray], grid: Tuple[int,
     return dist_mat[:, assignment].sum(), assignment
 
 
-def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width=80,
-                         colorspace="lab", metric="euclidean", lower_thresh=127,
-                         background=(255, 255, 255), redunt_window=0, freq_mul=1, randomize=True) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+def calc_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width=80,
+                 colorspace="lab", metric="euclidean", lower_thresh=None,
+                 background=None, redunt_window=0, freq_mul=1, randomize=True) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels that constitute 
     of the salient objects of the target image, given that every image could be used arbitrary amount of times
@@ -467,40 +467,6 @@ def calc_salient_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width=8
     imgs = list(map(np.copy, imgs))
     dest_img = imread(dest_img_path)
 
-    rh, rw, _ = dest_img.shape
-    rh = round(rh * max_width / rw)
-    grid = (max_width, rh)
-    print("Calculated grid size based on the aspect ratio of the image provided:", grid)
-
-    dest_img, thresh_map = calc_saliency_map(dest_img, lower_thresh)
-    dest_img[thresh_map == 0] = background[::-1]
-
-    white = np.ones(imgs[0].shape, np.uint8)
-    white[:, :, :] = background[::-1]
-    imgs.append(white)
-
-    print("Computing costs...")
-    dest_img, img_keys = compute_blocks(colorspace, dest_img, imgs, grid)
-    cost, cols = solve_dup(dest_img, img_keys, grid, metric, redunt_window, freq_mul, randomize)
-    print("Time taken: {}s".format(np.round(time.time() - t, 2)))
-    return grid, np.asarray(imgs)[cols], cost
-
-
-def calc_col_dup(dest_img_path: str, imgs: list, max_width=80, colorspace="lab",
-                 metric="euclidean", redunt_window=0, freq_mul=1, randomize=True) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
-    """
-    Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
-    given that every image could be used arbitrary amount of times
-
-    :param dest_img_path: path to the dest_img file
-    :param imgs: list of images
-    :param max_width: max_width of the resulting dest_img
-    :param colorspace: color space used
-    :return: [gird size, sorted images, total assignment cost]
-    """
-    t = time.time()
-    assert os.path.isfile(dest_img_path)
-    dest_img = imread(dest_img_path)
     # Because we don't have a fixed total amount of images as we can used a single image
     # for arbitrary amount of times, we need user to specify the maximum width in order to determine the grid size.
     rh, rw, _ = dest_img.shape
@@ -508,7 +474,14 @@ def calc_col_dup(dest_img_path: str, imgs: list, max_width=80, colorspace="lab",
     grid = (max_width, rh)
     print("Calculated grid size based on the aspect ratio of the image provided:", grid)
 
-    print("Computing cost matrix...")
+    if lower_thresh is not None and background is not None:
+        dest_img, thresh_map = calc_saliency_map(dest_img, lower_thresh)
+        dest_img[thresh_map == 0] = background[::-1]
+
+        white = np.full(imgs[0].shape, background[::-1], dtype=np.uint8)
+        imgs.append(white)
+
+    print("Computing costs...")
     dest_img, img_keys = compute_blocks(colorspace, dest_img, imgs, grid)
     cost, cols = solve_dup(dest_img, img_keys, grid, metric, redunt_window, freq_mul, randomize)
 
@@ -596,6 +569,131 @@ def read_img_other(args: Tuple[str, Tuple[int, int]]):
         return None
 
 
+def uneven_exp_mat(args, imgs):
+    import matplotlib.pyplot as plt
+    pool = con.ProcessPoolExecutor(4)
+    all_freqs = np.zeros(6, dtype=np.float64)
+    all_freqs[1:] = np.logspace(-2, 2, 5)
+    grid, sorted_imgs, _ = calc_col_dup(args.collage, imgs, max_width=args.max_width, colorspace=all_colorspaces[0], freq_mul=all_freqs[0])
+    img_shape = make_collage(grid, sorted_imgs, args.rev_row).shape
+    grid_img = np.zeros((img_shape[0] * len(all_colorspaces), img_shape[1] * len(all_freqs), 3), dtype=np.uint8)
+
+    pbar = tqdm(desc="[Experimenting]", total=len(all_freqs) * len(all_colorspaces), unit="exps")
+    futures = [
+        [pool.submit(calc_col_dup, args.collage, imgs, max_width=args.max_width, colorspace=colorspace, freq_mul=freq) 
+            for freq in all_freqs] 
+                for colorspace in all_colorspaces
+    ]
+    for i in range(len(all_colorspaces)):
+        for j in range(len(all_freqs)):
+            grid, sorted_imgs, cost = futures[i][j].result()
+            grid_img[i * img_shape[0]:(i+1)*img_shape[0], j*img_shape[1]:(j+1)*img_shape[1], :] = make_collage(grid, sorted_imgs, args.rev_row)
+            pbar.update()
+    pbar.refresh()
+    plt.figure()
+    plt.imshow(cv2.cvtColor(grid_img, cv2.COLOR_BGR2RGB))
+    plt.yticks(np.arange(0, grid_img.shape[0], img_shape[0]) + img_shape[0] / 2, all_colorspaces)
+    plt.xticks(np.arange(0, grid_img.shape[1], img_shape[1]) + img_shape[1] / 2, all_freqs)
+    plt.show()
+
+
+def uneven_exp(args, imgs):
+    import matplotlib.pyplot as plt
+    pool = con.ProcessPoolExecutor(4)
+    all_freqs = np.zeros(6, dtype=np.float64)
+    all_freqs[1:] = np.logspace(-2, 2, 5)
+
+    pbar = tqdm(desc="[Experimenting]", total=len(all_freqs) + len(all_colorspaces), unit="exps")
+    futures1 = [pool.submit(calc_col_dup, args.collage, imgs, max_width=args.max_width, colorspace=colorspace, freq_mul=1.0) 
+                    for colorspace in all_colorspaces]
+    futures2 = [pool.submit(calc_col_dup, args.collage, imgs, max_width=args.max_width, colorspace="bgr", freq_mul=freq) 
+                    for freq in all_freqs]
+    
+    def collect_imgs(params, futures, xlabel):
+        result_imgs = []
+        for i in range(len(params)):
+            grid, sorted_imgs, _ = futures[i].result()
+            result_imgs.append(make_collage(grid, sorted_imgs, args.rev_row))
+            pbar.update()
+        
+        plt.figure()
+        plt.imshow(cv2.cvtColor(np.hstack(result_imgs), cv2.COLOR_BGR2RGB))
+        grid_width = result_imgs[0].shape[1]
+        plt.xticks(np.arange(0, grid_width * len(result_imgs), grid_width) + grid_width / 2, params)
+        plt.yticks([], [])
+        plt.xlabel(xlabel)
+
+    collect_imgs([c.upper() for c in all_colorspaces], futures1, "Color Space")
+    collect_imgs(all_freqs, futures2, "Frequency Multiplier")
+    pbar.refresh()
+    plt.show()
+
+
+def sort_exp(args, imgs):
+    pool = con.ProcessPoolExecutor(4)
+    futures = {}
+
+    for sort_method in all_sort_methods:
+        futures[pool.submit(sort_collage, imgs, args.ratio, sort_method, args.rev_sort)] = sort_method
+
+    for future in tqdm(con.as_completed(futures.keys()), total=len(all_sort_methods),
+                        desc="[Experimenting]", unit="exps"):
+        grid, sorted_imgs = future.result()
+        combined_img = make_collage(grid, sorted_imgs, args.rev_row)
+        save_img(combined_img, args.out, futures[future])
+
+
+def main(args):
+    if not args.verbose:
+        sys.stdout = open(os.devnull, "w")
+
+    if len(args.out) > 0:
+        folder, file_name = os.path.split(args.out)
+        if len(folder) > 0:
+            assert os.path.isdir(folder), "The output path {} does not exist!".format(folder)
+        # ext = os.path.splitext(file_name)[-1]
+        # assert ext.lower() == ".jpg" or ext.lower() == ".png", "The file extension must be .jpg or .png"
+
+    imgs = read_images(args.path, (args.size, args.size), args.recursive, args.num_process)
+
+    
+    if len(args.collage) == 0:
+        if args.exp:
+            sort_exp(args, imgs)
+        else:
+            grid, sorted_imgs = sort_collage(imgs, args.ratio, args.sort, args.rev_sort)
+            save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
+        return
+
+    if args.exp:
+        assert not args.salient
+        assert args.uneven
+        uneven_exp(args, imgs)        
+        return
+    
+    if args.salient:
+        if args.uneven:
+            grid, sorted_imgs, _ = calc_col_dup(
+                args.collage, imgs, args.max_width, args.colorspace, args.metric,
+                args.lower_thresh, args.background)
+            save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
+        else:
+            grid, sorted_imgs, _ = calc_salient_col_even(
+                args.collage, imgs, args.dup, args.colorspace, args.ctype,
+                args.metric, args.lower_thresh, args.background)
+            save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
+    else:
+        if args.uneven:
+            grid, sorted_imgs, _ = calc_col_dup(
+                args.collage, imgs, args.max_width, args.colorspace, args.metric)
+            save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
+        else:
+            grid, sorted_imgs, _ = calc_col_even(
+                args.collage, imgs, args.dup, args.colorspace, args.ctype, args.metric)
+            save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
+
+
+
 all_sort_methods = ["none", "bgr_sum", "av_hue", "av_sat", "av_lum", "rand"]
 
 # these require scikit-learn
@@ -614,11 +712,11 @@ all_metrics = ["euclidean", "cityblock", "chebyshev"]
 if __name__ == "__main__":
     mp.freeze_support()
     parser = argparse.ArgumentParser()
-    parser.add_argument("--path", help="Path to the downloaded head images",
+    parser.add_argument("--path", help="Path to the tiles",
                         default=os.path.join(os.path.dirname(__file__), "img"), type=str)
     parser.add_argument("--recursive", action="store_true",
                         help="Whether to read the sub-folders of the designated folder")
-    parser.add_argument("--num_process", type=int, default=1,
+    parser.add_argument("--num_process", type=int, default=mp.cpu_count() // 2,
                         help="Number of processes to use when loading images")
     parser.add_argument("--out", default="", type=str,
                         help="The filename of the output image")
@@ -648,9 +746,9 @@ if __name__ == "__main__":
                         help="Maximum width of the collage")
     parser.add_argument("--dup", type=int, default=1,
                         help="Duplicate the set of images by how many times")
-    parser.add_argument("--ctype", type=str, default="float16",
+    parser.add_argument("--ctype", type=str, default="float32",
                         help="Type of the cost matrix. "
-                             "Float16 is a good compromise between computational time and accuracy",
+                             "Float32 is a good compromise between computational time and accuracy",
                         choices=all_ctypes)
     parser.add_argument("--exp", action="store_true",
                         help="Traverse all possible options.")
@@ -661,137 +759,4 @@ if __name__ == "__main__":
     parser.add_argument("--lower_thresh", type=int, default=127)
     parser.add_argument("--background", nargs=3, type=int,
                         default=(255, 255, 255), help="Background color in RGB")
-
-    args = parser.parse_args()
-    if not args.verbose:
-        sys.stdout = open(os.devnull, "w")
-
-    if len(args.out) > 0:
-        folder, file_name = os.path.split(args.out)
-        if len(folder) > 0:
-            assert os.path.isdir(folder), "The output path {} does not exist!".format(folder)
-        # ext = os.path.splitext(file_name)[-1]
-        # assert ext.lower() == ".jpg" or ext.lower() == ".png", "The file extension must be .jpg or .png"
-
-    imgs = read_images(args.path, (args.size, args.size), args.recursive, args.num_process)
-
-    if len(args.collage) == 0:
-        if args.exp:
-
-            pool = con.ProcessPoolExecutor(4)
-            futures = {}
-
-            for sort_method in all_sort_methods:
-                futures[pool.submit(sort_collage, imgs, args.ratio,
-                                    sort_method, args.rev_sort)] = sort_method
-
-            for future in tqdm(con.as_completed(futures.keys()), total=len(all_sort_methods),
-                               desc="[Experimenting]", unit="exps"):
-                grid, sorted_imgs = future.result()
-                combined_img = make_collage(grid, sorted_imgs, args.rev_row)
-                save_img(combined_img, args.out, futures[future])
-
-        else:
-            grid, sorted_imgs = sort_collage(
-                imgs, args.ratio, args.sort, args.rev_sort)
-            save_img(make_collage(grid, sorted_imgs,
-                                  args.rev_row), args.out, "")
-    else:
-        if args.exp:
-            from mpl_toolkits.mplot3d import Axes3D
-            import matplotlib.pyplot as plt
-
-            pool = con.ProcessPoolExecutor(5)
-            futures = {}
-
-            all_thresholds = list(range(40, 200, 10))
-
-            if args.salient:
-                if args.uneven:
-                    for thresh in all_thresholds:
-                        f = pool.submit(calc_salient_col_dup, args.collage,
-                                        imgs, max_width=args.max_width, lower_thresh=thresh)
-                        futures[f] = thresh
-                else:
-                    for thresh in all_thresholds:
-                        f = pool.submit(
-                            calc_salient_col_even, args.collage, imgs, dup=args.dup, lower_thresh=thresh)
-                        futures[f] = thresh
-
-                cost_vis = {}
-                for f in tqdm(con.as_completed(futures.keys()), desc="[Experimenting]",
-                              total=len(all_thresholds), unit="exps"):
-                    thresh = futures[f]
-                    suffix = "threshold_{}".format(f)
-                    grid, sorted_imgs, cost = f.result()
-                    save_img(make_collage(grid, sorted_imgs,
-                                          args.rev_row), args.out, suffix)
-                    cost_vis[thresh] = cost
-
-                plt.figure()
-                plt.plot(cost_vis.keys(), cost_vis.values())
-                plt.xlabel("Threshold")
-                plt.ylabel("Cost")
-                plt.show()
-
-            else:
-                # TODO
-                total_steps = len(all_colorspaces)
-
-                # if args.uneven:
-                #     for colorspace in all_colorspaces:
-                #         f = pool.submit(calc_col_dup, args.collage, imgs,
-                #                         args.max_width, colorspace, sigma, args.metric)
-                #         futures[f] = (sigma, colorspace)
-                # else:
-                #     for colorspace in all_colorspaces:
-                #         f = pool.submit(calc_col_even, args.collage, imgs, args.dup,
-                #                         colorspace, args.ctype, sigma, args.metric)
-                #         futures[f] = (sigma, colorspace)
-
-                # cost_vis = np.zeros((len(all_sigmas), len(all_colorspaces)))
-                # r, c = 0, 0
-                # for f in tqdm(con.as_completed(futures.keys()), desc="[Experimenting]",
-                #               total=total_steps, unit="exps"):
-                #     sigma, colorspace = futures[f]
-                #     suffix = "{}_{}".format(colorspace, np.round(sigma, 2))
-                #     grid, sorted_imgs, cost = f.result()
-                #     save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, suffix)
-                #     cost_vis[r, c] = cost
-                #     c += 1
-                #     if c % len(all_colorspaces) == 0:
-                #         r += 1
-                #         c = 0
-
-                # fig = plt.figure()
-                # ax = fig.gca(projection='3d')
-                # X, Y = np.meshgrid(np.arange(len(all_colorspaces)), all_sigmas)
-                # surf = ax.plot_surface(X, Y, cost_vis, cmap="jet")
-                # ax.set_xlabel("Color Space")
-                # ax.set_ylabel("Sigma")
-                # ax.set_zlabel("Cost")
-                # plt.xticks(np.arange(len(all_colorspaces)), all_colorspaces)
-                # plt.show()
-
-        else:
-            if args.salient:
-                if args.uneven:
-                    grid, sorted_imgs, _ = calc_salient_col_dup(args.collage, imgs, args.max_width,
-                                                                args.colorspace, args.metric,
-                                                                args.lower_thresh, args.background)
-                    save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
-                else:
-                    grid, sorted_imgs, _ = calc_salient_col_even(args.collage, imgs, args.dup,
-                                                                      args.colorspace, args.ctype,
-                                                                      args.metric, args.lower_thresh, args.background)
-                    save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
-            else:
-                if args.uneven:
-                    grid, sorted_imgs, _ = calc_col_dup(args.collage, imgs, args.max_width,
-                                                        args.colorspace, args.metric)
-                    save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
-
-                else:
-                    grid, sorted_imgs, _ = calc_col_even(args.collage, imgs, args.dup,
-                                                         args.colorspace, args.ctype, args.metric)
-                    save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
+    main(parser.parse_args())
