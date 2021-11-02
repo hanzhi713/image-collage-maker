@@ -173,7 +173,7 @@ def make_collage(grid: Tuple[int, int], sorted_imgs: List[np.ndarray], rev=False
     """
     size, _, _ = sorted_imgs[0].shape
     print("Aligning images on the grid...")
-    combined_img = np.zeros((grid[1] * size, grid[0] * size, 3), np.uint8)
+    combined_img = np.zeros((grid[1] * size, grid[0] * size, 3), dtype=sorted_imgs[0].dtype)
     for i in range(grid[1]):
         if rev and i % 2 == 1:
             for j in range(0, grid[0]):
@@ -185,12 +185,23 @@ def make_collage(grid: Tuple[int, int], sorted_imgs: List[np.ndarray], rev=False
 
 
 def alpha_blend(combined_img, dest_img: np.ndarray, alpha=0.9):
-    dest_img = cv2.resize(dest_img, combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR).astype(np.float32)
-    dest_img *= 1 - alpha
-    combined_img = combined_img.astype(np.float32)
-    combined_img *= alpha
-    combined_img += dest_img
-    return combined_img.astype(np.uint8)
+    # dest_img = cv2.resize(dest_img, combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR).astype(np.float32)
+    # dest_img *= 1 - alpha
+    # combined_img = combined_img.astype(np.float32)
+    # combined_img *= alpha
+    # combined_img += dest_img
+    # return combined_img.astype(np.uint8)
+
+    dest_img = cv2.resize(dest_img, combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR)
+    dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2HLS, dst=dest_img)
+    dest_img[:, :, 1] *= 1 - alpha
+    combined_img = cv2.cvtColor(combined_img, cv2.COLOR_BGR2HLS)
+    combined_img[:, :, 1] *= alpha
+    combined_img[:, :, 1] += dest_img[:, :, 1]
+    cv2.cvtColor(combined_img, cv2.COLOR_HLS2BGR, dst=combined_img)
+    return combined_img
+
+# def brighness
 
 
 def sort_collage(imgs: List[np.ndarray], ratio: Tuple[int, int], sort_method="pca_lab", rev_sort=False) -> Tuple[Tuple[int, int], np.ndarray]:
@@ -227,7 +238,7 @@ def sort_collage(imgs: List[np.ndarray], ratio: Tuple[int, int], sort_method="pc
         img_keys = umap.UMAP(n_components=1, verbose=1).fit_transform(
             list(map(sort_function, imgs)))[:, 0]
     elif sort_method == "none":
-        img_keys = np.array(list(range(0, num_imgs)))
+        img_keys = np.arange(0, num_imgs, dtype=np.int32)
     else:
         sort_function = eval(sort_method)
         img_keys = list(map(sort_function, imgs))
@@ -237,22 +248,20 @@ def sort_collage(imgs: List[np.ndarray], ratio: Tuple[int, int], sort_method="pc
             img_keys = list(map(lambda x: x[0], img_keys))
         img_keys = np.array(img_keys)
 
-    sorted_imgs = np.array(imgs)[np.argsort(img_keys)]
+    indices = np.argsort(img_keys)
     if rev_sort:
-        sorted_imgs = list(reversed(sorted_imgs))
-
+        indices = indices[::-1]
+    sorted_imgs = np.array(imgs)[indices]
     print("Time taken: {}s".format(np.round(time.time() - t, 2)))
     return grid, sorted_imgs
 
 
-def calc_saliency_map(dest_img: np.ndarray, lower_thresh = 50,) -> Tuple[np.ndarray, np.ndarray]:
+def calc_saliency_map(dest_img: np.ndarray, lower_thresh = 50) -> np.ndarray:
     """
     :param dest_img: the destination image
     :param lower_thresh: lower threshold for salient object detection. 
                          If it's -1, then the threshold value will be adaptive
-    :param fill_bg: whether to fill the background with the color specified
-    :param bg_color: background color
-    :return: [the copy of the destination image with background filled (if fill_bg), threshold map]
+    :return: threshold map
     """
 
     flag = cv2.THRESH_BINARY
@@ -260,28 +269,27 @@ def calc_saliency_map(dest_img: np.ndarray, lower_thresh = 50,) -> Tuple[np.ndar
         lower_thresh = 0
         flag = flag | cv2.THRESH_OTSU
 
-    dest_img = np.copy(dest_img)
     saliency = cv2.saliency.StaticSaliencyFineGrained_create()
     _, saliency_map = saliency.computeSaliency(dest_img)
     saliency_map = (saliency_map * 255).astype(np.uint8)
     _, thresh = cv2.threshold(saliency_map, lower_thresh, 255, flag)
-    thresh = thresh.astype(np.uint8)
-
-    return dest_img, thresh
+    return thresh.astype(np.uint8)
 
 
-def cvt_colorspace(colorspace: str, imgs: List[np.ndarray], dest_obj: np.ndarray):
+def cvt_colorspace(colorspace: str, imgs: List[np.ndarray], dest_img: np.ndarray):
     if colorspace == "hsv":
         flag = cv2.COLOR_BGR2HSV
     elif colorspace == "hsl":
         flag = cv2.COLOR_BGR2HLS
     elif colorspace == "bgr":
-        return dest_obj, imgs
+        return
     elif colorspace == "lab":
         flag = cv2.COLOR_BGR2Lab
     else:
         raise ValueError("Unknown colorspace " + colorspace)
-    return cv2.cvtColor(dest_obj, flag), [cv2.cvtColor(img, flag) for img in imgs]
+    for img in imgs:
+        cv2.cvtColor(img, flag, dst=img) 
+    cv2.cvtColor(dest_img, flag, dst=dest_img)
 
 
 def solve_lap(cost_matrix: np.ndarray, v=None):
@@ -337,8 +345,8 @@ def compute_blocks(colorspace: str, dest_img: np.ndarray, imgs: List[np.ndarray]
     block_size = min(dest_img.shape[0] // grid[1], dest_img.shape[1] // grid[0])
     print("Block size:", block_size)
     dest_img = cv2.resize(dest_img, (grid[0] * block_size, grid[1] * block_size), interpolation=cv2.INTER_AREA)
-    dest_img, img_keys = cvt_colorspace(colorspace, 
-        [cv2.resize(img, (block_size, block_size), interpolation=cv2.INTER_AREA) for img in imgs], dest_img)
+    img_keys = [cv2.resize(img, (block_size, block_size), interpolation=cv2.INTER_AREA) for img in imgs]
+    cvt_colorspace(colorspace, img_keys, dest_img)
     flat_block_size = block_size * block_size * 3
     block_dest_img = np.zeros((np.prod(grid), flat_block_size), dtype=dest_img.dtype)
     k = 0
@@ -366,15 +374,13 @@ def calc_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspac
 
     t = time.time()
 
-    # avoid modifying the original array
-    imgs = [np.copy(img) for img in imgs]
     if grid is not None:
         print("Use the provided grid size:", grid)
         total = grid[0] * grid[1]
         dup = total // len(imgs) + 1
-        imgs *= dup
+        imgs = imgs * dup
     else:
-        imgs *= dup
+        imgs = imgs * dup
         # Compute the grid size based on the number images that we have
         rh, rw, _ = dest_img.shape
         grid = calc_grid_size(rw, rh, len(imgs))
@@ -399,9 +405,10 @@ def calc_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspac
 
 
 def solve_dup(dest_img: np.ndarray, img_keys: List[np.ndarray], grid: Tuple[int, int], metric: str, redunt_window=0, freq_mul=1, randomize=True) -> Tuple[float, np.ndarray]:
-    img_keys = np.asarray(img_keys, dtype=np.float64)
-    dest_img = np.asarray(dest_img, dtype=np.float64)
+    assert dest_img.dtype == np.float32
+    assert img_keys[0].dtype == np.float32
 
+    img_keys = np.asarray(img_keys)
     assignment = np.full(dest_img.shape[0], -1, dtype=np.int32)
     _indices = np.arange(0, dest_img.shape[0], 1, dtype=np.int32)
     if randomize:
@@ -471,10 +478,7 @@ def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width=80,
     :return: [gird size, sorted images, total assignment cost]
     """
     t = time.time()
-
-    # deep copy
-    imgs = list(map(np.copy, imgs))
-
+    
     # Because we don't have a fixed total amount of images as we can used a single image
     # for arbitrary amount of times, we need user to specify the maximum width in order to determine the grid size.
     rh, rw, _ = dest_img.shape
@@ -483,10 +487,14 @@ def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width=80,
     print("Calculated grid size based on the aspect ratio of the image provided:", grid)
 
     if lower_thresh is not None and background is not None:
-        dest_img, thresh_map = calc_saliency_map(dest_img, lower_thresh)
-        dest_img[thresh_map == 0] = background[::-1]
+        thresh_map = calc_saliency_map((dest_img * 255.0).astype(np.uint8), lower_thresh)
+        dest_img = np.copy(dest_img)
 
-        white = np.full(imgs[0].shape, background[::-1], dtype=np.uint8)
+        bg = np.asarray(background[::-1], dtype=imgs[0].dtype)
+        bg *= 1 / 255.0
+
+        dest_img[thresh_map == 0] = bg
+        white = np.full(imgs[0].shape, bg, dtype=imgs[0].dtype)
         imgs.append(white)
 
     print("Computing costs...")
@@ -543,8 +551,10 @@ def read_images(pic_path: str, img_size: Tuple[int, int], recursive=False, num_p
 
 # this imread method can read images whose path contain unicode characters
 def imread(filename: str) -> np.ndarray:
-    return cv2.imdecode(np.fromfile(filename, np.uint8), cv2.IMREAD_COLOR)
-
+    img = cv2.imdecode(np.fromfile(filename, np.uint8), cv2.IMREAD_COLOR)
+    img = img.astype(np.float32)
+    img *= 1 / 255.0
+    return img
 
 def read_img_center(args: Tuple[str, Tuple[int, int]]):
     img_file, img_size = args
@@ -572,8 +582,7 @@ def read_img_other(args: Tuple[str, Tuple[int, int]]):
     img_file, img_size = args
     try:
         img = imread(img_file)
-        img = cv2.resize(img, img_size, interpolation=cv2.INTER_AREA)
-        return img
+        return cv2.resize(img, img_size, interpolation=cv2.INTER_AREA)
     except:
         return None
 

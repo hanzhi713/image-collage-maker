@@ -135,10 +135,13 @@ if __name__ == "__main__":
         w, h = limit_wh(img_w, img_h, width, height)
         if img_h > height or img_w > width:
             img = cv2.resize(img, (w, h), cv2.INTER_AREA)
-        preview = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        if img.dtype != np.uint8:
+            img *= 255
+            img = img.astype(np.uint8)
+        cv2.cvtColor(img, cv2.COLOR_BGR2RGB, dst=img)
 
         # prevent the image from being garbage-collected
-        root.preview = ImageTk.PhotoImage(image=Image.fromarray(preview))
+        root.preview = ImageTk.PhotoImage(image=Image.fromarray(img))
         canvas.delete("all")
         canvas.create_image((width - w) // 2, (height - h) // 2,
                             image=root.preview, anchor=NW)
@@ -512,15 +515,14 @@ if __name__ == "__main__":
         salient_opt_panel, textvariable=salient_lower_thresh, width=8)
     salient_opt_label.grid(row=0, column=0, sticky="w")
     salient_opt_entry.grid(row=0, column=1, sticky="w")
-    salient_bg_color = np.array((255, 255, 255), np.uint8)
+    salient_bg_color = (255, 255, 255)
 
     def change_bg_color():
         global salient_bg_color, last_resize_time
-        rbg_color, hex_color = colorchooser.askcolor(
-            color=tuple(salient_bg_color))
+        rbg_color, hex_color = colorchooser.askcolor(color=salient_bg_color)
         if hex_color:
             last_resize_time = time.time()
-            salient_bg_color = np.array(rbg_color, np.uint8)
+            salient_bg_color = rbg_color
             salient_bg_chooser["bg"] = hex_color
             salient_bg_chooser.update()
 
