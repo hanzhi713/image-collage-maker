@@ -74,7 +74,7 @@ if __name__ == "__main__":
     freeze_support()
     pool = ThreadPoolExecutor(1)
     root = Tk()
-    root.title("Collage Maker")
+    root.title("Photomosaic maker")
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-D", action="store_true")
@@ -341,11 +341,21 @@ if __name__ == "__main__":
     Button(right_col_opt_panel, text="Load destination image",
            command=load_dest_img).grid(row=2, columnspan=2, pady=(3, 2))
 
+    result_collage = None
+    def change_alpha(_):
+        if result_collage is not None and dest_img is not None:
+            show_img(mkg.alpha_blend(result_collage, dest_img, 1 - alpha_scale.get()), False)
+    
+    # right collage option panel ROW 3:
+    Label(right_col_opt_panel, text="Alpha: ").grid(row=3, column=0, sticky="W")
+    alpha_scale = Scale(right_col_opt_panel, from_=0, to=1.0, orient=HORIZONTAL, length=75, command=change_alpha)
+    alpha_scale.set(0)
+    alpha_scale.grid(row=3, column=1, sticky="W")
+
     # right collage option panel ROW 4:
     colorspace = StringVar()
     colorspace.set("lab")
-    Label(right_col_opt_panel, text="Colorspace: ").grid(
-        row=4, column=0, sticky="W")
+    Label(right_col_opt_panel, text="Colorspace: ").grid(row=4, column=0, sticky="W")
     OptionMenu(right_col_opt_panel, colorspace, "", *
                mkg.all_colorspaces).grid(row=4, column=1, sticky="W")
 
@@ -428,8 +438,9 @@ if __name__ == "__main__":
     def generate_collage():
         if imgs is None:
             return messagebox.showerror("No source images", "Please first load source images")
-        if not os.path.isfile(dest_img_path.get()):
+        if dest_img is None:
             return messagebox.showerror("No destination image", "Please first load the image that you're trying to fit")
+    
         try:
             if is_salient.get():
                 lower_thresh = salient_lower_thresh.get()
@@ -443,71 +454,41 @@ if __name__ == "__main__":
                 
                 if is_salient.get():
                     def action():
-                        # TODO
-                        try:
-                            raise NotImplementedError("Not implemented")
-                            grid, sorted_imgs, _ = mkg.calc_salient_col_even(dest_img_path.get(), imgs,
-                                                                            dup.get(), colorspace.get(),
-                                                                            ctype.get(), dist_metric.get(), lower_thresh,
-                                                                            salient_bg_color, out_wrapper)
-                            return mkg.make_collage(grid, sorted_imgs, False)
-                        except:
-                            messagebox.showerror("Error", traceback.format_exc())
+                        raise NotImplementedError("Not implemented")
+                        mkg.calc_salient_col_even(
+                            dest_img, imgs, dup.get(), colorspace.get(), ctype.get(), dist_metric.get(), 
+                            lower_thresh, salient_bg_color, out_wrapper)
+
                 else:               
                     def action():
-                        try:
-                            grid, sorted_imgs, _ = mkg.calc_col_even(
-                                dest_img_path.get(), imgs, dup.get(), colorspace.get(),
-                                ctype.get(), dist_metric.get(), out_wrapper)
-                            return mkg.make_collage(grid, sorted_imgs, False)
-                        except:
-                            messagebox.showerror("Error", traceback.format_exc())
+                        return mkg.calc_col_even(
+                            dest_img, imgs, dup.get(), colorspace.get(), ctype.get(), dist_metric.get(), out_wrapper)
             else:
                 assert max_width.get() > 0, "Max width must be a positive number"
                 assert redunt_window.get() >= 0, "Max width must be a nonnegative integer"
                 assert freq_mul.get() >= 0, "Max width must be a nonnegative real number"
 
                 def action():
-                    try:
-                        grid, sorted_imgs, _ = mkg.calc_col_dup(
-                            dest_img_path.get(), imgs, max_width.get(), colorspace.get(), dist_metric.get(), 
-                            lower_thresh, salient_bg_color, 
-                            redunt_window.get(), freq_mul.get(), randomize.get())
-                        return mkg.make_collage(grid, sorted_imgs, False)
-                    except:
-                        messagebox.showerror("Error", traceback.format_exc())
+                    return mkg.calc_col_dup(
+                            dest_img, imgs, max_width.get(), colorspace.get(), dist_metric.get(), 
+                            lower_thresh, salient_bg_color,  redunt_window.get(), freq_mul.get(), randomize.get())
 
-            pool.submit(action).add_done_callback(lambda f: show_img(f.result()))
+            def wrapper():
+                global result_collage
+                try:
+                    grid, sorted_imgs = action()
+                    result_collage = mkg.make_collage(grid, sorted_imgs, False)
+                    return mkg.alpha_blend(result_collage, dest_img, 1 - alpha_scale.get()) 
+                except:
+                    messagebox.showerror("Error", traceback.format_exc())
+
+            pool.submit(wrapper).add_done_callback(lambda f: show_img(f.result()))
 
         except AssertionError as e:
             return messagebox.showerror("Error", e)
         except:
             return messagebox.showerror("Error", traceback.format_exc())
 
-    # def attach_block_opt():
-    #     if is_block.get():
-    #         block_size_label.grid(row=10, column=0, sticky="W", pady=2)
-    #         block_size_entry.grid(row=10, column=1, sticky="W", pady=2)
-    #         is_salient_check.grid_remove()
-    #         is_salient.set(False)
-    #     else:
-    #         block_size_label.grid_remove()
-    #         block_size_entry.grid_remove()
-    #         is_salient_check.grid(row=11, columnspan=2, sticky="w")
-        
-    #     attach_salient_opt()
-    
-    # # right collage option panel ROW 9
-    # is_block = BooleanVar()
-    # is_block.set(False)
-    # Checkbutton(right_col_opt_panel, text="Block match",
-    #             variable=is_block, command=attach_block_opt).grid(row=9, columnspan=2, sticky="w")
-
-    # # right collage option panel ROW 10
-    # block_size = IntVar()
-    # block_size.set(50)
-    # block_size_label = Label(right_col_opt_panel, text="Block size: ")
-    # block_size_entry = Entry(right_col_opt_panel, width=5, textvariable=img_size)
 
     def attach_salient_opt():
         if is_salient.get():

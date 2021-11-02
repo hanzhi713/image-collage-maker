@@ -177,13 +177,20 @@ def make_collage(grid: Tuple[int, int], sorted_imgs: List[np.ndarray], rev=False
     for i in range(grid[1]):
         if rev and i % 2 == 1:
             for j in range(0, grid[0]):
-                combined_img[i * size:(i + 1) * size, j * size:(j + 1)
-                             * size, :] = sorted_imgs[i * grid[0] + grid[0] - j - 1]
+                combined_img[i * size:(i + 1) * size, j * size:(j + 1) * size, :] = sorted_imgs[i * grid[0] + grid[0] - j - 1]
         else:
             for j in range(0, grid[0]):
-                combined_img[i * size:(i + 1) * size, j * size:(j + 1)
-                             * size, :] = sorted_imgs[i * grid[0] + j]
+                combined_img[i * size:(i + 1) * size, j * size:(j + 1) * size, :] = sorted_imgs[i * grid[0] + j]
     return combined_img
+
+
+def alpha_blend(combined_img, dest_img: np.ndarray, alpha=0.9):
+    dest_img = cv2.resize(dest_img, combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR).astype(np.float32)
+    dest_img *= 1 - alpha
+    combined_img = combined_img.astype(np.float32)
+    combined_img *= alpha
+    combined_img += dest_img
+    return combined_img.astype(np.uint8)
 
 
 def sort_collage(imgs: List[np.ndarray], ratio: Tuple[int, int], sort_method="pca_lab", rev_sort=False) -> Tuple[Tuple[int, int], np.ndarray]:
@@ -296,14 +303,14 @@ def solve_lap(cost_matrix: np.ndarray, v=None):
     return cols, cost
 
 
-def calc_salient_col_even(dest_img_path: str, imgs: List[np.ndarray], dup=1, colorspace="lab", 
-                               ctype ="float16", metric = "euclidean", lower_thresh = 50,
+def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspace="lab", 
+                               ctype ="float32", metric = "euclidean", lower_thresh = 50,
                                background = (255, 255, 255), v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels constitute of salient objects of the
     target image, with the restriction that every image should be used the same amount of times
 
-    :param dest_img_path: path to the destination image file
+    :param dest_img: the destination image
     :param imgs: list of images
     :param dup: number of times to duplicate the set of images
     :param colorspace: name of the colorspace used
@@ -313,7 +320,6 @@ def calc_salient_col_even(dest_img_path: str, imgs: List[np.ndarray], dup=1, col
     :param background: background color in rgb format
     :return: [gird size, sorted images, total assignment cost]
     """
-    assert os.path.isfile(dest_img_path)
 
     t = time.time()
     print("Duplicating {} times".format(dup))
@@ -343,13 +349,13 @@ def compute_blocks(colorspace: str, dest_img: np.ndarray, imgs: List[np.ndarray]
     return block_dest_img, np.array(img_keys).reshape(-1, flat_block_size)
 
 
-def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup=1, colorspace="lab", 
-                  ctype="float16", metric="euclidean", v=None) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+def calc_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspace="lab", 
+                  ctype="float32", metric="euclidean", v=None, grid=None) -> Tuple[Tuple[int, int], List[np.ndarray]]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
     with the restriction that every image should be used the same amount of times
 
-    :param dest_img_path: path to the destination image file
+    :param dest_img: the destination image
     :param imgs: list of images
     :param dup: number of times to duplicate the set of images
     :param colorspace: name of the colorspace used
@@ -357,21 +363,25 @@ def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup=1, colorspace=
     :param v: verbose
     :return: [gird size, sorted images, total assignment cost]
     """
-    assert os.path.isfile(dest_img_path)
 
     t = time.time()
-    print("Duplicating {} times".format(dup))
 
     # avoid modifying the original array
-    imgs = list(map(np.copy, imgs)) * dup
+    imgs = [np.copy(img) for img in imgs]
+    if grid is not None:
+        print("Use the provided grid size:", grid)
+        total = grid[0] * grid[1]
+        dup = total // len(imgs) + 1
+        imgs *= dup
+    else:
+        imgs *= dup
+        # Compute the grid size based on the number images that we have
+        rh, rw, _ = dest_img.shape
+        grid = calc_grid_size(rw, rh, len(imgs))
+        total = grid[0] * grid[1]
+        print("Calculated grid size based on the aspect ratio of the image provided:", grid)
 
-    # Compute the grid size based on the number images that we have
-    dest_img = imread(dest_img_path)
-    rh, rw, _ = dest_img.shape
-    grid = calc_grid_size(rw, rh, len(imgs))
-    total = grid[0] * grid[1]
-
-    print("Calculated grid size based on the aspect ratio of the image provided:", grid)
+    print("Duplicated {} times".format(dup))
     print("Note:", len(imgs) - total, "images will be thrown away from the collage")
     imgs = imgs[:total]
 
@@ -385,7 +395,7 @@ def calc_col_even(dest_img_path: str, imgs: List[np.ndarray], dup=1, colorspace=
 
     print("Total assignment cost:", cost)
     print("Time taken: {}s".format((np.round(time.time() - t, 2))))
-    return grid, np.asarray(imgs)[cols], cost
+    return grid, np.asarray(imgs)[cols]
 
 
 def solve_dup(dest_img: np.ndarray, img_keys: List[np.ndarray], grid: Tuple[int, int], metric: str, redunt_window=0, freq_mul=1, randomize=True) -> Tuple[float, np.ndarray]:
@@ -445,14 +455,14 @@ def solve_dup(dest_img: np.ndarray, img_keys: List[np.ndarray], grid: Tuple[int,
     return dist_mat[:, assignment].sum(), assignment
 
 
-def calc_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width=80,
+def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width=80,
                  colorspace="lab", metric="euclidean", lower_thresh=None,
-                 background=None, redunt_window=0, freq_mul=1, randomize=True) -> Tuple[Tuple[int, int], List[np.ndarray], float]:
+                 background=None, redunt_window=0, freq_mul=1, randomize=True) -> Tuple[Tuple[int, int], List[np.ndarray]]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels that constitute 
     of the salient objects of the target image, given that every image could be used arbitrary amount of times
 
-    :param dest_img_path: path to the dest_img file
+    :param dest_img: the target image
     :param imgs: list of images
     :param max_width: max_width of the resulting dest_img
     :param colorspace: color space used
@@ -460,12 +470,10 @@ def calc_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width=80,
     :background background color in rgb format
     :return: [gird size, sorted images, total assignment cost]
     """
-    assert os.path.isfile(dest_img_path)
     t = time.time()
 
     # deep copy
     imgs = list(map(np.copy, imgs))
-    dest_img = imread(dest_img_path)
 
     # Because we don't have a fixed total amount of images as we can used a single image
     # for arbitrary amount of times, we need user to specify the maximum width in order to determine the grid size.
@@ -485,8 +493,9 @@ def calc_col_dup(dest_img_path: str, imgs: List[np.ndarray], max_width=80,
     dest_img, img_keys = compute_blocks(colorspace, dest_img, imgs, grid)
     cost, cols = solve_dup(dest_img, img_keys, grid, metric, redunt_window, freq_mul, randomize)
 
+    print("Total assignment cost:", cost)
     print("Time taken: {}s".format(np.round(time.time() - t, 2)))
-    return grid, np.asarray(imgs)[cols], cost
+    return grid, np.asarray(imgs)[cols]
 
 
 def imwrite(filename: str, img: np.ndarray) -> None:
@@ -569,18 +578,18 @@ def read_img_other(args: Tuple[str, Tuple[int, int]]):
         return None
 
 
-def uneven_exp_mat(args, imgs):
+def uneven_exp_mat(dest_img, args, imgs):
     import matplotlib.pyplot as plt
     pool = con.ProcessPoolExecutor(4)
     all_freqs = np.zeros(6, dtype=np.float64)
     all_freqs[1:] = np.logspace(-2, 2, 5)
-    grid, sorted_imgs, _ = calc_col_dup(args.collage, imgs, max_width=args.max_width, colorspace=all_colorspaces[0], freq_mul=all_freqs[0])
+    grid, sorted_imgs, _ = calc_col_dup(dest_img, imgs, max_width=args.max_width, colorspace=all_colorspaces[0], freq_mul=all_freqs[0])
     img_shape = make_collage(grid, sorted_imgs, args.rev_row).shape
     grid_img = np.zeros((img_shape[0] * len(all_colorspaces), img_shape[1] * len(all_freqs), 3), dtype=np.uint8)
 
     pbar = tqdm(desc="[Experimenting]", total=len(all_freqs) * len(all_colorspaces), unit="exps")
     futures = [
-        [pool.submit(calc_col_dup, args.collage, imgs, max_width=args.max_width, colorspace=colorspace, freq_mul=freq) 
+        [pool.submit(calc_col_dup, dest_img, imgs, max_width=args.max_width, colorspace=colorspace, freq_mul=freq) 
             for freq in all_freqs] 
                 for colorspace in all_colorspaces
     ]
@@ -597,34 +606,36 @@ def uneven_exp_mat(args, imgs):
     plt.show()
 
 
-def uneven_exp(args, imgs):
+def uneven_exp(dest_img, args, imgs):
     import matplotlib.pyplot as plt
     pool = con.ProcessPoolExecutor(4)
     all_freqs = np.zeros(6, dtype=np.float64)
     all_freqs[1:] = np.logspace(-2, 2, 5)
 
     pbar = tqdm(desc="[Experimenting]", total=len(all_freqs) + len(all_colorspaces), unit="exps")
-    futures1 = [pool.submit(calc_col_dup, args.collage, imgs, max_width=args.max_width, colorspace=colorspace, freq_mul=1.0) 
+    futures1 = [pool.submit(calc_col_dup, dest_img, imgs, max_width=args.max_width, colorspace=colorspace, freq_mul=1.0) 
                     for colorspace in all_colorspaces]
-    futures2 = [pool.submit(calc_col_dup, args.collage, imgs, max_width=args.max_width, colorspace="bgr", freq_mul=freq) 
+    futures2 = [pool.submit(calc_col_dup, dest_img, imgs, max_width=args.max_width, colorspace="bgr", freq_mul=freq) 
                     for freq in all_freqs]
+    futures2.append(pool.submit(calc_col_even, dest_img, imgs, grid=futures2[-1].result()[0]))
     
-    def collect_imgs(params, futures, xlabel):
+    def collect_imgs(params, futures, fs):
         result_imgs = []
         for i in range(len(params)):
-            grid, sorted_imgs, _ = futures[i].result()
+            grid, sorted_imgs = futures[i].result()
             result_imgs.append(make_collage(grid, sorted_imgs, args.rev_row))
             pbar.update()
         
         plt.figure()
         plt.imshow(cv2.cvtColor(np.hstack(result_imgs), cv2.COLOR_BGR2RGB))
         grid_width = result_imgs[0].shape[1]
-        plt.xticks(np.arange(0, grid_width * len(result_imgs), grid_width) + grid_width / 2, params)
+        plt.xticks(np.arange(0, grid_width * len(result_imgs), grid_width) + grid_width / 2, params, fontsize=fs)
         plt.yticks([], [])
-        plt.xlabel(xlabel)
+        plt.subplots_adjust(left=0.005, right=0.995)
+        # plt.xlabel(xlabel)
 
-    collect_imgs([c.upper() for c in all_colorspaces], futures1, "Color Space")
-    collect_imgs(all_freqs, futures2, "Frequency Multiplier")
+    collect_imgs([c.upper() for c in all_colorspaces], futures1, 36)
+    collect_imgs([f"$\lambda = {c}$" for c in all_freqs] + ["Fair"], futures2, 20)
     pbar.refresh()
     plt.show()
 
@@ -655,8 +666,6 @@ def main(args):
         # assert ext.lower() == ".jpg" or ext.lower() == ".png", "The file extension must be .jpg or .png"
 
     imgs = read_images(args.path, (args.size, args.size), args.recursive, args.num_process)
-
-    
     if len(args.collage) == 0:
         if args.exp:
             sort_exp(args, imgs)
@@ -665,33 +674,32 @@ def main(args):
             save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
         return
 
+    assert os.path.isfile(args.collage)
+    dest_img = imread(args.collage)
+
     if args.exp:
         assert not args.salient
         assert args.uneven
-        uneven_exp(args, imgs)        
+        uneven_exp(dest_img, args, imgs)        
         return
     
     if args.salient:
         if args.uneven:
-            grid, sorted_imgs, _ = calc_col_dup(
-                args.collage, imgs, args.max_width, args.colorspace, args.metric,
+            grid, sorted_imgs = calc_col_dup(
+                dest_img, imgs, args.max_width, args.colorspace, args.metric,
                 args.lower_thresh, args.background)
-            save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
         else:
-            grid, sorted_imgs, _ = calc_salient_col_even(
-                args.collage, imgs, args.dup, args.colorspace, args.ctype,
+            grid, sorted_imgs = calc_salient_col_even(
+                dest_img, imgs, args.dup, args.colorspace, args.ctype,
                 args.metric, args.lower_thresh, args.background)
-            save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
     else:
         if args.uneven:
-            grid, sorted_imgs, _ = calc_col_dup(
-                args.collage, imgs, args.max_width, args.colorspace, args.metric)
-            save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
+            grid, sorted_imgs = calc_col_dup(
+                dest_img, imgs, args.max_width, args.colorspace, args.metric)
         else:
-            grid, sorted_imgs, _ = calc_col_even(
-                args.collage, imgs, args.dup, args.colorspace, args.ctype, args.metric)
-            save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
-
+            grid, sorted_imgs = calc_col_even(
+                dest_img, imgs, args.dup, args.colorspace, args.ctype, args.metric)
+    save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
 
 
 all_sort_methods = ["none", "bgr_sum", "av_hue", "av_sat", "av_lum", "rand"]

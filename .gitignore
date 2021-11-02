@@ -12,3 +12,4 @@ windows_builds/
 macos_builds/
 result.png
 .pylintrc
+test.bat
