@@ -508,8 +508,9 @@ def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width=80,
 
 def imwrite(filename: str, img: np.ndarray) -> None:
     ext = os.path.splitext(filename)[1]
+    if img.dtype != np.uint8:
+        img = (img * 255).astype(np.uint8)
     result, n = cv2.imencode(ext, img)
-
     if result:
         with open(filename, mode='wb') as f:
             n.tofile(f)
@@ -722,7 +723,7 @@ all_sort_methods.extend(["pca_bgr", "pca_hsv", "pca_lab", "pca_gray", "pca_lum",
 
 all_colorspaces = ["hsv", "hsl", "bgr", "lab"]
 
-all_ctypes = ["float16", "float32", "float64"]
+all_ctypes = ["float16", "float32"]
 
 all_metrics = ["euclidean", "cityblock", "chebyshev"]
 
