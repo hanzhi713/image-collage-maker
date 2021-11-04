@@ -288,7 +288,7 @@ def cvt_colorspace(colorspace: str, imgs: List[np.ndarray], dest_img: np.ndarray
     else:
         raise ValueError("Unknown colorspace " + colorspace)
     for img in imgs:
-        cv2.cvtColor(img, flag, dst=img) 
+        cv2.cvtColor(img, flag, dst=img)
     cv2.cvtColor(dest_img, flag, dst=dest_img)
 
 
@@ -326,7 +326,7 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, c
     :param v: verbose
     :param lower_thresh: lower threshold for object detection
     :param background: background color in rgb format
-    :return: [gird size, sorted images, total assignment cost]
+    :return: [gird size, sorted images]
     """
 
     t = time.time()
@@ -369,7 +369,7 @@ def calc_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspac
     :param colorspace: name of the colorspace used
     :param ctype: ctype of the cost matrix
     :param v: verbose
-    :return: [gird size, sorted images, total assignment cost]
+    :return: [gird size, sorted images]
     """
 
     t = time.time()
@@ -397,11 +397,10 @@ def calc_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspac
 
     print("Computing optimal assignment on a {}x{} matrix...".format(cost_matrix.shape[0], cost_matrix.shape[1]))
     cols, cost = solve_lap(cost_matrix, v)
-    del cost_matrix # free memory
 
     print("Total assignment cost:", cost)
     print("Time taken: {}s".format((np.round(time.time() - t, 2))))
-    return grid, np.asarray(imgs)[cols]
+    return grid, [imgs[i] for i in cols]
 
 
 def solve_dup(dest_img: np.ndarray, img_keys: List[np.ndarray], grid: Tuple[int, int], metric: str, redunt_window=0, freq_mul=1, randomize=True) -> Tuple[float, np.ndarray]:
@@ -475,7 +474,7 @@ def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width=80,
     :param colorspace: color space used
     :param lower_thresh: threshold for object detection
     :background background color in rgb format
-    :return: [gird size, sorted images, total assignment cost]
+    :return: [gird size, sorted images]
     """
     t = time.time()
     
@@ -503,7 +502,7 @@ def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width=80,
 
     print("Total assignment cost:", cost)
     print("Time taken: {}s".format(np.round(time.time() - t, 2)))
-    return grid, np.asarray(imgs)[cols]
+    return grid, [imgs[i] for i in cols]
 
 
 def imwrite(filename: str, img: np.ndarray) -> None:
@@ -605,7 +604,7 @@ def uneven_exp_mat(dest_img, args, imgs):
     ]
     for i in range(len(all_colorspaces)):
         for j in range(len(all_freqs)):
-            grid, sorted_imgs, cost = futures[i][j].result()
+            grid, sorted_imgs = futures[i][j].result()
             grid_img[i * img_shape[0]:(i+1)*img_shape[0], j*img_shape[1]:(j+1)*img_shape[1], :] = make_collage(grid, sorted_imgs, args.rev_row)
             pbar.update()
     pbar.refresh()

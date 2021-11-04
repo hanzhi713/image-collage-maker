@@ -136,7 +136,8 @@ if __name__ == "__main__":
         if img_h > height or img_w > width:
             img = cv2.resize(img, (w, h), cv2.INTER_AREA)
         if img.dtype != np.uint8:
-            img *= 255
+            assert img.dtype == np.float32
+            img = img * 255
             img = img.astype(np.uint8)
         cv2.cvtColor(img, cv2.COLOR_BGR2RGB, dst=img)
 
