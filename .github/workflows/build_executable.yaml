@@ -3,87 +3,28 @@ name: Build executables
 on: [push]
 
 jobs:
-  build-linux:
-    runs-on: ubuntu-18.04
-    strategy:
-      max-parallel: 5
-
-    steps:
-    - uses: actions/checkout@v2
-    - name: Set up Python 3.6
-      uses: actions/setup-python@v2
-      with:
-        python-version: 3.6
-    - name: Add conda to system path
-      run: |
-        # $CONDA is an environment variable pointing to the root of the miniconda directory
-        echo $CONDA/bin >> $GITHUB_PATH
-    - name: Build
-      run: |
-        ./build_scripts/install_dependencies.sh linux
-        ./build_scripts/build.sh linux
-    - name: Release
-      uses: softprops/action-gh-release@v1
-      if: startsWith(github.ref, 'refs/tags/')
-      with:
-        draft: true
-        files: |
-          ./dist/photomosaic-maker-3.0-linux
-          
-  build-macos:
-    runs-on: macos-10.15
-    strategy:
-      max-parallel: 5
-
-    steps:
-    - uses: actions/checkout@v2
-    - name: Set up Python 3.6
-      uses: actions/setup-python@v2
-      with:
-        python-version: 3.6
-    - name: Add conda to system path
-      run: |
-        # $CONDA is an environment variable pointing to the root of the miniconda directory
-        echo $CONDA/bin >> $GITHUB_PATH
-    - name: Build
-      run: |
-        ./build_scripts/install_dependencies.sh macos
-        ./build_scripts/build.sh macos
-    - name: Release
-      uses: softprops/action-gh-release@v1
-      if: startsWith(github.ref, 'refs/tags/')
-      with:
-        draft: true
-        files: |
-          ./dist/photomosaic-maker-3.0-macos-x64
-          
-
   build-windows:
-    runs-on: windows-2019
+    runs-on: ${{ matrix.os }}-latest
     strategy:
-      max-parallel: 5
-
+      matrix:
+        os: ["windows", "macos", "ubuntu"]
     steps:
     - uses: actions/checkout@v2
-    - name: Set up Python 3.6
-      uses: actions/setup-python@v2
+    - uses: conda-incubator/setup-miniconda@v2
       with:
-        python-version: 3.6
-    - name: Add conda to system path
-      run: |
-        # $CONDA is an environment variable pointing to the root of the miniconda directory
-        echo $CONDA/bin >> $GITHUB_PATH
-      shell: bash
+        activate-environment: collage
+        environment-file: environment.yml
+        auto-activate-base: false
     - name: Build
+      shell: bash -l {0}
       run: |
-        ./build_scripts/install_dependencies.sh windows
-        ./build_scripts/build.sh windows
-      shell: bash
+        . ./build_scripts/install_dependencies.sh ${{ matrix.os }}
+        . ./build_scripts/build.sh ${{ matrix.os }}
     - name: Release
       uses: softprops/action-gh-release@v1
-      if: startsWith(github.ref, 'refs/tags/')
+      # if: startsWith(github.ref, 'refs/tags/')
       with:
         draft: true
         files: |
-          ./dist/photomosaic-maker-3.0-windows-x64.exe
-          
+          ./dist/photomosaic-maker-3.0-${{ matrix.os }}-x64.exe
+          ./dist/photomosaic-maker-3.0-${{ matrix.os }}-x64.tar.gz

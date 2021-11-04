@@ -7,9 +7,7 @@ build/
 __pycache__/
 test.sh
 .mypy_cache/
-linux_builds/
-windows_builds/
-macos_builds/
 result.png
 .pylintrc
 test.bat
+dist

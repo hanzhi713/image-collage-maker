@@ -14,9 +14,10 @@ rm -rf dist
 if [[ $PLATFORM == "windows" ]]; then
     SUFFIX=".exe"
 elif [[ $PLATFORM == "macos" ]]; then
-    SUFFIX=""
-elif [[ $PLATFORM == "linux" ]]; then
-    ADD_ARGS="--add-data \"$CONDA/envs/collage/lib/python3.6/site-packages/PIL:PIL\""
+    SUFFIX=".exe"
+elif [[ $PLATFORM == "ubuntu" ]]; then
+    SUFFIX=".exe"
+    # ADD_ARGS="--add-data \"$CONDA/envs/collage/lib/python3.6/site-packages/PIL:PIL\""
 else
     echo "Unsupported platform: " $PLATFORM
     exit 1
@@ -25,4 +26,4 @@ fi
 conda activate collage
 pyinstaller -y $ADD_ARGS --exclude-module umap --name "${NAME}" gui.py
 pyinstaller -y --onefile $ADD_ARGS --exclude-module umap --name "$NAME${SUFFIX}" gui.py
-tar -czvf "dist/$NAME.tar.gz" -C dist/$NAME
+tar -czvf "dist/$NAME.tar.gz" dist/$NAME
