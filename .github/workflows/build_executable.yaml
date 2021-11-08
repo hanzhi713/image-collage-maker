@@ -3,7 +3,7 @@ name: Build executables
 on: [push]
 
 jobs:
-  build-windows:
+  build-all-os:
     runs-on: ${{ matrix.os }}-latest
     strategy:
       matrix:
