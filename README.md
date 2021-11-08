@@ -29,13 +29,14 @@ chmod +x ./collage-maker-macos-x64
 
 ### Running Python script directly
 
-First, you need Python >= 3.5. Then, install dependencies by running
+First, you need Python >= 3.6. Then, install dependencies by running
 
 ```bash
-pip3 install itchat pillow opencv-contrib-python tqdm scikit-learn umap-learn matplotlib lapjv wurlitzer
+pip3 install itchat pillow tqdm scikit-learn matplotlib
+pip3 install -r requirements.txt
 ```
 
->Note: You should not install "wurlitzer" if you're on Windows. It helps to visualize the progress of the linear sum assignment by redirecting output from the C++ code to python's stdout, but it does not work on Windows.
+>Note: If you're on Unix, you can do `pip3 install wurlitzer`. It helps to visualize the progress of the linear sum assignment by redirecting output from the C++ code to python's stdout, but it does not work on Windows.
 
 Finally, you can launch the GUI by running
 
