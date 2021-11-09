@@ -33,8 +33,9 @@ def limit_wh(w: int, h: int, max_width: int, max_height: int) -> Tuple[int, int]
 # adapted from
 # https://stackoverflow.com/questions/16745507/tkinter-how-to-use-threads-to-preventing-main-event-loop-from-freezing
 class SafeText(Text):
-    def __init__(self, master, **options):
+    def __init__(self, master, stdout, **options):
         Text.__init__(self, master, **options)
+        self.stdout = stdout
         self.queue = Queue()
         self.encoding = "utf-8"
         self.gui = True
@@ -43,6 +44,7 @@ class SafeText(Text):
         self.update_me()
 
     def write(self, line: str):
+        self.stdout.write(line)
         self.queue.put(line)
 
     def flush(self):
@@ -130,6 +132,15 @@ class CreateToolTip(object):
         if tw:
             tw.destroy()
 
+
+class LabelWithTooltip(Label):
+    def __init__(self, *args, **kwargs) -> None:
+        _tp = kwargs["tooltip"]
+        del kwargs["tooltip"]
+        super().__init__(*args, **kwargs)
+        self._tp = CreateToolTip(self, _tp)
+
+
 if __name__ == "__main__":
     freeze_support()
     pool = ThreadPoolExecutor(1)
@@ -138,16 +149,12 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-D", action="store_true")
-    parser.add_argument("--init_dir", "-d", type=str,
-                        default=os.path.dirname(__file__))
     parser.add_argument("--src", "-s", type=str,
                         default=os.path.join(os.path.dirname(__file__), "img"))
     parser.add_argument("--collage", "-c", type=str,
                         default=os.path.join(os.path.dirname(__file__), "examples", "dest.png"))
     cmd_args = parser.parse_args()
-    init_dir = cmd_args.init_dir
-    if not os.path.isdir(init_dir):
-        init_dir = os.path.dirname(__file__)
+    init_dir = os.path.expanduser("~")
 
     # ---------------- initialization -----------------
     left_panel = PanedWindow(root)
@@ -162,18 +169,17 @@ if __name__ == "__main__":
 
     # ---------------- left panel's children ----------------
     # left panel ROW 0
-    canvas = Canvas(left_panel, width=800, height=500)
+    canvas = Canvas(left_panel, width=800, height=560)
     canvas.grid(row=0, column=0)
 
     # left panel ROW 1
-    Separator(left_panel, orient="horizontal").grid(
-        row=1, columnspan=2, sticky="NSEW", pady=(5, 5))
+    Separator(left_panel, orient="horizontal").grid(row=1, columnspan=2, sticky="NSEW", pady=(5, 5))
 
     # left panel ROW 2
     log_panel = PanedWindow(left_panel)
     log_panel.grid(row=2, column=0, columnspan=2, sticky="WE")
     log_panel.grid_columnconfigure(0, weight=1)
-    log_entry = SafeText(log_panel, height=6, bd=0)
+    log_entry = SafeText(log_panel, sys.stdout, height=6, bd=0)
     mkg.pbar_ncols = log_entry.width
     # log_entry.configure(font=("", 10, ""))
     log_entry.grid(row=1, column=0, sticky="NSEW")
@@ -189,6 +195,9 @@ if __name__ == "__main__":
 
     def show_img(img: np.ndarray, printDone: bool = True) -> None:
         global result_img
+        if img is None:
+            return
+
         result_img = img
         width, height = canvas.winfo_width(), canvas.winfo_height()
         img_h, img_w, _ = img.shape
@@ -225,15 +234,13 @@ if __name__ == "__main__":
     opt.set("sort")
     img_size = IntVar()
     img_size.set(50)
-    Label(right_panel, text="Image size: ").grid(
-        row=2, column=0, sticky="W", pady=(3, 2))
-    Entry(right_panel, width=5, textvariable=img_size).grid(
-        row=2, column=1, sticky="W", pady=(3, 2))
+    LabelWithTooltip(right_panel, text="Tile size: ", tooltip=mkg.PARAMS.size.help).grid(row=2, column=0, sticky="W", pady=(3, 2))
+    Entry(right_panel, width=5, textvariable=img_size).grid(row=2, column=1, sticky="W", pady=(3, 2))
 
     # right panel ROW 3
     resize_opt = StringVar()
     resize_opt.set("center")
-    Label(right_panel, text="Resize flag: ").grid(
+    LabelWithTooltip(right_panel, text="Resize option: ", tooltip=mkg.PARAMS.resize_opt.help).grid(
         row=3, column=0, sticky="W", pady=(2, 3))
     OptionMenu(right_panel, resize_opt, "", "center", "stretch").grid(
         row=3, column=1, sticky="W", pady=(2, 3))
@@ -245,38 +252,32 @@ if __name__ == "__main__":
                 variable=recursive).grid(row=4, columnspan=2, sticky="W")
 
     imgs = None
-    current_image = None
 
-    def load_images():
-        global imgs, current_image
-        fp = filedialog.askdirectory(
-            initialdir=init_dir, title="Select folder of source images")
-        if len(fp) > 0 and os.path.isdir(fp):
-            file_path.set(fp)
-        else:
-            return
+    def load_img_action():
+        global imgs
+        fp = file_path.get()
+        size = img_size.get()
         try:
-            size = img_size.get()
-            if size < 1:
-                return messagebox.showerror("Illegal Argument", "Img size must be greater than 1")
-
-            def action():
-                global imgs
-                try:
-                    imgs = mkg.read_images(
-                        fp, (size, size), recursive.get(), 4, resize_opt.get())
-                    grid = mkg.calc_grid_size(
-                        16, 10, len(imgs))
-                    return mkg.make_collage(grid, imgs, False)
-                except:
-                    messagebox.showerror("Error", traceback.format_exc())
-
-            print("Loading source images from", fp)
-            pool.submit(action).add_done_callback(
-                lambda f: show_img(f.result()))
-
+            imgs = mkg.read_images(fp, (size, size), recursive.get(), 4, resize_opt.get())
+            grid = mkg.calc_grid_size(16, 10, len(imgs))
+            return mkg.make_collage(grid, imgs, False)
         except:
             messagebox.showerror("Error", traceback.format_exc())
+
+    def load_images():
+        size = img_size.get()
+        if size < 1:
+            return messagebox.showerror("Illegal Argument", "Img size must be greater than 1")
+
+        fp = filedialog.askdirectory(initialdir=file_path.get() if os.path.isdir(file_path.get()) else init_dir, 
+            title="Select folder of source images")
+        if len(fp) <= 0 or not os.path.isdir(fp):
+            return
+
+        print("Loading source images from", fp)
+        file_path.set(fp)
+        pool.submit(load_img_action).add_done_callback(lambda f: show_img(f.result()))
+
 
     # right panel ROW 5
     Button(right_panel, text=" Load source images ", command=load_images).grid(
@@ -310,13 +311,12 @@ if __name__ == "__main__":
     # right sort option panel ROW 0:
     sort_method = StringVar()
     sort_method.set("bgr_sum")
-    Label(right_sort_opt_panel, text="Sort methods:").grid(
+    LabelWithTooltip(right_sort_opt_panel, text="Sort methods:", tooltip=mkg.PARAMS.sort.help).grid(
         row=0, column=0, pady=5, sticky="W")
-    OptionMenu(right_sort_opt_panel, sort_method, "", *
-               mkg.all_sort_methods).grid(row=0, column=1)
+    OptionMenu(right_sort_opt_panel, sort_method, "", *mkg.PARAMS.sort.choices).grid(row=0, column=1)
 
     # right sort option panel ROW 1:
-    Label(right_sort_opt_panel, text="Aspect ratio:").grid(
+    LabelWithTooltip(right_sort_opt_panel, text="Aspect ratio:", tooltip=mkg.PARAMS.ratio.help).grid(
         row=1, column=0, sticky="W", pady=(2, 2))
     aspect_ratio_panel = PanedWindow(right_sort_opt_panel)
     aspect_ratio_panel.grid(row=1, column=1, pady=(2, 2))
@@ -341,26 +341,23 @@ if __name__ == "__main__":
 
     def generate_sorted_image():
         if imgs is None:
-            messagebox.showerror(
-                "Empty set", "Please first load source images")
-        else:
+            return messagebox.showerror("Empty set", "Please first load source images")
+
+        try:
+            w, h = rw.get(), rh.get()
+            assert w > 0, "Width must be greater than 0"
+            assert h > 0, "Height must be greater than 0"
+        except AssertionError as e:
+            return messagebox.showerror("Illegal Argument", str(e))
+
+        def action():
             try:
-                w, h = rw.get(), rh.get()
-                assert w > 0, "Width must be greater than 0"
-                assert h > 0, "Height must be greater than 0"
+                grid, sorted_imgs = mkg.sort_collage(imgs, (w, h), sort_method.get(), rev_sort.get())
+                return mkg.make_collage(grid, sorted_imgs, rev_row.get())
             except:
-                return messagebox.showerror("Illegal Argument", traceback.format_exc())
+                messagebox.showerror("Error", traceback.format_exc())
 
-            def action():
-                try:
-                    grid, sorted_imgs = mkg.sort_collage(imgs, (w, h), sort_method.get(),
-                                                         rev_sort.get())
-                    return mkg.make_collage(grid, sorted_imgs, rev_row.get())
-                except:
-                    messagebox.showerror("Error", traceback.format_exc())
-
-            pool.submit(action).add_done_callback(
-                lambda f: show_img(f.result()))
+        pool.submit(action).add_done_callback(lambda f: show_img(f.result()))
 
     # right sort option panel ROW 4:
     Button(right_sort_opt_panel, text="Generate sorted image",
@@ -380,26 +377,25 @@ if __name__ == "__main__":
     Label(right_col_opt_panel, textvariable=dest_img_path,
           wraplength=150).grid(row=1, columnspan=2, sticky="W")
 
+
     def load_dest_img():
         global dest_img
         if imgs is None:
-            messagebox.showerror(
-                "Empty set", "Please first load source images")
-        else:
-            fp = filedialog.askopenfilename(initialdir=init_dir, title="Select destination image",
-                                            filetypes=(("images", "*.jpg"), ("images", "*.png"), ("images", "*.gif"),
-                                                       ("all files", "*.*")))
-            if fp is not None and len(fp) > 0 and os.path.isfile(fp):
-                try:
-                    print("Destination image loaded from", fp)
-                    dest_img = mkg.imread(fp)
-                    show_img(dest_img, False)
-                    dest_img_path.set(fp)
-                except:
-                    messagebox.showerror("Error reading file",
-                                         traceback.format_exc())
-            else:
-                return
+            return messagebox.showerror("Empty set", "Please first load source images")
+
+        fp = filedialog.askopenfilename(
+            initialdir=dest_img_path.get() if os.path.isdir(os.path.dirname(dest_img_path.get())) else init_dir, 
+            title="Select destination image",
+            filetypes=(("images", "*.jpg"), ("images", "*.png"), ("images", "*.gif"), ("all files", "*.*")))
+        if fp is not None and len(fp) > 0 and os.path.isfile(fp):
+            try:
+                print("Destination image loaded from", fp)
+                dest_img = mkg.imread(fp)
+                show_img(dest_img, False)
+                dest_img_path.set(fp)
+            except:
+                messagebox.showerror("Error reading file", traceback.format_exc())
+
 
     # right collage option panel ROW 2:
     Button(right_col_opt_panel, text="Load destination image",
@@ -419,17 +415,14 @@ if __name__ == "__main__":
     # right collage option panel ROW 4:
     colorspace = StringVar()
     colorspace.set("lab")
-    Label(right_col_opt_panel, text="Colorspace: ").grid(row=4, column=0, sticky="W")
-    OptionMenu(right_col_opt_panel, colorspace, "", *
-               mkg.all_colorspaces).grid(row=4, column=1, sticky="W")
+    LabelWithTooltip(right_col_opt_panel, text="Colorspace:", tooltip=mkg.PARAMS.colorspace.help).grid(row=4, column=0, sticky="W")
+    OptionMenu(right_col_opt_panel, colorspace, "", *mkg.PARAMS.colorspace.choices).grid(row=4, column=1, sticky="W")
 
     # right collage option panel ROW 5:
     dist_metric = StringVar()
     dist_metric.set("euclidean")
-    Label(right_col_opt_panel, text="Metric: ").grid(
-        row=5, column=0, sticky="W")
-    OptionMenu(right_col_opt_panel, dist_metric, "", *
-               mkg.all_metrics).grid(row=5, column=1, sticky="W")
+    LabelWithTooltip(right_col_opt_panel, text="Metric:", tooltip=mkg.PARAMS.metric.help).grid(row=5, column=0, sticky="W")
+    OptionMenu(right_col_opt_panel, dist_metric, "", *mkg.PARAMS.metric.choices).grid(row=5, column=1, sticky="W")
 
     def attach_even():
         collage_uneven_panel.grid_remove()
@@ -462,12 +455,10 @@ if __name__ == "__main__":
         row=0, column=0, sticky="W")
     ctype = StringVar()
     ctype.set("float32")
-    OptionMenu(collage_even_panel, ctype, "", *
-               mkg.all_ctypes).grid(row=0, column=1, sticky="W")
+    OptionMenu(collage_even_panel, ctype, "", *mkg.PARAMS.ctypes.choices).grid(row=0, column=1, sticky="W")
 
     # collage even panel ROW 1
-    Label(collage_even_panel, text="Duplicates: ").grid(
-        row=1, column=0, sticky="W", pady=2)
+    LabelWithTooltip(collage_even_panel, text="Duplicates:", tooltip=mkg.PARAMS.dup.help).grid(row=1, column=0, sticky="W", pady=2)
     dup = IntVar()
     dup.set(1)
     Entry(collage_even_panel, textvariable=dup,
@@ -478,27 +469,27 @@ if __name__ == "__main__":
     collage_uneven_panel = PanedWindow(right_col_opt_panel)
 
     # collage uneven panel ROW 0
-    Label(collage_uneven_panel, text="Max width: ").grid(row=0, column=0, sticky="W")
+    LabelWithTooltip(collage_uneven_panel, text="Max width:", tooltip=mkg.PARAMS.max_width.help).grid(row=0, column=0, sticky="W")
     max_width = IntVar()
     max_width.set(80)
     Entry(collage_uneven_panel, textvariable=max_width, width=5).grid(row=0, column=1, sticky="W")
 
     # collage uneven panel ROW 1
-    window = Label(collage_uneven_panel, text="Window: ")
-    window.grid(row=1, column=0, sticky="W")
-    CreateToolTip(window, "redundant window")
+    LabelWithTooltip(collage_uneven_panel, text="Window:", tooltip=mkg.PARAMS.redunt_window.help).grid(row=1, column=0, sticky="W")
     redunt_window = IntVar()
     redunt_window.set(0)
     temp = Entry(collage_uneven_panel, textvariable=redunt_window, width=5).grid(row=1, column=1, sticky="W")
 
-    Label(collage_uneven_panel, text="Freq Mul: ").grid(row=2, column=0, sticky="W")
+    LabelWithTooltip(collage_uneven_panel, text="Freq Mul:", tooltip=mkg.PARAMS.freq_mul.help).grid(row=2, column=0, sticky="W")
     freq_mul = DoubleVar()
     freq_mul.set(1)
     Entry(collage_uneven_panel, textvariable=freq_mul, width=5).grid(row=2, column=1, sticky="W")
 
-    randomize = BooleanVar()
-    randomize.set(True)
-    Checkbutton(collage_uneven_panel, text="Randomize", variable=randomize).grid(row=3, columnspan=2, sticky="w")
+    deterministic = BooleanVar()
+    deterministic.set(False)
+    _cb = Checkbutton(collage_uneven_panel, text="Deterministic", variable=deterministic)
+    CreateToolTip(_cb, mkg.PARAMS.deterministic.help)
+    _cb.grid(row=3, columnspan=2, sticky="w")
     # ----------------------- end collage uneven panel ----------------------
 
     def generate_collage():
@@ -537,7 +528,7 @@ if __name__ == "__main__":
                 def action():
                     return mkg.calc_col_dup(
                             dest_img, imgs, max_width.get(), colorspace.get(), dist_metric.get(), 
-                            lower_thresh, salient_bg_color,  redunt_window.get(), freq_mul.get(), randomize.get())
+                            lower_thresh, salient_bg_color,  redunt_window.get(), freq_mul.get(), not deterministic.get())
 
             def wrapper():
                 global result_collage
@@ -602,15 +593,19 @@ if __name__ == "__main__":
     Separator(right_panel, orient="horizontal").grid(
         row=9, columnspan=2, sticky="we", pady=(4, 10))
 
+    save_img_init_dir = init_dir
     def save_img():
+        global save_img_init_dir
         if result_img is None:
             messagebox.showerror("Error", "You don't have any image to save yet!")
             return
         
-        fp = filedialog.asksaveasfilename(initialdir=init_dir, title="Save your collage",
+        fp = filedialog.asksaveasfilename(initialdir=save_img_init_dir, title="Save your collage",
                                           filetypes=(("images", "*.jpg"), ("images", "*.png")),
                                           defaultextension=".png", initialfile="result.png")
-        if fp is not None and len(fp) > 0 and os.path.isdir(os.path.dirname(fp)):
+        dir_name = os.path.dirname(fp)
+        if fp is not None and len(fp) > 0 and os.path.isdir(dir_name):
+            save_img_init_dir = dir_name
             print("Saving image to", fp)
             try:
                 mkg.imwrite(fp, result_img)
@@ -660,21 +655,9 @@ if __name__ == "__main__":
     root.bind("<Configure>", canvas_resize)
 
     if cmd_args.D:
-        def debug_act(fp):
-            global imgs
-            try:
-                imgs = mkg.read_images(
-                    fp, (40, 40), True, 4, "center")
-                grid = mkg.calc_grid_size(
-                    16, 10, len(imgs))
-                return mkg.make_collage(grid, imgs, False)
-            except:
-                messagebox.showerror("Error", traceback.format_exc())
-
         file_path.set(cmd_args.src)
         print("Loading source images from", cmd_args.src)
-        pool.submit(debug_act, cmd_args.src).add_done_callback(
-            lambda f: show_img(f.result()))
+        pool.submit(load_img_action).add_done_callback(lambda f: show_img(f.result()))
 
         print("Destination image loaded from", cmd_args.collage)
         dest_img = mkg.imread(cmd_args.collage)

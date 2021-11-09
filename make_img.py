@@ -24,7 +24,7 @@ if mp.current_process().name != "MainProcess":
 pbar_ncols = None
 
 
-class PARAMETER:
+class _PARAMETER:
     def __init__(self, type: Any, help: str, default=None, nargs=None, choices: List[Any]=None) -> None:
         self.type = type
         self.default = default
@@ -35,48 +35,49 @@ class PARAMETER:
 # these require scikit-learn and umap-learn
 # all_sort_methods.extend(["umap_bgr", "umap_hsv", "umap_lab", "umap_gray", "umap_lum", "umap_sat", "umap_hue"])
 
-class HELP:
-    path = PARAMETER(help="Path to the tiles", default=os.path.join(os.path.dirname(__file__), "img"), type=str)
-    recursive = PARAMETER(type=bool, default=False, help="Whether to read the sub-folders for the specified path")
-    num_process = PARAMETER(type=int, default=mp.cpu_count() // 2, help="Number of processes to use when loading images")
-    out = PARAMETER(default="", type=str, help="The filename of the output image")
-    size = PARAMETER(type=int, default=50, help="Size of each image in pixels")
-    verbose = PARAMETER(type=bool, default=False, help="Print progress message to console")
+class PARAMS:
+    path = _PARAMETER(help="Path to the tiles", default=os.path.join(os.path.dirname(__file__), "img"), type=str)
+    recursive = _PARAMETER(type=bool, default=False, help="Whether to read the sub-folders for the specified path")
+    num_process = _PARAMETER(type=int, default=mp.cpu_count() // 2, help="Number of processes to use when loading images")
+    out = _PARAMETER(default="", type=str, help="The filename of the output image")
+    size = _PARAMETER(type=int, default=50, help="Size (side length) of each tile in pixels")
+    verbose = _PARAMETER(type=bool, default=False, help="Print progress message to console")
+    resize_opt = _PARAMETER(type=str, default="center", choices=["center", "stretch"], 
+        help="How to resize each tile so they become square images. Center: center crop. Stretch: stretch the tile")
 
     # ---------------- sort collage options ------------------
-    ratio = PARAMETER(type=int, default=(16, 9), help="Aspect ratio of the output image", nargs=2)
-    sort = PARAMETER(type=str, default="bgr_sum", help="Sort method to use", choices=[
+    ratio = _PARAMETER(type=int, default=(16, 9), help="Aspect ratio of the output image", nargs=2)
+    sort = _PARAMETER(type=str, default="bgr_sum", help="Sort method to use", choices=[
         "none", "bgr_sum", "av_hue", "av_sat", "av_lum", "rand",
         "pca_bgr", "pca_hsv", "pca_lab", "pca_gray", "pca_lum", "pca_sat", "pca_hue",
         "tsne_bgr", "tsne_hsv", "tsne_lab", "tsne_gray", "tsne_lum", "tsne_sat", "tsne_hue"
     ])
-    rev_row = PARAMETER(type=bool, default=False, 
-        help="Whether to use the S-shaped alignment. Do NOT use this option when fitting an image using the --collage option")
-    rev_sort = PARAMETER(type=bool, default=False, 
-        help="Sort in the reverse direction. Do NOT use this option when fitting an image using the --collage option")
+    rev_row = _PARAMETER(type=bool, default=False, help="Whether to use the S-shaped alignment.")
+    rev_sort = _PARAMETER(type=bool, default=False, help="Sort in the reverse direction.")
     
     # ---------------- photomosaic common options ------------------
-    dest_img = PARAMETER(type=str, default="", help="The path to the destination image that you want to build a photomosaic for")
-    colorspace = PARAMETER(type=str, default="lab", choices=["hsv", "hsl", "bgr", "lab"])
-    metric = PARAMETER(type=str, default="euclidean", choices=["euclidean", "cityblock", "chebyshev"], 
+    dest_img = _PARAMETER(type=str, default="", help="The path to the destination image that you want to build a photomosaic for")
+    colorspace = _PARAMETER(type=str, default="lab", choices=["hsv", "hsl", "bgr", "lab", "luv"], 
+        help="The colorspace used to calculate the metric")
+    metric = _PARAMETER(type=str, default="euclidean", choices=["euclidean", "cityblock", "chebyshev"], 
         help="Distance metric used when evaluating the distance between two color vectors")
-    ctypes = PARAMETER(type=str, default="float32", help="", choices=["float32", "float64"],
+    ctypes = _PARAMETER(type=str, default="float32", choices=["float32", "float64"],
         help="C type of the cost matrix. Float32 (default) is a good compromise between computational time and accuracy. Leave as default if unsure.")
     
     # ---- unfair tile assginment options -----
-    unfair = PARAMETER(type=bool, default=False, help="Whether to allow each tile to be used different amount of times")
-    max_width = PARAMETER(type=int, default=80, help="Maximum width of the collage. This option is only valid if unfair option is enabled")    
-    redunt_windpw = PARAMETER(type=int, default=0, help="The guaranteed window size to have no duplicated tiles in it")
-    freq_mul = PARAMETER(type=int, default=1, help="Frequency multiplier to balance tile fairless and mosaic quality")
-    deterministic = PARAMETER(type=bool, default=False, help="Do not randomize the tiles for uneven")
+    unfair = _PARAMETER(type=bool, default=False, help="Whether to allow each tile to be used different amount of times")
+    max_width = _PARAMETER(type=int, default=80, help="Maximum width of the collage. This option is only valid if unfair option is enabled")    
+    redunt_window = _PARAMETER(type=int, default=0, help="The guaranteed window size to have no duplicated tiles in it")
+    freq_mul = _PARAMETER(type=int, default=1, help="Frequency multiplier to balance tile fairless and mosaic quality")
+    deterministic = _PARAMETER(type=bool, default=False, help="Do not randomize the tiles for unfair assignment")
 
     # --- fair tile assignment options ---
-    dup = PARAMETER(type=int, default=1, help="Duplicate the set of images by how many times")
+    dup = _PARAMETER(type=int, default=1, help="Duplicate the set of tiles by how many times")
 
     # ---- saliency detection options ---
-    salient = PARAMETER(type=bool, default=False, help="Make photomosaic for salient objects only")
-    lower_thresh = PARAMETER(type=int, default=127, help="The threshold for saliency detection")
-    background = PARAMETER(nargs=3, type=int, default=(255, 255, 255), 
+    salient = _PARAMETER(type=bool, default=False, help="Make photomosaic for salient objects only")
+    lower_thresh = _PARAMETER(type=int, default=127, help="The threshold for saliency detection")
+    background = _PARAMETER(nargs=3, type=int, default=(255, 255, 255), 
         help="Background color in RGB for non salient part of the image")
 
 
@@ -333,14 +334,16 @@ def calc_saliency_map(dest_img: np.ndarray, lower_thresh = 50) -> np.ndarray:
 
 
 def cvt_colorspace(colorspace: str, imgs: List[np.ndarray], dest_img: np.ndarray):
-    if colorspace == "hsv":
+    if colorspace == "bgr":
+        return
+    elif colorspace == "hsv":
         flag = cv2.COLOR_BGR2HSV
     elif colorspace == "hsl":
         flag = cv2.COLOR_BGR2HLS
-    elif colorspace == "bgr":
-        return
     elif colorspace == "lab":
-        flag = cv2.COLOR_BGR2Lab
+        flag = cv2.COLOR_BGR2LAB
+    elif colorspace == "luv":
+        flag = cv2.COLOR_BGR2LUV
     else:
         raise ValueError("Unknown colorspace " + colorspace)
     for img in imgs:
@@ -459,7 +462,8 @@ def calc_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspac
     return grid, [imgs[i] for i in cols]
 
 
-def solve_dup(dest_img: np.ndarray, img_keys: List[np.ndarray], grid: Tuple[int, int], metric: str, redunt_window=0, freq_mul=1, randomize=True) -> Tuple[float, np.ndarray]:
+def solve_dup(dest_img: np.ndarray, img_keys: List[np.ndarray], grid: Tuple[int, int], metric: str, salient: bool,
+    redunt_window: int, freq_mul: int, randomize: bool) -> Tuple[float, np.ndarray]:
     assert dest_img.dtype == np.float32
     assert img_keys[0].dtype == np.float32
 
@@ -496,29 +500,30 @@ def solve_dup(dest_img: np.ndarray, img_keys: List[np.ndarray], grid: Tuple[int,
             cost += dist[idx]
             idx = rest_indices[idx]
             grid_assignment[j, k] = idx
-            indices_freq[idx] += freq_mul
+            if not salient or idx != indices_freq.size - 1:
+                indices_freq[idx] += freq_mul
         return cost, grid_assignment.flatten()
     
-    dist_mat = cdist(img_keys, dest_img, metric=metric)
+    dist_mat = cdist(img_keys, dest_img, metric=metric).transpose().copy()
     if freq_mul > 0:
         for i in tqdm(_indices, desc="[Computing assignments]", unit="pixel", unit_divisor=1000, unit_scale=True,
                         ncols=pbar_ncols):
             # Compute the distance between the current pixel and each image in the set
-            dist = dist_mat[:, i]
-            ranks = rankdata(dist, "average")
+            ranks = rankdata(dist_mat[i, :], "average")
             ranks += indices_freq
             idx = np.argmin(ranks)
 
             # Find the index of the image which best approximates the current pixel
             assignment[i] = idx
-            indices_freq[idx] += freq_mul
+            if not salient or idx != indices_freq.size - 1:
+                indices_freq[idx] += freq_mul
     else:
-        np.argmin(dist_mat, axis=0, out=assignment)
-    return dist_mat[:, assignment].sum(), assignment
+        np.argmin(dist_mat, axis=1, out=assignment)
+    return dist_mat[assignment, :].sum(), assignment
 
 
-def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width=80,
-                 colorspace="lab", metric="euclidean", lower_thresh=None,
+def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width: int,
+                 colorspace: str, metric: str, lower_thresh=None,
                  background=None, redunt_window=0, freq_mul=1, randomize=True) -> Tuple[Tuple[int, int], List[np.ndarray]]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels that constitute 
@@ -541,7 +546,8 @@ def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width=80,
     grid = (max_width, rh)
     print("Calculated grid size based on the aspect ratio of the image provided:", grid)
 
-    if lower_thresh is not None and background is not None:
+    salient = lower_thresh is not None and background is not None
+    if salient:
         thresh_map = calc_saliency_map((dest_img * 255.0).astype(np.uint8), lower_thresh)
         dest_img = np.copy(dest_img)
 
@@ -554,7 +560,7 @@ def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width=80,
 
     print("Computing costs...")
     dest_img, img_keys = compute_blocks(colorspace, dest_img, imgs, grid)
-    cost, cols = solve_dup(dest_img, img_keys, grid, metric, redunt_window, freq_mul, randomize)
+    cost, cols = solve_dup(dest_img, img_keys, grid, metric, salient, redunt_window, freq_mul, randomize)
 
     print("Total assignment cost:", cost)
     print("Time taken: {}s".format(np.round(time.time() - t, 2)))
@@ -642,9 +648,9 @@ def read_img_other(args: Tuple[str, Tuple[int, int]]):
         return None
 
 
-def uneven_exp_mat(dest_img, args, imgs):
+def unfair_exp_mat(dest_img, args, imgs):
     import matplotlib.pyplot as plt
-    all_colorspaces = HELP.colorspace.choices
+    all_colorspaces = PARAMS.colorspace.choices
     all_freqs = np.zeros(6, dtype=np.float64)
     all_freqs[1:] = np.logspace(-2, 2, 5)
     grid, sorted_imgs, _ = calc_col_dup(dest_img, imgs, max_width=args.max_width, colorspace=all_colorspaces[0], freq_mul=all_freqs[0])
@@ -654,7 +660,7 @@ def uneven_exp_mat(dest_img, args, imgs):
     pbar = tqdm(desc="[Experimenting]", total=len(all_freqs) * len(all_colorspaces), unit="exps")
     with con.ProcessPoolExecutor(4) as pool:
         futures = [
-            [pool.submit(calc_col_dup, dest_img, imgs, max_width=args.max_width, colorspace=colorspace, freq_mul=freq) 
+            [pool.submit(calc_col_dup, dest_img, imgs, max_width=args.max_width, colorspace=colorspace, metric=args.metric, freq_mul=freq) 
                 for freq in all_freqs] 
                     for colorspace in all_colorspaces
         ]
@@ -671,18 +677,18 @@ def uneven_exp_mat(dest_img, args, imgs):
         plt.show()
 
 
-def uneven_exp(dest_img, args, imgs):
+def unfair_exp(dest_img, args, imgs):
     import matplotlib.pyplot as plt
-    all_colorspaces = HELP.colorspace.choices
+    all_colorspaces = PARAMS.colorspace.choices
     all_freqs = np.zeros(6, dtype=np.float64)
     all_freqs[1:] = np.logspace(-2, 2, 5)
 
     pbar = tqdm(desc="[Experimenting]", total=len(all_freqs) + len(all_colorspaces), unit="exps")
 
     with con.ProcessPoolExecutor(4) as pool:
-        futures1 = [pool.submit(calc_col_dup, dest_img, imgs, max_width=args.max_width, colorspace=colorspace, freq_mul=1.0) 
+        futures1 = [pool.submit(calc_col_dup, dest_img, imgs, max_width=args.max_width, colorspace=colorspace, metric=args.metric, freq_mul=1.0) 
                         for colorspace in all_colorspaces]
-        futures2 = [pool.submit(calc_col_dup, dest_img, imgs, max_width=args.max_width, colorspace="bgr", freq_mul=freq) 
+        futures2 = [pool.submit(calc_col_dup, dest_img, imgs, max_width=args.max_width, colorspace="bgr", metric=args.metric, freq_mul=freq) 
                         for freq in all_freqs]
         futures2.append(pool.submit(calc_col_even, dest_img, imgs, grid=futures2[-1].result()[0]))
         
@@ -711,10 +717,10 @@ def sort_exp(args, imgs):
     pool = con.ProcessPoolExecutor(4)
     futures = {}
 
-    for sort_method in all_sort_methods:
+    for sort_method in PARAMS.sort.choices:
         futures[pool.submit(sort_collage, imgs, args.ratio, sort_method, args.rev_sort)] = sort_method
 
-    for future in tqdm(con.as_completed(futures.keys()), total=len(all_sort_methods),
+    for future in tqdm(con.as_completed(futures.keys()), total=len(PARAMS.sort.choices),
                         desc="[Experimenting]", unit="exps"):
         grid, sorted_imgs = future.result()
         combined_img = make_collage(grid, sorted_imgs, args.rev_row)
@@ -733,7 +739,7 @@ def main(args):
         # assert ext.lower() == ".jpg" or ext.lower() == ".png", "The file extension must be .jpg or .png"
 
     imgs = read_images(args.path, (args.size, args.size), args.recursive, args.num_process)
-    if len(args.collage) == 0:
+    if len(args.dest_img) == 0:
         if args.exp:
             sort_exp(args, imgs)
         else:
@@ -741,17 +747,17 @@ def main(args):
             save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
         return
 
-    assert os.path.isfile(args.collage)
-    dest_img = imread(args.collage)
+    assert os.path.isfile(args.dest_img)
+    dest_img = imread(args.dest_img)
 
     if args.exp:
         assert not args.salient
-        assert args.uneven
-        uneven_exp(dest_img, args, imgs)        
+        assert args.unfair
+        unfair_exp(dest_img, args, imgs)        
         return
     
     if args.salient:
-        if args.uneven:
+        if args.unfair:
             grid, sorted_imgs = calc_col_dup(
                 dest_img, imgs, args.max_width, args.colorspace, args.metric,
                 args.lower_thresh, args.background)
@@ -760,7 +766,7 @@ def main(args):
                 dest_img, imgs, args.dup, args.colorspace, args.ctype,
                 args.metric, args.lower_thresh, args.background)
     else:
-        if args.uneven:
+        if args.unfair:
             grid, sorted_imgs = calc_col_dup(
                 dest_img, imgs, args.max_width, args.colorspace, args.metric)
         else:
@@ -772,6 +778,17 @@ def main(args):
 if __name__ == "__main__":
     mp.freeze_support()
     parser = argparse.ArgumentParser()
-
+    parser.add_argument("--exp", action="store_true", help="Do experiments (for testing only)")
+    for arg_name, data in PARAMS.__dict__.items():
+        if arg_name.startswith("__"):
+            continue
+        
+        arg_name = "--" + arg_name
+        if data.type == bool:
+            assert data.default == False
+            parser.add_argument(arg_name, action="store_true", help=data.help)
+            continue
+        
+        parser.add_argument(arg_name, type=data.type, default=data.default, help=data.help, choices=data.choices, nargs=data.nargs)
 
     main(parser.parse_args())
