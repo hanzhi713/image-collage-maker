@@ -27,6 +27,7 @@ jobs:
         draft: true
         files: |
           ./dist/photomosaic-maker-3.0-${{ matrix.os }}-x64
+          ./dist/photomosaic-maker-3.0-${{ matrix.os }}-x64-archive.tar.gz
   build-windows:
     runs-on: windows-latest
     steps:
@@ -48,3 +49,4 @@ jobs:
         draft: true
         files: |
           ./dist/photomosaic-maker-3.0-windows-x64.exe
+          ./dist/photomosaic-maker-3.0-windows-x64-archive.tar.gz

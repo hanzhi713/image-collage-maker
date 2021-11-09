@@ -23,6 +23,6 @@ else
 fi
 
 conda activate collage
-# pyinstaller --hidden-import='PIL._tkinter_finder' -y $ADD_ARGS --exclude-module umap --name "${NAME}" gui.py
+pyinstaller --hidden-import='PIL._tkinter_finder' -y $ADD_ARGS --exclude-module umap --name "${NAME}-archive" gui.py
 pyinstaller --hidden-import='PIL._tkinter_finder' -y --onefile $ADD_ARGS --exclude-module umap --name "$NAME${SUFFIX}" gui.py
-tar -czvf "dist/$NAME.tar.gz" dist/$NAME
+tar -czvf "dist/$NAME-archive.tar.gz" -C dist $NAME-archive
