@@ -1,4 +1,6 @@
 name: collage
+channels:
+  - conda-forge
 dependencies:
   - python=3.6
   - nomkl

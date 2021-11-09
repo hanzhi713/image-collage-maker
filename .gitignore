@@ -11,3 +11,4 @@ result.png
 .pylintrc
 test.bat
 dist
+venv
