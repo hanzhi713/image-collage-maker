@@ -3,12 +3,6 @@ VERSION=3.0
 PLATFORM=$1
 NAME=photomosaic-maker-${VERSION}-$PLATFORM-x64
 
-if [[ -z "${CONDA}" ]]; then
-    # change this to your anaconda installation path.
-    CONDA=$HOME/anaconda3
-fi
-
-echo "Using conda path: $CONDA"
 rm -rf dist/*
 
 if [[ $PLATFORM == "windows" ]]; then
@@ -23,6 +17,12 @@ else
 fi
 
 conda activate collage
-pyinstaller --hidden-import='PIL._tkinter_finder' -y $ADD_ARGS --exclude-module umap --name "${NAME}-archive" gui.py
-pyinstaller --hidden-import='PIL._tkinter_finder' -y --onefile $ADD_ARGS --exclude-module umap --name "$NAME${SUFFIX}" gui.py
-tar -czvf "dist/$NAME-archive.tar.gz" -C dist $NAME-archive
+
+ARGS="--hidden-import='PIL._tkinter_finder' -y --exclude-module umap --exclude-module matplotlib"
+pyinstaller $ARGS --name "${NAME}-archive" gui.py
+pyinstaller $ARGS --onefile --name "$NAME${SUFFIX}" gui.py
+
+pushd dist/$NAME-archive
+tar -czvf ../$NAME.tar.gz .
+zip -r ../$NAME.zip .
+popd
