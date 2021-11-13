@@ -1,4 +1,3 @@
-from collections import namedtuple
 import os
 import argparse
 import random
@@ -9,13 +8,14 @@ import time
 import platform
 from typing import Any, List, Tuple
 import itertools
-from math import ceil
 
 import cv2
 import numpy as np
 from tqdm import tqdm
 from scipy.stats import rankdata
 from scipy.spatial.distance import cdist
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
 
 if mp.current_process().name != "MainProcess":
     sys.stdout = open(os.devnull, "w")
@@ -32,18 +32,17 @@ class _PARAMETER:
         self.nargs = nargs
         self.choices = choices
 
-# these require scikit-learn and umap-learn
-# all_sort_methods.extend(["umap_bgr", "umap_hsv", "umap_lab", "umap_gray", "umap_lum", "umap_sat", "umap_hue"])
-
+# We gather parameters here so they can be reused else where
 class PARAMS:
     path = _PARAMETER(help="Path to the tiles", default=os.path.join(os.path.dirname(__file__), "img"), type=str)
     recursive = _PARAMETER(type=bool, default=False, help="Whether to read the sub-folders for the specified path")
     num_process = _PARAMETER(type=int, default=mp.cpu_count() // 2, help="Number of processes to use when loading images")
     out = _PARAMETER(default="", type=str, help="The filename of the output image")
-    size = _PARAMETER(type=int, default=50, help="Size (side length) of each tile in pixels")
+    size = _PARAMETER(type=int, default=50, help="Size (side length) of each tile in pixels in the resulting collage/photomosaic")
     verbose = _PARAMETER(type=bool, default=False, help="Print progress message to console")
     resize_opt = _PARAMETER(type=str, default="center", choices=["center", "stretch"], 
-        help="How to resize each tile so they become square images. Center: center crop. Stretch: stretch the tile")
+        help="How to resize each tile so they become square images."
+             "Center: crop a square in the center. Stretch: stretch the tile")
 
     # ---------------- sort collage options ------------------
     ratio = _PARAMETER(type=int, default=(16, 9), help="Aspect ratio of the output image", nargs=2)
@@ -62,14 +61,17 @@ class PARAMS:
     metric = _PARAMETER(type=str, default="euclidean", choices=["euclidean", "cityblock", "chebyshev"], 
         help="Distance metric used when evaluating the distance between two color vectors")
     ctypes = _PARAMETER(type=str, default="float32", choices=["float32", "float64"],
-        help="C type of the cost matrix. Float32 (default) is a good compromise between computational time and accuracy. Leave as default if unsure.")
+        help="C type of the cost matrix. float32 is a good compromise between computational time and accuracy. Leave as default if unsure.")
     
     # ---- unfair tile assginment options -----
-    unfair = _PARAMETER(type=bool, default=False, help="Whether to allow each tile to be used different amount of times")
+    unfair = _PARAMETER(type=bool, default=False, 
+        help="Whether to allow each tile to be used different amount of times (unfair tile usage). ")
     max_width = _PARAMETER(type=int, default=80, help="Maximum width of the collage. This option is only valid if unfair option is enabled")    
-    redunt_window = _PARAMETER(type=int, default=0, help="The guaranteed window size to have no duplicated tiles in it")
-    freq_mul = _PARAMETER(type=int, default=1, help="Frequency multiplier to balance tile fairless and mosaic quality")
-    deterministic = _PARAMETER(type=bool, default=False, help="Do not randomize the tiles for unfair assignment")
+    redunt_window = _PARAMETER(type=int, default=0, help="The guaranteed window size (size x size) to have no duplicated tiles in it")
+    freq_mul = _PARAMETER(type=int, default=1, 
+        help="Frequency multiplier to balance tile fairless and mosaic quality. Minimum: 0. "
+             "More weight will be put on tile fairness when this number increases.")
+    deterministic = _PARAMETER(type=bool, default=False, help="Do not randomize the tiles for unfair tile usage")
 
     # --- fair tile assignment options ---
     dup = _PARAMETER(type=int, default=1, help="Duplicate the set of tiles by how many times")
@@ -267,50 +269,35 @@ def sort_collage(imgs: List[np.ndarray], ratio: Tuple[int, int], sort_method="pc
     :param ratio: The aspect ratio of the collage
     :param sort_method:
     :param rev_sort: whether to reverse the sorted array
-    :return: calculated grid size and the sorted image array
+    :return: [calculated grid size, sorted image array]
     """
+    t = time.time()
     num_imgs = len(imgs)
     grid = calc_grid_size(ratio[0], ratio[1], num_imgs)
 
     print("Calculated grid size based on your aspect ratio:", grid)
     print("Note that", num_imgs - grid[0] * grid[1], "images will be thrown away from the collage")
     print("Sorting images...")
-    t = time.time()
+
+    if sort_method == "none":
+        return grid, imgs
+    
     if sort_method.startswith("pca_"):
         sort_function = eval(sort_method)
-        from sklearn.decomposition import PCA
-
         img_keys = PCA(1).fit_transform(list(map(sort_function, imgs)))[:, 0]
     elif sort_method.startswith("tsne_"):
         sort_function = eval(sort_method.replace("tsne", "pca"))
-        from sklearn.manifold import TSNE
-
         img_keys = TSNE(n_components=1, verbose=1, init="pca").fit_transform(
             list(map(sort_function, imgs)))[:, 0]
-    elif sort_method.startswith("umap_"):
-        sort_function = eval(sort_method.replace("umap", "pca"))
-
-        import umap
-
-        img_keys = umap.UMAP(n_components=1, verbose=1).fit_transform(
-            list(map(sort_function, imgs)))[:, 0]
-    elif sort_method == "none":
-        img_keys = np.arange(0, num_imgs, dtype=np.int32)
     else:
         sort_function = eval(sort_method)
-        img_keys = list(map(sort_function, imgs))
-
-        # only take the first value if img_keys is a list of tuples
-        if isinstance(img_keys[0], tuple):
-            img_keys = list(map(lambda x: x[0], img_keys))
-        img_keys = np.array(img_keys)
+        img_keys = np.array(list(map(sort_function, imgs)))
 
     indices = np.argsort(img_keys)
     if rev_sort:
         indices = indices[::-1]
-    sorted_imgs = np.array(imgs)[indices]
     print("Time taken: {}s".format(np.round(time.time() - t, 2)))
-    return grid, sorted_imgs
+    return grid, [imgs[i] for i in indices]
 
 
 def calc_saliency_map(dest_img: np.ndarray, lower_thresh = 50) -> np.ndarray:
@@ -683,7 +670,7 @@ def unfair_exp(dest_img, args, imgs):
     all_freqs = np.zeros(6, dtype=np.float64)
     all_freqs[1:] = np.logspace(-2, 2, 5)
 
-    pbar = tqdm(desc="[Experimenting]", total=len(all_freqs) + len(all_colorspaces), unit="exps")
+    pbar = tqdm(desc="[Experimenting]", total=len(all_freqs) + len(all_colorspaces) + 1, unit="exps")
 
     with con.ProcessPoolExecutor(4) as pool:
         futures1 = [pool.submit(calc_col_dup, dest_img, imgs, max_width=args.max_width, colorspace=colorspace, metric=args.metric, freq_mul=1.0) 
@@ -692,23 +679,24 @@ def unfair_exp(dest_img, args, imgs):
                         for freq in all_freqs]
         futures2.append(pool.submit(calc_col_even, dest_img, imgs, grid=futures2[-1].result()[0]))
         
-        def collect_imgs(params, futures, fs):
+        def collect_imgs(fname, params, futures, fs):
             result_imgs = []
             for i in range(len(params)):
                 grid, sorted_imgs = futures[i].result()
                 result_imgs.append(make_collage(grid, sorted_imgs, args.rev_row))
                 pbar.update()
             
-            plt.figure()
+            plt.figure(figsize=(len(params) * 10, 12))
             plt.imshow(cv2.cvtColor(np.hstack(result_imgs), cv2.COLOR_BGR2RGB))
             grid_width = result_imgs[0].shape[1]
             plt.xticks(np.arange(0, grid_width * len(result_imgs), grid_width) + grid_width / 2, params, fontsize=fs)
             plt.yticks([], [])
             plt.subplots_adjust(left=0.005, right=0.995)
+            plt.savefig(f"{fname}.png", dpi=100)
             # plt.xlabel(xlabel)
 
-        collect_imgs([c.upper() for c in all_colorspaces], futures1, 36)
-        collect_imgs([f"$\lambda = {c}$" for c in all_freqs] + ["Fair"], futures2, 20)
+        collect_imgs("colorspace", [c.upper() for c in all_colorspaces], futures1, 36)
+        collect_imgs("fairness", [f"$\lambda = {c}$" for c in all_freqs] + ["Fair"], futures2, 20)
         pbar.refresh()
         plt.show()
 
@@ -777,8 +765,9 @@ def main(args):
 
 if __name__ == "__main__":
     mp.freeze_support()
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--exp", action="store_true", help="Do experiments (for testing only)")
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
     for arg_name, data in PARAMS.__dict__.items():
         if arg_name.startswith("__"):
             continue
@@ -790,5 +779,5 @@ if __name__ == "__main__":
             continue
         
         parser.add_argument(arg_name, type=data.type, default=data.default, help=data.help, choices=data.choices, nargs=data.nargs)
-
+    parser.add_argument("--exp", action="store_true", help="Do experiments (for testing only)")
     main(parser.parse_args())

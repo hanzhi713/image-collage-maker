@@ -293,9 +293,9 @@ if __name__ == "__main__":
 
     # right panel ROW 6
     Radiobutton(right_panel, text="Sort", value="sort", variable=opt,
-                state=ACTIVE, command=attach_sort).grid(row=6, column=0, sticky="W")
-    Radiobutton(right_panel, text="Collage", value="collage", variable=opt,
-                command=attach_collage).grid(row=6, column=1, sticky="W")
+                state=ACTIVE, command=attach_sort).grid(row=6, column=1, sticky="W")
+    Radiobutton(right_panel, text="Photomosaic", value="collage", variable=opt,
+                command=attach_collage).grid(row=6, column=0, sticky="W")
 
     # right panel ROW 7
     Separator(right_panel, orient="horizontal").grid(
@@ -384,7 +384,7 @@ if __name__ == "__main__":
             return messagebox.showerror("Empty set", "Please first load source images")
 
         fp = filedialog.askopenfilename(
-            initialdir=dest_img_path.get() if os.path.isdir(os.path.dirname(dest_img_path.get())) else init_dir, 
+            initialdir=os.path.dirname(dest_img_path.get()) if os.path.isdir(os.path.dirname(dest_img_path.get())) else init_dir, 
             title="Select destination image",
             filetypes=(("images", "*.jpg"), ("images", "*.png"), ("images", "*.gif"), ("all files", "*.*")))
         if fp is not None and len(fp) > 0 and os.path.isfile(fp):
@@ -407,7 +407,7 @@ if __name__ == "__main__":
             show_img(mkg.alpha_blend(result_collage, dest_img, 1 - alpha_scale.get()), False)
     
     # right collage option panel ROW 3:
-    Label(right_col_opt_panel, text="Alpha: ").grid(row=3, column=0, sticky="W")
+    Label(right_col_opt_panel, text="Colorization:").grid(row=3, column=0, sticky="W", padx=(0, 5))
     alpha_scale = Scale(right_col_opt_panel, from_=0, to=1.0, orient=HORIZONTAL, length=75, command=change_alpha)
     alpha_scale.set(0)
     alpha_scale.grid(row=3, column=1, sticky="W")
@@ -426,29 +426,31 @@ if __name__ == "__main__":
 
     def attach_even():
         collage_uneven_panel.grid_remove()
-        collage_even_panel.grid(row=8, columnspan=2, sticky="W")
+        collage_even_panel.grid(row=9, columnspan=2, sticky="W")
 
     def attach_uneven():
         collage_even_panel.grid_remove()
-        collage_uneven_panel.grid(row=8, columnspan=2, sticky="W")
+        collage_uneven_panel.grid(row=9, columnspan=2, sticky="W")
 
     # right collage option panel ROW 6:
-    even = StringVar()
-    even.set("even")
-    Radiobutton(right_col_opt_panel, text="Even", variable=even, value="even",
-                state=ACTIVE, command=attach_even).grid(row=6, column=0, sticky="W")
-    Radiobutton(right_col_opt_panel, text="Uneven", variable=even, value="uneven",
-                command=attach_uneven).grid(row=6, column=1, sticky="W")
+    LabelWithTooltip(right_col_opt_panel, text="Fairness of tiles: ", tooltip=mkg.PARAMS.unfair.help).grid(row=6, columnspan=2, sticky="W")
 
     # right collage option panel ROW 7:
-    Separator(right_col_opt_panel, orient="horizontal").grid(
-        row=7, columnspan=2, sticky="we", pady=(5, 5))
+    even = StringVar()
+    even.set("even")
+    Radiobutton(right_col_opt_panel, text="Fair", variable=even, value="even",
+                state=ACTIVE, command=attach_even).grid(row=7, column=0, sticky="W")
+    Radiobutton(right_col_opt_panel, text="Unfair", variable=even, value="uneven",
+                command=attach_uneven).grid(row=7, column=1, sticky="W")
 
-    # right collage option panel ROW 8: Dynamically attached
+    # right collage option panel ROW 8:
+    Separator(right_col_opt_panel, orient="horizontal").grid(row=8, columnspan=2, sticky="we", pady=(5, 5))
+
+    # right collage option panel ROW 9: Dynamically attached
     # could EITHER collage even panel OR collage uneven panel
     # ----------------------- start collage even panel ------------------------
     collage_even_panel = PanedWindow(right_col_opt_panel)
-    collage_even_panel.grid(row=8, columnspan=2, sticky="W")
+    collage_even_panel.grid(row=9, columnspan=2, sticky="W")
 
     # collage even panel ROW 0
     Label(collage_even_panel, text="C Types: ").grid(
