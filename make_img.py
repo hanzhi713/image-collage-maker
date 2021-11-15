@@ -239,16 +239,17 @@ def make_collage(grid: Tuple[int, int], sorted_imgs: List[np.ndarray], rev=False
     return combined_img
 
 
-def alpha_blend(combined_img, dest_img: np.ndarray, alpha=0.9):
-    # dest_img = cv2.resize(dest_img, combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR).astype(np.float32)
-    # dest_img *= 1 - alpha
-    # combined_img = combined_img.astype(np.float32)
-    # combined_img *= alpha
-    # combined_img += dest_img
-    # return combined_img.astype(np.uint8)
-
+def alpha_blend(combined_img: np.ndarray, dest_img: np.ndarray, alpha=0.9):
     dest_img = cv2.resize(dest_img, combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR)
-    dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2HLS, dst=dest_img)
+    dest_img *= 1 - alpha
+    combined_img = combined_img * alpha # copy
+    combined_img += dest_img
+    return combined_img
+
+
+def lightness_blend(combined_img: np.ndarray, dest_img: np.ndarray, alpha=0.9):
+    dest_img = cv2.resize(dest_img, combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR)
+    cv2.cvtColor(dest_img, cv2.COLOR_BGR2HLS, dst=dest_img)
     dest_img[:, :, 1] *= 1 - alpha
     combined_img = cv2.cvtColor(combined_img, cv2.COLOR_BGR2HLS)
     combined_img[:, :, 1] *= alpha
@@ -422,14 +423,6 @@ def calc_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspac
     """
     Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
     with the restriction that every image should be used the same amount of times
-
-    :param dest_img: the destination image
-    :param imgs: list of images
-    :param dup: number of times to duplicate the set of images
-    :param colorspace: name of the colorspace used
-    :param ctype: ctype of the cost matrix
-    :param v: verbose
-    :return: [gird size, sorted images]
     """
 
     t = time.time()

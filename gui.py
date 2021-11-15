@@ -402,55 +402,68 @@ if __name__ == "__main__":
            command=load_dest_img).grid(row=2, columnspan=2, pady=(3, 2))
 
     result_collage = None
-    def change_alpha(_):
+    def change_alpha(_=None):
         if result_collage is not None and dest_img is not None:
-            show_img(mkg.alpha_blend(result_collage, dest_img, 1 - alpha_scale.get() / 100), False)
+            if colorization_opt.get() == "brightness":
+                show_img(mkg.lightness_blend(result_collage, dest_img, 1 - alpha_scale.get() / 100), False)
+            else:
+                show_img(mkg.alpha_blend(result_collage, dest_img, 1 - alpha_scale.get() / 100), False)
     
     # right collage option panel ROW 3:
-    Label(right_col_opt_panel, text="Colorization:").grid(row=3, column=0, sticky="W", padx=(0, 5))
-    alpha_scale = Scale(right_col_opt_panel, from_=0.0, to=100.0, orient=HORIZONTAL, length=75, command=change_alpha)
-    alpha_scale.set(0)
-    alpha_scale.grid(row=3, column=1, sticky="W")
+    Label(right_col_opt_panel, text="Color Blend:").grid(row=3, column=0, sticky="W", padx=(0, 5))
 
     # right collage option panel ROW 4:
-    colorspace = StringVar()
-    colorspace.set("lab")
-    LabelWithTooltip(right_col_opt_panel, text="Colorspace:", tooltip=mkg.PARAMS.colorspace.help).grid(row=4, column=0, sticky="W")
-    OptionMenu(right_col_opt_panel, colorspace, "", *mkg.PARAMS.colorspace.choices).grid(row=4, column=1, sticky="W")
+    colorization_opt = StringVar()
+    colorization_opt.set("brightness")
+    Radiobutton(right_col_opt_panel, text="Brightness", variable=colorization_opt, value="brightness",
+                state=ACTIVE, command=change_alpha).grid(row=4, column=0, sticky="W")
+    Radiobutton(right_col_opt_panel, text="Alpha", variable=colorization_opt, value="alpha",
+                command=change_alpha).grid(row=4, column=1, sticky="W")
 
     # right collage option panel ROW 5:
+    alpha_scale = Scale(right_col_opt_panel, from_=0.0, to=100.0, orient=HORIZONTAL, length=150, command=change_alpha)
+    alpha_scale.set(0)
+    alpha_scale.grid(row=5, columnspan=2, sticky="W")
+
+    # right collage option panel ROW 6:
+    colorspace = StringVar()
+    colorspace.set("lab")
+    LabelWithTooltip(right_col_opt_panel, text="Colorspace:", tooltip=mkg.PARAMS.colorspace.help).grid(row=6, column=0, sticky="W")
+    OptionMenu(right_col_opt_panel, colorspace, "", *mkg.PARAMS.colorspace.choices).grid(row=6, column=1, sticky="W")
+
+    # right collage option panel ROW 7:
     dist_metric = StringVar()
     dist_metric.set("euclidean")
-    LabelWithTooltip(right_col_opt_panel, text="Metric:", tooltip=mkg.PARAMS.metric.help).grid(row=5, column=0, sticky="W")
-    OptionMenu(right_col_opt_panel, dist_metric, "", *mkg.PARAMS.metric.choices).grid(row=5, column=1, sticky="W")
+    LabelWithTooltip(right_col_opt_panel, text="Metric:", tooltip=mkg.PARAMS.metric.help).grid(row=7, column=0, sticky="W")
+    OptionMenu(right_col_opt_panel, dist_metric, "", *mkg.PARAMS.metric.choices).grid(row=7, column=1, sticky="W")
 
     def attach_even():
         collage_uneven_panel.grid_remove()
-        collage_even_panel.grid(row=9, columnspan=2, sticky="W")
+        collage_even_panel.grid(row=11, columnspan=2, sticky="W")
 
     def attach_uneven():
         collage_even_panel.grid_remove()
-        collage_uneven_panel.grid(row=9, columnspan=2, sticky="W")
+        collage_uneven_panel.grid(row=11, columnspan=2, sticky="W")
 
-    # right collage option panel ROW 6:
-    LabelWithTooltip(right_col_opt_panel, text="Fairness of tiles: ", tooltip=mkg.PARAMS.unfair.help).grid(row=6, columnspan=2, sticky="W")
+    # right collage option panel ROW 8:
+    LabelWithTooltip(right_col_opt_panel, text="Fairness of tiles: ", tooltip=mkg.PARAMS.unfair.help).grid(row=8, columnspan=2, sticky="W")
 
-    # right collage option panel ROW 7:
+    # right collage option panel ROW 9:
     even = StringVar()
     even.set("even")
     Radiobutton(right_col_opt_panel, text="Fair", variable=even, value="even",
-                state=ACTIVE, command=attach_even).grid(row=7, column=0, sticky="W")
+                state=ACTIVE, command=attach_even).grid(row=9, column=0, sticky="W")
     Radiobutton(right_col_opt_panel, text="Unfair", variable=even, value="uneven",
-                command=attach_uneven).grid(row=7, column=1, sticky="W")
+                command=attach_uneven).grid(row=9, column=1, sticky="W")
 
-    # right collage option panel ROW 8:
-    Separator(right_col_opt_panel, orient="horizontal").grid(row=8, columnspan=2, sticky="we", pady=(5, 5))
+    # right collage option panel ROW 10:
+    Separator(right_col_opt_panel, orient="horizontal").grid(row=10, columnspan=2, sticky="we", pady=(5, 5))
 
-    # right collage option panel ROW 9: Dynamically attached
+    # right collage option panel ROW 11: Dynamically attached
     # could EITHER collage even panel OR collage uneven panel
     # ----------------------- start collage even panel ------------------------
     collage_even_panel = PanedWindow(right_col_opt_panel)
-    collage_even_panel.grid(row=9, columnspan=2, sticky="W")
+    collage_even_panel.grid(row=11, columnspan=2, sticky="W")
 
     # collage even panel ROW 0
     Label(collage_even_panel, text="C Types: ").grid(
@@ -532,6 +545,8 @@ if __name__ == "__main__":
                     grid, sorted_imgs = action()
                     result_collage = mkg.make_collage(grid, sorted_imgs, False)
                     return mkg.alpha_blend(result_collage, dest_img, alpha) 
+                except AssertionError as e:
+                    return messagebox.showerror("Error", e)
                 except:
                     messagebox.showerror("Error", traceback.format_exc())
 
@@ -545,18 +560,18 @@ if __name__ == "__main__":
 
     def attach_salient_opt():
         if is_salient.get():
-            salient_opt_panel.grid(row=12, columnspan=2, pady=2, sticky="w")
+            salient_opt_panel.grid(row=13, columnspan=2, pady=2, sticky="w")
         else:
             salient_opt_panel.grid_remove()
 
-    # right collage option panel ROW 11
+    # right collage option panel ROW 12
     is_salient = BooleanVar()
     is_salient.set(False)
     is_salient_check = Checkbutton(right_col_opt_panel, text="Salient objects only",
                 variable=is_salient, command=attach_salient_opt)
-    is_salient_check.grid(row=11, columnspan=2, sticky="w")
+    is_salient_check.grid(row=12, columnspan=2, sticky="w")
 
-    # right collage option panel ROW 12
+    # right collage option panel ROW 13
     salient_opt_panel = PanedWindow(right_col_opt_panel)
 
     def change_thresh(_):
@@ -569,7 +584,7 @@ if __name__ == "__main__":
             show_img(tmp_dest_img, False)
             
     Label(salient_opt_panel, text="Saliency threshold: ").grid(row=0, column=0, sticky="w")
-    saliency_thresh_scale = Scale(salient_opt_panel, from_=1.0, to=99.0, orient=HORIZONTAL, length=160, command=change_thresh)
+    saliency_thresh_scale = Scale(salient_opt_panel, from_=1.0, to=99.0, orient=HORIZONTAL, length=150, command=change_thresh)
     saliency_thresh_scale.set(50.0)
     saliency_thresh_scale.grid(row=1, columnspan=2, sticky="W")
     salient_bg_color = (255, 255, 255)
@@ -587,9 +602,9 @@ if __name__ == "__main__":
                                    command=change_bg_color, bg="#FFFFFF")
     salient_bg_chooser.grid(row=2, columnspan=2, pady=(3, 1))
 
-    # right collage option panel ROW 13
+    # right collage option panel ROW 14
     Button(right_col_opt_panel, text=" Generate Collage ",
-           command=generate_collage).grid(row=13, columnspan=2, pady=(3, 5))
+           command=generate_collage).grid(row=14, columnspan=2, pady=(3, 5))
     # ------------------------ end right collage option panel --------------------
 
     # right panel ROW 9:
