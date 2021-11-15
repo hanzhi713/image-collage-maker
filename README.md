@@ -149,7 +149,7 @@ Use ```--lower_thresh``` to specify the threshold for object detection. The thre
 Use ```--background``` to specify the background color for the collage. The color space for the background option is RGB. The default background color is white, i.e. (255, 255, 255).
 
 ```bash
-python3 make_img.py --path img --out collage-best-fit.png --dest_img img/1.png --dup 16 --salient
+python make_img.py --path img --out collage-best-fit.png --dest_img img/1.png --size 25 --dup 5 --salient
 ```
 
 ```bash

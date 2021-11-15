@@ -24,5 +24,5 @@ pyinstaller $ARGS --onefile --name "$NAME${SUFFIX}" gui.py
 
 pushd dist/$NAME-archive
 tar -czvf ../$NAME.tar.gz .
-zip -r ../$NAME.zip .
+# zip -r ../$NAME.zip .
 popd

@@ -404,11 +404,11 @@ if __name__ == "__main__":
     result_collage = None
     def change_alpha(_):
         if result_collage is not None and dest_img is not None:
-            show_img(mkg.alpha_blend(result_collage, dest_img, 1 - alpha_scale.get()), False)
+            show_img(mkg.alpha_blend(result_collage, dest_img, 1 - alpha_scale.get() / 100), False)
     
     # right collage option panel ROW 3:
     Label(right_col_opt_panel, text="Colorization:").grid(row=3, column=0, sticky="W", padx=(0, 5))
-    alpha_scale = Scale(right_col_opt_panel, from_=0, to=1.0, orient=HORIZONTAL, length=75, command=change_alpha)
+    alpha_scale = Scale(right_col_opt_panel, from_=0.0, to=100.0, orient=HORIZONTAL, length=75, command=change_alpha)
     alpha_scale.set(0)
     alpha_scale.grid(row=3, column=1, sticky="W")
 
@@ -457,7 +457,7 @@ if __name__ == "__main__":
         row=0, column=0, sticky="W")
     ctype = StringVar()
     ctype.set("float32")
-    OptionMenu(collage_even_panel, ctype, "", *mkg.PARAMS.ctypes.choices).grid(row=0, column=1, sticky="W")
+    OptionMenu(collage_even_panel, ctype, "", *mkg.PARAMS.ctype.choices).grid(row=0, column=1, sticky="W")
 
     # collage even panel ROW 1
     LabelWithTooltip(collage_even_panel, text="Duplicates:", tooltip=mkg.PARAMS.dup.help).grid(row=1, column=0, sticky="W", pady=2)
@@ -475,12 +475,6 @@ if __name__ == "__main__":
     max_width = IntVar()
     max_width.set(80)
     Entry(collage_uneven_panel, textvariable=max_width, width=5).grid(row=0, column=1, sticky="W")
-
-    # collage uneven panel ROW 1
-    LabelWithTooltip(collage_uneven_panel, text="Window:", tooltip=mkg.PARAMS.redunt_window.help).grid(row=1, column=0, sticky="W")
-    redunt_window = IntVar()
-    redunt_window.set(0)
-    temp = Entry(collage_uneven_panel, textvariable=redunt_window, width=5).grid(row=1, column=1, sticky="W")
 
     LabelWithTooltip(collage_uneven_panel, text="Freq Mul:", tooltip=mkg.PARAMS.freq_mul.help).grid(row=2, column=0, sticky="W")
     freq_mul = DoubleVar()
@@ -502,19 +496,20 @@ if __name__ == "__main__":
     
         try:
             if is_salient.get():
-                lower_thresh = salient_lower_thresh.get()
-                assert 0 <= lower_thresh < 255 or lower_thresh == -1, \
-                    "Lower salient threshold must be -1 (auto threshold) or between 0 and 255"
+                lower_thresh = saliency_thresh_scale.get() / 100
+                assert 0.0 < lower_thresh < 1.0, "saliency threshold must be between 0 and 1"
             else:
                 lower_thresh = None
+            
+            alpha = 1 - alpha_scale.get() / 100.0
+            assert 0.0 <= alpha <= 1.0
             
             if even.get() == "even":
                 assert dup.get() > 0, "Duplication must be a positive number"
                 
                 if is_salient.get():
                     def action():
-                        raise NotImplementedError("Not implemented")
-                        mkg.calc_salient_col_even(
+                        return mkg.calc_salient_col_even(
                             dest_img, imgs, dup.get(), colorspace.get(), ctype.get(), dist_metric.get(), 
                             lower_thresh, salient_bg_color, out_wrapper)
 
@@ -524,20 +519,19 @@ if __name__ == "__main__":
                             dest_img, imgs, dup.get(), colorspace.get(), ctype.get(), dist_metric.get(), out_wrapper)
             else:
                 assert max_width.get() > 0, "Max width must be a positive number"
-                assert redunt_window.get() >= 0, "Max width must be a nonnegative integer"
                 assert freq_mul.get() >= 0, "Max width must be a nonnegative real number"
 
                 def action():
                     return mkg.calc_col_dup(
                             dest_img, imgs, max_width.get(), colorspace.get(), dist_metric.get(), 
-                            lower_thresh, salient_bg_color,  redunt_window.get(), freq_mul.get(), not deterministic.get())
+                            lower_thresh, salient_bg_color, freq_mul.get(), not deterministic.get())
 
             def wrapper():
                 global result_collage
                 try:
                     grid, sorted_imgs = action()
                     result_collage = mkg.make_collage(grid, sorted_imgs, False)
-                    return mkg.alpha_blend(result_collage, dest_img, 1 - alpha_scale.get()) 
+                    return mkg.alpha_blend(result_collage, dest_img, alpha) 
                 except:
                     messagebox.showerror("Error", traceback.format_exc())
 
@@ -564,13 +558,20 @@ if __name__ == "__main__":
 
     # right collage option panel ROW 12
     salient_opt_panel = PanedWindow(right_col_opt_panel)
-    salient_lower_thresh = IntVar()
-    salient_lower_thresh.set(127)
-    salient_opt_label = Label(salient_opt_panel, text="Lower threshold: ")
-    salient_opt_entry = Entry(
-        salient_opt_panel, textvariable=salient_lower_thresh, width=8)
-    salient_opt_label.grid(row=0, column=0, sticky="w")
-    salient_opt_entry.grid(row=0, column=1, sticky="w")
+
+    def change_thresh(_):
+        if dest_img is not None:
+            lower_thresh = saliency_thresh_scale.get() / 100
+            assert 0.0 <= lower_thresh <= 1.0
+            _, thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((dest_img * 255).astype(np.uint8))
+            tmp_dest_img = cv2.resize(dest_img, thresh_map.shape[::-1], interpolation=cv2.INTER_AREA)
+            tmp_dest_img[thresh_map < lower_thresh] = np.asarray(salient_bg_color[::-1], dtype=np.float32) / 255.0
+            show_img(tmp_dest_img, False)
+            
+    Label(salient_opt_panel, text="Saliency threshold: ").grid(row=0, column=0, sticky="w")
+    saliency_thresh_scale = Scale(salient_opt_panel, from_=1.0, to=99.0, orient=HORIZONTAL, length=160, command=change_thresh)
+    saliency_thresh_scale.set(50.0)
+    saliency_thresh_scale.grid(row=1, columnspan=2, sticky="W")
     salient_bg_color = (255, 255, 255)
 
     def change_bg_color():
@@ -584,7 +585,7 @@ if __name__ == "__main__":
 
     salient_bg_chooser = tk.Button(salient_opt_panel, text="Select Background Color",
                                    command=change_bg_color, bg="#FFFFFF")
-    salient_bg_chooser.grid(row=1, columnspan=2, pady=(3, 1))
+    salient_bg_chooser.grid(row=2, columnspan=2, pady=(3, 1))
 
     # right collage option panel ROW 13
     Button(right_col_opt_panel, text=" Generate Collage ",
