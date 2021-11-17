@@ -41,7 +41,7 @@ class PARAMS:
     size = _PARAMETER(type=int, default=50, help="Size (side length) of each tile in pixels in the resulting collage/photomosaic")
     verbose = _PARAMETER(type=bool, default=False, help="Print progress message to console")
     resize_opt = _PARAMETER(type=str, default="center", choices=["center", "stretch"], 
-        help="How to resize each tile so they become square images."
+        help="How to resize each tile so they become square images. "
              "Center: crop a square in the center. Stretch: stretch the tile")
 
     # ---------------- sort collage options ------------------
@@ -390,6 +390,7 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, c
     print("Block size:", block_size)
 
     grid = (width // block_size, height // block_size)
+    print("Grid size:", grid)
     assert len(ridx) <= len(imgs)
     del imgs[len(ridx):]
 

@@ -144,27 +144,28 @@ This option makes photomosaic only for the salient part of the destination image
 
 Add ```--salient``` flag to enable this option. You can still specify whether each image is used for the same amount of times with the ```--unfair``` flag.
 
-Use ```--lower_thresh``` to specify the threshold for object detection. The threshold ranges from 0 to 225; a higher threshold would lead to less object area. The default threshold is 75. If you choose to use each image for the same amount of time, the threshold may have to change so that the number of source images and the number of pixels in the destination can converge. You may use ```--lower_thresh -1``` to enable adaptive thresholding (new in v.2.1).
+Use ```--lower_thresh``` to specify the threshold for object detection. The threshold ranges from 0.0 to 1.0; a higher threshold would lead to less object area. The default threshold is 0.5.
 
 Use ```--background``` to specify the background color for the collage. The color space for the background option is RGB. The default background color is white, i.e. (255, 255, 255).
 
 ```bash
-python make_img.py --path img --out collage-best-fit.png --dest_img img/1.png --size 25 --dup 5 --salient
+python make_img.py --recursive --path img/zhou --dest_img examples/messi.jpg --size 25 --salient --lower_thresh 0.15 --verbose --dup 5 --out examples/messi-fair.png
 ```
 
 ```bash
-python3 make_img.py --path img --out collage-best-fit.png --dest_img img/1.png --size 25 --salient --unfair
+python make_img.py --recursive --path img/zhou --dest_img examples/messi.jpg --size 25 --salient --lower_thresh 0.15 --verbose --unfair --max_width 103 --freq_mul 0 --out examples/messi-unfair.png
 ```
 
 | Original                                     | Unfair-Fitting Result                               | Fair-Fitting Result                               |
 | -------------------------------------------- | --------------------------------------------------- | ------------------------------------------------- |
-| <img src="examples/messi.jpg" width="350px"> | <img src="examples/messi_unfair.png" width="350px"> | <img src="examples/messi_even.png" width="350px"> |
+| <img src="examples/messi.jpg" width="350px"> | <img src="examples/messi-unfair.png" width="350px"> | <img src="examples/messi-fair.png" width="350px"> |
 
 #### Other options
 
-```python3 make_img.py --help``` will give you all the available commandline options.
+```python3 make_img.py -h``` will give you all the available command line options.
 
 ```
+$ python make_img.py -h
 usage: make_img.py [-h] [--path PATH] [--recursive]
                    [--num_process NUM_PROCESS] [--out OUT] [--size SIZE]
                    [--verbose] [--resize_opt {center,stretch}]
@@ -173,10 +174,10 @@ usage: make_img.py [-h] [--path PATH] [--recursive]
                    [--rev_row] [--rev_sort] [--dest_img DEST_IMG]
                    [--colorspace {hsv,hsl,bgr,lab,luv}]
                    [--metric {euclidean,cityblock,chebyshev}]
-                   [--ctypes {float32,float64}] [--unfair]
-                   [--max_width MAX_WIDTH] [--redunt_window REDUNT_WINDOW]
-                   [--freq_mul FREQ_MUL] [--deterministic] [--dup DUP]
-                   [--salient] [--lower_thresh LOWER_THRESH]
+                   [--ctype {float32,float64}] [--unfair]
+                   [--max_width MAX_WIDTH] [--freq_mul FREQ_MUL]
+                   [--deterministic] [--dup DUP] [--salient]
+                   [--lower_thresh LOWER_THRESH]
                    [--background BACKGROUND BACKGROUND BACKGROUND] [--exp]
 
 optional arguments:
@@ -188,13 +189,13 @@ optional arguments:
                         Number of processes to use when loading images
                         (default: 8)
   --out OUT             The filename of the output image (default: )
-  --size SIZE           Size (side length) of each tile in pixels (default:
-                        50)
+  --size SIZE           Size (side length) of each tile in pixels in the
+                        resulting collage/photomosaic (default: 50)
   --verbose             Print progress message to console (default: False)
   --resize_opt {center,stretch}
-                        How to resize each tile so they become square images.
-                        Center: center crop. Stretch: stretch the tile
-                        (default: center)
+                        How to resize each tile so they become square
+                        images. Center: crop a square in the center. Stretch:
+                        stretch the tile (default: center)
   --ratio RATIO RATIO   Aspect ratio of the output image (default: (16, 9))
   --sort {none,bgr_sum,av_hue,av_sat,av_lum,rand,pca_bgr,pca_hsv,pca_lab,pca_gray,pca_lum,pca_sat,pca_hue,tsne_bgr,tsne_hsv,tsne_lab,tsne_gray,tsne_lum,tsne_sat,tsne_hue}
                         Sort method to use (default: bgr_sum)
@@ -209,7 +210,7 @@ optional arguments:
   --metric {euclidean,cityblock,chebyshev}
                         Distance metric used when evaluating the distance
                         between two color vectors (default: euclidean)
-  --ctypes {float32,float64}
+  --ctype {float32,float64}
                         C type of the cost matrix. float32 is a good
                         compromise between computational time and accuracy.
                         Leave as default if unsure. (default: float32)
@@ -218,9 +219,6 @@ optional arguments:
   --max_width MAX_WIDTH
                         Maximum width of the collage. This option is only
                         valid if unfair option is enabled (default: 80)
-  --redunt_window REDUNT_WINDOW
-                        The guaranteed window size (size x size) to have no
-                        duplicated tiles in it (default: 0)
   --freq_mul FREQ_MUL   Frequency multiplier to balance tile fairless and
                         mosaic quality. Minimum: 0. More weight will be put on
                         tile fairness when this number increases. (default: 1)
@@ -231,7 +229,8 @@ optional arguments:
   --salient             Make photomosaic for salient objects only (default:
                         False)
   --lower_thresh LOWER_THRESH
-                        The threshold for saliency detection (default: 127)
+                        The threshold for saliency detection, between 0.0 and
+                        1.0 (default: 0.5)
   --background BACKGROUND BACKGROUND BACKGROUND
                         Background color in RGB for non salient part of the
                         image (default: (255, 255, 255))
