@@ -296,12 +296,15 @@ def sort_collage(imgs: List[np.ndarray], ratio: Tuple[int, int], sort_method="pc
 
 
 def cvt_colorspace(colorspace: str, imgs: List[np.ndarray], dest_img: np.ndarray):
+    normalize_first = False
     if colorspace == "bgr":
         return
     elif colorspace == "hsv":
         flag = cv2.COLOR_BGR2HSV
+        normalize_first = True
     elif colorspace == "hsl":
         flag = cv2.COLOR_BGR2HLS
+        normalize_first = True
     elif colorspace == "lab":
         flag = cv2.COLOR_BGR2LAB
     elif colorspace == "luv":
@@ -311,6 +314,12 @@ def cvt_colorspace(colorspace: str, imgs: List[np.ndarray], dest_img: np.ndarray
     for img in imgs:
         cv2.cvtColor(img, flag, dst=img)
     cv2.cvtColor(dest_img, flag, dst=dest_img)
+    if normalize_first:
+        # for hsv/hsl, h is in range 0~360 while other channels are in range 0~1
+        # need to normalize
+        for img in imgs:
+            img[:, :, 0] *= 1 / 360.0
+        dest_img[:, :, 0] *= 1 / 360.0
 
 
 def solve_lap(cost_matrix: np.ndarray, v=None):
