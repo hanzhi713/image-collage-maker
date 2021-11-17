@@ -19,6 +19,8 @@
 
 # Photomosaic Maker
 
+> Version 3.0 Beta just released. It can create photomosaics with significantly better qualtity! Check it out. 
+
 <img src="./examples/gui.png" width="720px" alt="gui demo">
 
 ## Getting Started
@@ -29,16 +31,16 @@ You can either use our pre-built binary files or directly run our python script.
 
 Binaries can be downloaded from [release](https://github.com/hanzhi713/image-collage-maker/releases).
 
-On Windows, my program may be blocked by Windows Defender because it is not signed. Don't worry as there is no security risk. On MacOS or Linux, after downloading the binary, you may need to add executing permission. Go to the file's directory and type
+On Windows, my program may be blocked by Windows Defender because it is not signed. Don't worry as there is no security risk. On MacOS or Linux, after downloading the binary, you may need to add executing permission. Open your terminal, go to the file's directory and type
 
 ```bash
-chmod +x ./photomosaic-maker-macos-x64
+chmod +x ./photomosaic-maker-3.0-macos-x64
 ```
 
 Then you can run from terminal as
 
 ```bash
-./photomosaic-maker-macos-x64
+./photomosaic-maker-3.0-macos-x64
 ```
 
 ### Running Python script directly
@@ -58,29 +60,6 @@ python3 gui.py
 ## Command line usage
 
 > If you do not wish to use the GUI, a command line interface is also available. 
-
-<!-- 
->Note: If you already have a set of images to work with, you can skip step 1. The collage maker can be applied to any folder which contains a sufficient amount of images, not limited to your WeChat friends' profile pictures.
-
-### 1\. Use [extract_img.py](extract_img.py) to download profile pictures of your WeChat friends
-
-Download all your friends' profile pictures (--dir specifies the directory to store these images):
-
-```bash
-python3 extract_img.py --dir img
-```
-
-Or, download the group members' images in a group chat (replace ```name``` with the group chat's name and keep the double quotes):
-
-```bash
-python3 extract_img.py --dir img2 --type chatroom --name "name"
-```
-
-Sometimes the download may fail, especially when the program is running for the first time. In such case, you need to rerun program with an additional ```--clean``` flag
-
-```bash
-python3 extract_img.py --dir img --clean
-``` -->
 
 ### Option 1: Sorting
 
@@ -235,6 +214,28 @@ optional arguments:
                         Background color in RGB for non salient part of the
                         image (default: (255, 255, 255))
   --exp                 Do experiments (for testing only) (default: False)
+```
+
+### Downloading profile pictures of your WeChat friends
+
+If you have a WeChat account, an utility script `extract_img.py` is provided to download your friends' profile pictures so you can make a photomosaic using them.
+
+`--dir` specifies the directory to store these images
+
+```bash
+python3 extract_img.py --dir img
+```
+
+You can also download the group members' profiles images from a group chat
+
+```bash
+python3 extract_img.py --dir img2 --type chatroom --name "groupchatname"
+```
+
+Sometimes the download may fail, especially when the program is running for the first time. In such case, you can rerun program with an additional ```--clean``` flag
+
+```bash
+python3 extract_img.py --dir img --clean
 ```
 
 ## Credits (Names in alphabetical order)
