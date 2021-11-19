@@ -218,7 +218,11 @@ optional arguments:
 
 ### Downloading profile pictures of your WeChat friends
 
-If you have a WeChat account, an utility script `extract_img.py` is provided to download your friends' profile pictures so you can make a photomosaic using them.
+If you have a WeChat account, an utility script `extract_img.py` is provided to download your friends' profile pictures so you can make a photomosaic using them. To use this script, you need to have itchat-uos installed
+
+```bash
+pip3 install itchat-uos
+```
 
 `--dir` specifies the directory to store these images
 
