@@ -8,6 +8,7 @@ import time
 import platform
 from typing import Any, List, Tuple
 import itertools
+import traceback
 
 import cv2
 import numpy as np
@@ -586,13 +587,17 @@ def read_images(pic_path: str, img_size: Tuple[int, int], recursive=False, num_p
             break
 
     with mp.Pool(max(1, num_process)) as pool:
-        func = read_img_center if flag == "center" else read_img_other
-        return [
+        result = [
             r for r in tqdm(
-                pool.imap_unordered(func, zip(files, itertools.repeat(img_size, len(files))), chunksize=64), 
-                total=len(files), desc="[Reading files]", unit="file", ncols=pbar_ncols) if r is not None
+                pool.imap_unordered(
+                    read_img_center if flag == "center" else read_img_other, 
+                    zip(files, itertools.repeat(img_size, len(files))), 
+                chunksize=64), 
+                total=len(files), desc="[Reading files]", unit="file", ncols=pbar_ncols) 
+                    if r is not None
         ]
-
+    print("Read", len(result), "images")
+    return result
 
 # this imread method can read images whose path contain unicode characters
 def imread(filename: str) -> np.ndarray:

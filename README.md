@@ -224,11 +224,13 @@ If you have a WeChat account, an utility script `extract_img.py` is provided to 
 pip3 install itchat-uos
 ```
 
-Then, use `--dir` to specify the directory to store these images
+Then, use `--dir` to specify the directory to store the profile pictures of your WeChat friends. 
 
 ```bash
 python3 extract_img.py --dir img
 ```
+
+#### Groupchat Members
 
 You can also download the group members' profiles images from a group chat
 
@@ -242,7 +244,17 @@ You can download members' profile pictures from all your groupchats if you omit 
 python3 extract_img.py --dir img --type groupchat
 ```
 
-Sometimes the download may fail. In this case, you can simply run the program again. Already downloaded pictures will not be downloaded again.
+#### All available profile pictures
+
+You can download profile pictures from both your friends and members from all your groupchats by specifying `--type all`. 
+
+```bash
+python3 extract_img.py --dir img --type all
+```
+
+#### Notes
+
+Due to unknown issues, sometimes some profile pictures are not available, so they will be blank and unusable. The photomosaic maker will automatically ignore them when loading images. 
 
 ## Credits (Names in alphabetical order)
 
