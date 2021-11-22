@@ -1,31 +1,19 @@
 """
 extract_img.py
-get images from WeChat friends list.
+get profile pictures from your WeChat friends or group chat members
 """
 import itchat
 import os
-import pickle
-from concurrent.futures import *
-import concurrent.futures
-import time
+from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
-from math import ceil
 import argparse
+import multiprocessing as mp
 
 
-def download_friend(args):
-    user_name, image_id, download_dir = args
-    itchat.get_head_img(userName=user_name, picDir=os.path.join(
-        download_dir, "{}.jpg".format(image_id)))
-    return args
-
-
-def download_chatroom_member(args):
-    global chatroom
-    user_name, image_id, download_dir = args
-    itchat.get_head_img(userName=user_name, chatroomUserName=chatroom['UserName'],
-                        picDir=os.path.join(download_dir, '%d.png' % image_id))
-    return args
+def download_pic(args):
+    fpath = args['picDir']
+    if not os.path.exists(fpath):
+        itchat.get_head_img(**args)
 
 
 def get_chatroom_by_name(name, chatrooms):
@@ -39,95 +27,69 @@ if __name__ == "__main__":
     parser.add_argument("--dir", default="img", type=str,
                         help="Folder to store the downloaded images")
     parser.add_argument("--type", type=str,
-                        choices=["self", "chatroom"], default="self")
-    parser.add_argument("--name", type=str,
+                        choices=["self", "groupchat"], default="self")
+    parser.add_argument("--name", type=str, nargs="+",
                         help="Specify the chatroom name if type=chatroom")
-    parser.add_argument("--clean", action="store_true",
-                        help="Clean the cache before saving")
+    parser.add_argument("--list_chatroom", action="store_true")
 
     args = parser.parse_args()
     download_dir = args.dir
 
-    if args.type == "self":
-        print("Logging in...")
-        itchat.auto_login(hotReload=True)
+    print("Logging in...")
+    itchat.auto_login(hotReload=True)
 
-        print("Loading contact...")
-        friends = itchat.get_friends(update=True)
-        download = download_friend
-
-    elif args.type == "chatroom":
-        assert len(args.name) > 0, "You must provide a chatroom name!"
-        print("Logging in...")
-        itchat.auto_login(hotReload=True)
-
+    if args.list_chatroom:
         print("Getting chatrooms...")
         chatrooms = itchat.get_chatrooms(update=True)
-        chatroom = get_chatroom_by_name(args.name, chatrooms)
-        assert chatroom is not None, "Chatroom \"{}\" not found".format(
-            args.name)
+        for chatroom in tqdm(chatrooms, desc="[Updating Groupchats]"):
+            tqdm.write(chatroom['NickName'])
+        exit()
 
-        print("Updating chatroom...")
-        itchat.update_chatroom(chatroom['UserName'], True)
+    if args.type == "self":
+        print("Loading contact...")
+        download_args = [
+            {
+                "userName": mem['UserName'], 
+                "picDir": os.path.join(download_dir, f"{mem['UserName']}.jpg")
+            } 
+                for mem in itchat.get_friends(update=True)
+        ]
 
-        # fetch the chatroom data again
-        chatroom = get_chatroom_by_name(args.name, itchat.get_chatrooms())
+    elif args.type == "groupchat":
+        print("Getting groupchats...")
+        chatrooms = itchat.get_chatrooms(update=True)
+        if not args.name:
+            for chatroom in tqdm(chatrooms, desc="[Updating Groupchats]"):
+                itchat.update_chatroom(chatroom['UserName'], True)
+            chatrooms = itchat.get_chatrooms()
+        else:
+            filtered_chatrooms = []
+            for name in tqdm(args.name, desc="[Updating Groupchats]"):
+                chatroom = get_chatroom_by_name(args.name, chatrooms)
+                assert chatroom is not None, f"Chatroom \"{args.name}\" not found"
 
-        friends = chatroom['MemberList']
-        download = download_chatroom_member
+                itchat.update_chatroom(chatroom['UserName'], True)
+
+                # fetch the chatroom data again
+                filtered_chatrooms.append(get_chatroom_by_name(args.name, itchat.get_chatrooms()))
+            chatrooms = filtered_chatrooms
+        
+        download_args = []
+        for chatroom in chatrooms:
+            for mem in chatroom['MemberList']:
+                download_args.append(
+                    {
+                        "userName": mem['UserName'],
+                        'chatroomUserName': chatroom['UserName'],
+                        "picDir": os.path.join(download_dir, f"{mem['UserName']}.jpg")
+                    }
+                )
     else:
         raise Exception("Invalid argument")
 
     if not os.path.isdir(download_dir):
         os.mkdir(download_dir)
 
-    if os.path.isfile(os.path.join(download_dir, "cache.pkl")) and not args.clean:
-        downloaded = pickle.load(
-            open(os.path.join(download_dir, "cache.pkl"), "rb"))
-        assert type(downloaded) == dict
-    else:
-        downloaded = {}
-
-    num_friends = len(friends)
-    max_wait_time = 60
-
-    while len(downloaded) < len(friends):
-        available_numbers = [i for i in range(
-            num_friends) if i not in downloaded.values()]
-
-        if len(downloaded) > 0:
-            print(available_numbers)
-
-        pool = ThreadPoolExecutor(len(available_numbers))
-
-        # use multi-threading to accelerate the download process
-        f = []
-        counter = 0
-        for friend in friends:
-            if not friend['UserName'] in downloaded:
-                f.append(pool.submit(
-                    download, (friend['UserName'], available_numbers[counter], download_dir)))
-                counter += 1
-
-        start_time = time.clock()
-        for i, future in tqdm(enumerate(f), total=len(f), desc="[Downloading images]", unit="imgs"):
-            try:
-                if time.clock() - start_time > max_wait_time:
-                    user_name, idx, _ = future.result(0)
-                else:
-                    user_name, idx, _ = future.result(
-                        ceil(max_wait_time - time.clock() + start_time))
-                downloaded[user_name] = idx
-            except concurrent.futures.TimeoutError:
-                print("\nTimeout when downloading the head image of",
-                      friends[available_numbers[i]]['NickName'])
-
-        if len(downloaded) < len(friends):
-            print("Warning: Failed to download some of the images")
-            print("Retrying...")
-
-        pickle.dump(downloaded, open(
-            os.path.join(download_dir, "cache.pkl"), "wb"))
-
-    print("Success")
-    exit(0)
+    pool = ThreadPoolExecutor(max(mp.cpu_count() * 4, len(download_args)))
+    for _ in tqdm(pool.map(download_pic, download_args, chunksize=32), desc="[Downloading]", total=len(download_args)):
+        pass

@@ -248,6 +248,9 @@ def alpha_blend(combined_img: np.ndarray, dest_img: np.ndarray, alpha=0.9):
 
 
 def lightness_blend(combined_img: np.ndarray, dest_img: np.ndarray, alpha=0.9):
+    """
+    blend the 2 imgs in the lightness channel (L in HSL)
+    """
     dest_img = cv2.resize(dest_img, combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR)
     cv2.cvtColor(dest_img, cv2.COLOR_BGR2HLS, dst=dest_img)
     dest_img[:, :, 1] *= 1 - alpha
@@ -323,6 +326,9 @@ def cvt_colorspace(colorspace: str, imgs: List[np.ndarray], dest_img: np.ndarray
 
 
 def solve_lap(cost_matrix: np.ndarray, v=None):
+    """
+    solve the lap problem with progress info on Unix platform
+    """
     print("Computing optimal assignment on a {}x{} matrix...".format(cost_matrix.shape[0], cost_matrix.shape[1]))
     from lapjv import lapjv
     if v is not None and (platform.system() == "Linux" or platform.system() == "Darwin") and v.gui:
@@ -343,7 +349,12 @@ def solve_lap(cost_matrix: np.ndarray, v=None):
     return cols, cost
 
 
-def compute_block_map(thresh_map, block_size, lower_thresh):
+def compute_block_map(thresh_map: np.ndarray, block_size: int, lower_thresh: int):
+    """
+    Find the indices of the blocks that contain salient pixels according to the thresh_map
+
+    returns [row indices, column indices, resized threshold map] of sizes [(N,), (N,), (W x H)]
+    """
     height, width = thresh_map.shape
     dst_size = (width - width % block_size, height - height % block_size)
     if thresh_map.shape[::-1] != dst_size:
@@ -354,7 +365,16 @@ def compute_block_map(thresh_map, block_size, lower_thresh):
     return row_idx, col_idx, thresh_map
 
 
-def compute_blocks_salient(colorspace: str, dest_img: np.ndarray, imgs: List[np.ndarray], block_size: int, ridx, cidx, thresh_map, lower_thresh, background):
+def compute_blocks_salient(
+    colorspace: str, dest_img: np.ndarray, imgs: List[np.ndarray], 
+    block_size: int, ridx: np.ndarray, cidx: np.ndarray, 
+    thresh_map: np.ndarray, lower_thresh: int, background: Tuple[int, int, int]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Reorder the blocks for the salient parts of the dest image. Convert the blocks and tiles to the desired colorspace.
+
+    returns [blocked image, resized tiles, background tile] of sizes [(N x B^2), (M x B^2), BxB]
+    where N is the number of salient blocks in dest_img, B is the block size, and M is the number of tiles
+    """
     dest_img = cv2.resize(dest_img, thresh_map.shape[::-1], interpolation=cv2.INTER_AREA)
     bg = np.asarray(background[::-1], dtype=imgs[0].dtype)
     bg *= 1 / 255.0
@@ -363,8 +383,9 @@ def compute_blocks_salient(colorspace: str, dest_img: np.ndarray, imgs: List[np.
     img_keys = [cv2.resize(img, (block_size, block_size), interpolation=cv2.INTER_AREA) for img in imgs]
     cvt_colorspace(colorspace, img_keys, dest_img)
     dest_img.shape = (thresh_map.shape[0] // block_size, block_size, thresh_map.shape[1] // block_size, block_size, 3)
-    dest_img = dest_img[ridx, :, cidx, :, :].reshape(-1, block_size * block_size * 3)
-    return dest_img, np.array(img_keys).reshape(-1, dest_img.shape[1]), np.full(imgs[0].shape, bg, dtype=imgs[0].dtype)
+    return dest_img[ridx, :, cidx, :, :].reshape(-1, block_size * block_size * 3), \
+           np.array(img_keys).reshape(-1, dest_img.shape[1]), \
+           np.full(imgs[0].shape, bg, dtype=imgs[0].dtype)
 
 
 def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspace="lab", 
@@ -418,6 +439,13 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, c
 
 def compute_blocks(colorspace: str, dest_img: np.ndarray, imgs: List[np.ndarray], grid: Tuple[int, int]) -> Tuple[np.ndarray, np.ndarray]:
     """
+    Compute and reorder the blocks of the dest_img. Block size is inferred from grid size.
+    Convert the blocks and tiles to the desired colorspace.
+
+    returns [blocked image, resized tiles] of sizes [(N x B^2), (M x B^2)]
+    where N is the number of blocks in dest_img, B is the block size, and M is the number of tiles
+
+    N = grid width x grid height
     """
     block_size = min(dest_img.shape[0] // grid[1], dest_img.shape[1] // grid[0])
     print("Block size:", block_size)
@@ -425,7 +453,9 @@ def compute_blocks(colorspace: str, dest_img: np.ndarray, imgs: List[np.ndarray]
     img_keys = [cv2.resize(img, (block_size, block_size), interpolation=cv2.INTER_AREA) for img in imgs]
     cvt_colorspace(colorspace, img_keys, dest_img)
     flat_block_size = block_size * block_size * 3
-    return dest_img.reshape(grid[1], block_size, grid[0], block_size, 3).transpose((0, 2, 1, 3, 4)).reshape(-1, flat_block_size), np.array(img_keys).reshape(-1, flat_block_size)
+    dest_img.shape = (grid[1], block_size, grid[0], block_size, 3)
+    return dest_img.transpose((0, 2, 1, 3, 4)).reshape(-1, flat_block_size), \
+           np.array(img_keys).reshape(-1, flat_block_size)
 
 
 def calc_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspace="lab", 
