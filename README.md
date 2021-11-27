@@ -21,11 +21,20 @@
 
 > Version 3.0 Beta just released. It can create photomosaics with significantly better qualtity! Check it out. 
 
-<img src="./examples/gui.png" width="720px" alt="gui demo">
+![gui demo](./examples/gui.png)
+
+## Distinguishing Features of this Photomosaic Maker
+
+A number of photomosaic makers already exist (like [mosaic](https://github.com/codebox/mosaic) and [Photomosaic-generator](https://github.com/uvipen/Photomosaic-generator)), but this photomosaic maker has the following unique features
+
+- Can trade off between the fairness of the tiles and quality of the constructed photomosaic
+  - Can ensure each tile is used exactly N times if desired (N is customizable)
+- Supports saliency detection
+- Has a graphical user interface
 
 ## Getting Started
 
-You can either use our pre-built binary files or directly run our python script.
+You can either use our pre-built binaries from [release](https://github.com/hanzhi713/image-collage-maker/releases) or directly run our python script.
 
 ### Using the pre-built binary
 
@@ -79,15 +88,15 @@ Result:
 
 To make a photomosaic, specify the path to the destination image using `--dest_img`
 
-#### Option 2.1: Give a fair chance to each image
+#### Option 2.1: Give a fair chance to each tile
 
-This fitting option ensures that each image is used for the same amount of times.
+This fitting option ensures that each tile is used for the same amount of times.
 
 ```bash
-python3 make_img.py --path img --dest_img img/1.png --size 25 --dup 10 --out collage.png
+python3 make_img.py --path img --dest_img img/1.png --size 25 --dup 6 --out collage.png
 ```
 
-```--dup 10``` allows each source image to be used 10 times. Increase that number if you don't have enough source tiles or you want a better fitting result. Note that a large number of tiles may result in long computational time. To make sure the computation completes within a reasonable amount of time, please make sure that you are using less than 6000 tiles after duplication.
+```--dup 6``` specifies that each tile needs to be used 6 times (i.e. duplicates the set of tiles 6 times). Increase that number if you don't have enough source tiles or you want a better fitting result. Note that a large number of tiles may result in long computational time. To make sure the computation completes within a reasonable amount of time, please make sure that you are using less than 6000 tiles after duplication.
 
 | Original                                    | Fitting Result                                 |
 | ------------------------------------------- | ---------------------------------------------- |
@@ -121,7 +130,7 @@ python3 make_img.py --path img --out best-fit.png --dest_img img/1.png --size 25
 
 This option makes photomosaic only for the salient part of the destination image. Rest of the area is filled with a background color. 
 
-Add ```--salient``` flag to enable this option. You can still specify whether each image is used for the same amount of times with the ```--unfair``` flag.
+Add ```--salient``` flag to enable this option. You can still specify whether each tile is used for the same amount of times with the ```--unfair``` flag.
 
 Use ```--lower_thresh``` to specify the threshold for object detection. The threshold ranges from 0.0 to 1.0; a higher threshold would lead to less object area. The default threshold is 0.5.
 
@@ -165,7 +174,7 @@ optional arguments:
   --recursive           Whether to read the sub-folders for the specified path
                         (default: False)
   --num_process NUM_PROCESS
-                        Number of processes to use when loading images
+                        Number of processes to use when loading tiles
                         (default: 8)
   --out OUT             The filename of the output image (default: )
   --size SIZE           Size (side length) of each tile in pixels in the

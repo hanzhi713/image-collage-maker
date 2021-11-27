@@ -37,8 +37,8 @@ class _PARAMETER:
 class PARAMS:
     path = _PARAMETER(help="Path to the tiles", default=os.path.join(os.path.dirname(__file__), "img"), type=str)
     recursive = _PARAMETER(type=bool, default=False, help="Whether to read the sub-folders for the specified path")
-    num_process = _PARAMETER(type=int, default=mp.cpu_count() // 2, help="Number of processes to use when loading images")
-    out = _PARAMETER(default="", type=str, help="The filename of the output image")
+    num_process = _PARAMETER(type=int, default=mp.cpu_count() // 2, help="Number of processes to use when loading tile")
+    out = _PARAMETER(default="", type=str, help="The filename of the output collage/photomosaic")
     size = _PARAMETER(type=int, default=50, help="Size (side length) of each tile in pixels in the resulting collage/photomosaic")
     verbose = _PARAMETER(type=bool, default=False, help="Print progress message to console")
     resize_opt = _PARAMETER(type=str, default="center", choices=["center", "stretch"], 
@@ -384,7 +384,9 @@ def compute_blocks_salient(
     img_keys = [cv2.resize(img, (block_size, block_size), interpolation=cv2.INTER_AREA) for img in imgs]
     cvt_colorspace(colorspace, img_keys, dest_img)
     dest_img.shape = (thresh_map.shape[0] // block_size, block_size, thresh_map.shape[1] // block_size, block_size, 3)
-    return dest_img[ridx, :, cidx, :, :].reshape(-1, block_size * block_size * 3), \
+    dest_img = dest_img[ridx, :, cidx, :, :]
+    dest_img.shape = (-1, block_size * block_size * 3)
+    return dest_img, \
            np.array(img_keys).reshape(-1, dest_img.shape[1]), \
            np.full(imgs[0].shape, bg, dtype=imgs[0].dtype)
 
@@ -751,7 +753,7 @@ def main(args):
         if args.unfair:
             grid, sorted_imgs = calc_col_dup(
                 dest_img, imgs, args.max_width, args.colorspace, args.metric,
-                args.lower_thresh, args.background)
+                args.lower_thresh, args.background, args.freq_mul, not args.deterministic)
         else:
             grid, sorted_imgs = calc_salient_col_even(
                 dest_img, imgs, args.dup, args.colorspace, args.ctype,
@@ -759,7 +761,8 @@ def main(args):
     else:
         if args.unfair:
             grid, sorted_imgs = calc_col_dup(
-                dest_img, imgs, args.max_width, args.colorspace, args.metric)
+                dest_img, imgs, args.max_width, args.colorspace, args.metric, 
+                    None, None, args.freq_mul, not args.deterministic)
         else:
             grid, sorted_imgs = calc_col_even(
                 dest_img, imgs, args.dup, args.colorspace, args.ctype, args.metric)
