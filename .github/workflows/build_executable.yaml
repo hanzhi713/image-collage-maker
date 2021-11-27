@@ -8,13 +8,10 @@ jobs:
     runs-on: macos-10.15
     steps:
     - uses: actions/checkout@v2
-    - uses: conda-incubator/setup-miniconda@v2
+    - uses: actions/setup-python@v2
       with:
-        activate-environment: collage
-        environment-file: environment.yml
-        auto-activate-base: false
+        python-version: '3.9'
     - name: Build
-      shell: bash -l {0}
       run: |
         . ./build_scripts/install_dependencies.sh macos
         . ./build_scripts/build.sh macos
@@ -26,17 +23,15 @@ jobs:
         files: |
           ./dist/photomosaic-maker-3.0-macos-x64
           ./dist/photomosaic-maker-3.0-macos-x64.tar.gz
+          ./photomosaic-maker-3.0-macos-x64-build.tar.gz
   build-linux:
     runs-on: ubuntu-18.04
     steps:
     - uses: actions/checkout@v2
-    - uses: conda-incubator/setup-miniconda@v2
+    - uses: actions/setup-python@v2
       with:
-        activate-environment: collage
-        environment-file: environment.yml
-        auto-activate-base: false
+        python-version: '3.9'
     - name: Build
-      shell: bash -l {0}
       run: |
         . ./build_scripts/install_dependencies.sh ubuntu
         . ./build_scripts/build.sh ubuntu
@@ -48,15 +43,14 @@ jobs:
         files: |
           ./dist/photomosaic-maker-3.0-ubuntu-x64
           ./dist/photomosaic-maker-3.0-ubuntu-x64.tar.gz
+          ./photomosaic-maker-3.0-ubuntu-x64-build.tar.gz
   build-windows:
     runs-on: windows-2019
     steps:
     - uses: actions/checkout@v2
-    - uses: conda-incubator/setup-miniconda@v2
+    - uses: actions/setup-python@v2
       with:
-        activate-environment: collage
-        environment-file: environment-windows.yml
-        auto-activate-base: false
+        python-version: '3.9'
     - name: Build
       shell: bash -l {0}
       run: |
@@ -70,3 +64,4 @@ jobs:
         files: |
           ./dist/photomosaic-maker-3.0-windows-x64.exe
           ./dist/photomosaic-maker-3.0-windows-x64.tar.gz
+          ./photomosaic-maker-3.0-windows-x64-build.tar.gz

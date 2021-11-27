@@ -1,9 +1,0 @@
-name: collage
-dependencies:
-  - python=3.6
-  - nomkl
-  - numpy
-  - scipy 
-  - scikit-learn
-  - pillow 
-  - tqdm
