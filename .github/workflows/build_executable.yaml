@@ -21,9 +21,9 @@ jobs:
       with:
         draft: true
         files: |
-          ./dist/photomosaic-maker-3.0-macos-x64
-          ./dist/photomosaic-maker-3.0-macos-x64.tar.gz
-          ./photomosaic-maker-3.0-macos-x64-build.tar.gz
+          ./dist/photomosaic-maker-3.1-macos-x64
+          ./dist/photomosaic-maker-3.1-macos-x64.tar.gz
+          ./photomosaic-maker-3.1-macos-x64-build.tar.gz
   build-linux:
     runs-on: ubuntu-18.04
     steps:
@@ -41,9 +41,9 @@ jobs:
       with:
         draft: true
         files: |
-          ./dist/photomosaic-maker-3.0-ubuntu-x64
-          ./dist/photomosaic-maker-3.0-ubuntu-x64.tar.gz
-          ./photomosaic-maker-3.0-ubuntu-x64-build.tar.gz
+          ./dist/photomosaic-maker-3.1-ubuntu-x64
+          ./dist/photomosaic-maker-3.1-ubuntu-x64.tar.gz
+          ./photomosaic-maker-3.1-ubuntu-x64-build.tar.gz
   build-windows:
     runs-on: windows-2019
     steps:
@@ -62,6 +62,6 @@ jobs:
       with:
         draft: true
         files: |
-          ./dist/photomosaic-maker-3.0-windows-x64.exe
-          ./dist/photomosaic-maker-3.0-windows-x64.tar.gz
-          ./photomosaic-maker-3.0-windows-x64-build.tar.gz
+          ./dist/photomosaic-maker-3.1-windows-x64.exe
+          ./dist/photomosaic-maker-3.1-windows-x64.tar.gz
+          ./photomosaic-maker-3.1-windows-x64-build.tar.gz

@@ -1,5 +1,5 @@
 #!/bin/bash
-VERSION=3.0
+VERSION=3.1
 PLATFORM=$1
 NAME=photomosaic-maker-${VERSION}-$PLATFORM-x64
 
