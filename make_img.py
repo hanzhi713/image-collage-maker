@@ -67,21 +67,29 @@ class PARAMS:
     # ---- unfair tile assginment options -----
     unfair = _PARAMETER(type=bool, default=False, 
         help="Whether to allow each tile to be used different amount of times (unfair tile usage). ")
-    max_width = _PARAMETER(type=int, default=80, help="Maximum width of the collage. This option is only valid if unfair option is enabled")    
+    max_width = _PARAMETER(type=int, default=80, 
+        help="Maximum width of the collage. This option is only valid if unfair option is enabled")    
     freq_mul = _PARAMETER(type=int, default=1, 
         help="Frequency multiplier to balance tile fairless and mosaic quality. Minimum: 0. "
              "More weight will be put on tile fairness when this number increases.")
-    deterministic = _PARAMETER(type=bool, default=False, help="Do not randomize the tiles for unfair tile usage")
+    deterministic = _PARAMETER(type=bool, default=False, 
+        help="Do not randomize the tiles. This option is only valid if unfair option is enabled")
 
     # --- fair tile assignment options ---
     dup = _PARAMETER(type=int, default=1, help="Duplicate the set of tiles by how many times")
 
     # ---- saliency detection options ---
     salient = _PARAMETER(type=bool, default=False, help="Make photomosaic for salient objects only")
-    lower_thresh = _PARAMETER(type=float, default=0.5, help="The threshold for saliency detection, between 0.0 and 1.0")
+    lower_thresh = _PARAMETER(type=float, default=0.5, 
+        help="The threshold for saliency detection, between 0.0 (no object area = blank) and 1.0 (maximum object area = original image)")
     background = _PARAMETER(nargs=3, type=int, default=(255, 255, 255), 
         help="Background color in RGB for non salient part of the image")
 
+    # ---- blending options ---
+    blending = _PARAMETER(type=str, default="alpha", choices=["alpha", "brightness"], 
+        help="The types of blending used. alpha: alpha (transparency) blending. Brightness: blending of brightness (lightness) channel in the HSL colorspace")
+    blending_level = _PARAMETER(type=float, default=0.0, 
+        help="Level of blending, between 0.0 (no blending) and 1.0 (maximum blending). Default is no blending")
 
 def bgr_sum(img: np.ndarray) -> float:
     """
@@ -766,7 +774,13 @@ def main(args):
         else:
             grid, sorted_imgs = calc_col_even(
                 dest_img, imgs, args.dup, args.colorspace, args.ctype, args.metric)
-    save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
+    
+    collage = make_collage(grid, sorted_imgs, args.rev_row)
+    if args.blending == "alpha":
+        collage = alpha_blend(collage, dest_img, 1.0 - args.blending_level)
+    else:
+        collage = lightness_blend(collage, dest_img, 1.0 - args.blending_level)
+    save_img(collage, args.out, "")
 
 
 if __name__ == "__main__":

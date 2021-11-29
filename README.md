@@ -40,7 +40,7 @@ You can either use our pre-built binaries from [release](https://github.com/hanz
 
 Binaries can be downloaded from [release](https://github.com/hanzhi713/image-collage-maker/releases).
 
-On Windows, my program may be blocked by Windows Defender because it is not signed. Don't worry as there is no security risk. On MacOS or Linux, after downloading the binary, you may need to add executing permission. Open your terminal, go to the file's directory and type
+On Windows, my program may be blocked by Windows Defender because it is not signed (signing costs money!). Don't worry as there is no security risk. On MacOS or Linux, after downloading the binary, you may need to add executing permission. Open your terminal, go to the file's directory and type
 
 ```bash
 chmod +x ./photomosaic-maker-3.0-macos-x64
@@ -96,7 +96,7 @@ This fitting option ensures that each tile is used for the same amount of times.
 python3 make_img.py --path img --dest_img img/1.png --size 25 --dup 6 --out collage.png
 ```
 
-```--dup 6``` specifies that each tile needs to be used 6 times (i.e. duplicates the set of tiles 6 times). Increase that number if you don't have enough source tiles or you want a better fitting result. Note that a large number of tiles may result in long computational time. To make sure the computation completes within a reasonable amount of time, please make sure that you are using less than 6000 tiles after duplication.
+```--dup 6``` specifies that each tile needs to be used 6 times (i.e. duplicates the set of tiles 6 times). Increase that number if you don't have enough source tiles or you want a better fitting result. Note that a large number of tiles may result in long computational time. To make sure the computation completes within a reasonable amount of time, it is recommended that you use less than 6000 tiles after duplication. Tile number larger than 6000 will probably takes longer than a minute to compute. Note that this recommended limit does **not** apply for the best fit option (see section below). 
 
 | Original                                    | Fitting Result                                 |
 | ------------------------------------------- | ---------------------------------------------- |
@@ -153,7 +153,7 @@ python make_img.py --recursive --path img/zhou --dest_img examples/messi.jpg --s
 ```python3 make_img.py -h``` will give you all the available command line options.
 
 ```
-$ python make_img.py -h
+$ python make_img.py --help
 usage: make_img.py [-h] [--path PATH] [--recursive]
                    [--num_process NUM_PROCESS] [--out OUT] [--size SIZE]
                    [--verbose] [--resize_opt {center,stretch}]
@@ -166,7 +166,9 @@ usage: make_img.py [-h] [--path PATH] [--recursive]
                    [--max_width MAX_WIDTH] [--freq_mul FREQ_MUL]
                    [--deterministic] [--dup DUP] [--salient]
                    [--lower_thresh LOWER_THRESH]
-                   [--background BACKGROUND BACKGROUND BACKGROUND] [--exp]
+                   [--background BACKGROUND BACKGROUND BACKGROUND]
+                   [--blending {alpha,brightness}]
+                   [--blending_level BLENDING_LEVEL] [--exp]
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -174,16 +176,17 @@ optional arguments:
   --recursive           Whether to read the sub-folders for the specified path
                         (default: False)
   --num_process NUM_PROCESS
-                        Number of processes to use when loading tiles
-                        (default: 8)
-  --out OUT             The filename of the output image (default: )
+                        Number of processes to use when loading tile (default:
+                        8)
+  --out OUT             The filename of the output collage/photomosaic
+                        (default: )
   --size SIZE           Size (side length) of each tile in pixels in the
                         resulting collage/photomosaic (default: 50)
   --verbose             Print progress message to console (default: False)
   --resize_opt {center,stretch}
-                        How to resize each tile so they become square
-                        images. Center: crop a square in the center. Stretch:
-                        stretch the tile (default: center)
+                        How to resize each tile so they become square images.
+                        Center: crop a square in the center. Stretch: stretch
+                        the tile (default: center)
   --ratio RATIO RATIO   Aspect ratio of the output image (default: (16, 9))
   --sort {none,bgr_sum,av_hue,av_sat,av_lum,rand,pca_bgr,pca_hsv,pca_lab,pca_gray,pca_lum,pca_sat,pca_hue,tsne_bgr,tsne_hsv,tsne_lab,tsne_gray,tsne_lum,tsne_sat,tsne_hue}
                         Sort method to use (default: bgr_sum)
@@ -210,18 +213,28 @@ optional arguments:
   --freq_mul FREQ_MUL   Frequency multiplier to balance tile fairless and
                         mosaic quality. Minimum: 0. More weight will be put on
                         tile fairness when this number increases. (default: 1)
-  --deterministic       Do not randomize the tiles for unfair tile usage
-                        (default: False)
+  --deterministic       Do not randomize the tiles. This option is only valid
+                        if unfair option is enabled (default: False)
   --dup DUP             Duplicate the set of tiles by how many times (default:
                         1)
   --salient             Make photomosaic for salient objects only (default:
                         False)
   --lower_thresh LOWER_THRESH
-                        The threshold for saliency detection, between 0.0 and
-                        1.0 (default: 0.5)
+                        The threshold for saliency detection, between 0.0 (no
+                        object area = blank) and 1.0 (maximum object area =
+                        original image) (default: 0.5)
   --background BACKGROUND BACKGROUND BACKGROUND
                         Background color in RGB for non salient part of the
                         image (default: (255, 255, 255))
+  --blending {alpha,brightness}
+                        The types of blending used. alpha: alpha
+                        (transparency) blending. Brightness: blending of
+                        brightness (lightness) channel in the HSL colorspace
+                        (default: alpha)
+  --blending_level BLENDING_LEVEL
+                        Level of blending, between 0.0 (no blending) and 1.0
+                        (maximum blending). Default is no blending (default:
+                        0.0)
   --exp                 Do experiments (for testing only) (default: False)
 ```
 

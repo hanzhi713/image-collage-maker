@@ -220,8 +220,7 @@ if __name__ == "__main__":
     # right panel ROW 0
     file_path = StringVar()
     file_path.set("N/A")
-    Label(right_panel, text="Path of source images:").grid(
-        row=0, columnspan=2, sticky="W", pady=(10, 2))
+    Label(right_panel, text="Path to tiles:").grid(row=0, columnspan=2, sticky="W", pady=(10, 2))
 
     # right panel ROW 1
     Label(right_panel, textvariable=file_path, wraplength=150).grid(
@@ -368,7 +367,7 @@ if __name__ == "__main__":
     dest_img_path = StringVar()
     dest_img_path.set("N/A")
     dest_img = None
-    Label(right_col_opt_panel, text="Path of destination image: ").grid(
+    Label(right_col_opt_panel, text="Path to the target image: ").grid(
         row=0, columnspan=2, sticky="W", pady=2)
 
     # right collage option panel ROW 1:
@@ -408,7 +407,8 @@ if __name__ == "__main__":
                 show_img(mkg.alpha_blend(result_collage, dest_img, 1 - alpha_scale.get() / 100), False)
     
     # right collage option panel ROW 3:
-    Label(right_col_opt_panel, text="Color Blend:").grid(row=3, column=0, sticky="W", padx=(0, 5))
+    LabelWithTooltip(right_col_opt_panel, text="Color Blend:", tooltip=mkg.PARAMS.blending.help).grid(
+        row=3, column=0, sticky="W", padx=(0, 5))
 
     # right collage option panel ROW 4:
     colorization_opt = StringVar()
@@ -464,8 +464,7 @@ if __name__ == "__main__":
     collage_even_panel.grid(row=11, columnspan=2, sticky="W")
 
     # collage even panel ROW 0
-    Label(collage_even_panel, text="C Types: ").grid(
-        row=0, column=0, sticky="W")
+    Label(collage_even_panel, text="C Types: ").grid(row=0, column=0, sticky="W")
     ctype = StringVar()
     ctype.set("float32")
     OptionMenu(collage_even_panel, ctype, "", *mkg.PARAMS.ctype.choices).grid(row=0, column=1, sticky="W")
