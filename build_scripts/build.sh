@@ -19,7 +19,7 @@ else
     exit 1
 fi
 
-ARGS="--hidden-import='PIL._tkinter_finder' -y --exclude-module umap --exclude-module matplotlib"
+ARGS="-y --exclude-module umap --exclude-module matplotlib"
 pyinstaller $ARGS --name "${NAME}-archive" gui.py
 pyinstaller $ARGS --onefile --name "$NAME${SUFFIX}" gui.py
 

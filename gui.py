@@ -15,7 +15,6 @@ import time
 import cv2
 import numpy as np
 import make_img as mkg
-from PIL import Image, ImageTk
 
 
 def limit_wh(w: int, h: int, max_width: int, max_height: int) -> Tuple[int, int]:
@@ -208,10 +207,9 @@ if __name__ == "__main__":
             assert img.dtype == np.float32
             img = img * 255
             img = img.astype(np.uint8)
-        cv2.cvtColor(img, cv2.COLOR_BGR2RGB, dst=img)
-
+        _, data = cv2.imencode(".ppm", img)
         # prevent the image from being garbage-collected
-        root.preview = ImageTk.PhotoImage(image=Image.fromarray(img))
+        root.preview = PhotoImage(data=data.tobytes())
         canvas.delete("all")
         canvas.create_image((width - w) // 2, (height - h) // 2,
                             image=root.preview, anchor=NW)
