@@ -8,6 +8,7 @@ import time
 import platform
 from typing import Any, List, Tuple
 import itertools
+import math
 import traceback
 
 import cv2
@@ -17,6 +18,9 @@ from scipy.stats import rankdata
 from scipy.spatial.distance import cdist
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
+
+Grid = Tuple[int, int] # grid size = (width, height)
+BackgroundRGB = Tuple[int, int, int]
 
 if mp.current_process().name != "MainProcess":
     sys.stdout = open(os.devnull, "w")
@@ -216,7 +220,7 @@ class JVOutWrapper:
             self.tqdm.close()
 
 
-def calc_grid_size(rw: int, rh: int, num_imgs: int) -> Tuple[int, int]:
+def calc_grid_size(rw: int, rh: int, num_imgs: int) -> Grid:
     """
     :param rw: the width of the target image
     :param rh: the height of the target image
@@ -225,13 +229,13 @@ def calc_grid_size(rw: int, rh: int, num_imgs: int) -> Tuple[int, int]:
     """
     possible_wh = []
     for width in range(1, num_imgs):
-        height = num_imgs // width
+        height = math.ceil(num_imgs / width)
         possible_wh.append((width, height))
 
     return min(possible_wh, key=lambda x: ((x[0] / x[1]) - (rw / rh)) ** 2)
 
 
-def make_collage(grid: Tuple[int, int], sorted_imgs: List[np.ndarray], rev=False) -> np.ndarray:
+def make_collage(grid: Grid, sorted_imgs: List[np.ndarray], rev=False) -> np.ndarray:
     """
     :param grid: grid size
     :param sorted_imgs: list of images sorted in correct position
@@ -239,7 +243,16 @@ def make_collage(grid: Tuple[int, int], sorted_imgs: List[np.ndarray], rev=False
     :return: a collage
     """
     print("Aligning images on the grid...")
-    combined_img = np.asarray(sorted_imgs[:np.prod(grid)])
+    total = np.prod(grid)
+    if len(sorted_imgs) < total:
+        diff = total - len(sorted_imgs)
+        print(f"Note: {diff} white tiles will be added to the grid.")
+        sorted_imgs.extend([get_background_tile(sorted_imgs[0].shape, (255, 255, 255))] * diff)
+    elif len(sorted_imgs) > total:
+        print(f"Note: {len(sorted_imgs) - total} tiles will be dropped from the grid.")
+        del sorted_imgs[total:]
+    
+    combined_img = np.asarray(sorted_imgs)
     combined_img.shape = (*grid[::-1], *sorted_imgs[0].shape)
     if rev:
         combined_img[1::2] = combined_img[1::2, ::-1]
@@ -270,7 +283,7 @@ def lightness_blend(combined_img: np.ndarray, dest_img: np.ndarray, alpha=0.9):
     return combined_img
 
 
-def sort_collage(imgs: List[np.ndarray], ratio: Tuple[int, int], sort_method="pca_lab", rev_sort=False) -> Tuple[Tuple[int, int], np.ndarray]:
+def sort_collage(imgs: List[np.ndarray], ratio: Grid, sort_method="pca_lab", rev_sort=False) -> Tuple[Grid, np.ndarray]:
     """
     :param imgs: list of images
     :param ratio: The aspect ratio of the collage
@@ -374,34 +387,38 @@ def compute_block_map(thresh_map: np.ndarray, block_size: int, lower_thresh: int
     return row_idx, col_idx, thresh_map
 
 
+def get_background_tile(shape: Tuple[int], background: BackgroundRGB) -> np.ndarray:
+    bg = np.asarray(background[::-1], dtype=np.float32)
+    bg *= 1 / 255.0
+    return np.full(shape, bg, dtype=np.float32)
+
+
 def compute_blocks_salient(
     colorspace: str, dest_img: np.ndarray, imgs: List[np.ndarray], 
     block_size: int, ridx: np.ndarray, cidx: np.ndarray, 
-    thresh_map: np.ndarray, lower_thresh: int, background: Tuple[int, int, int]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    thresh_map: np.ndarray, lower_thresh: int, background_tile: np.ndarray) -> Tuple[Grid, np.ndarray, np.ndarray]:
     """
     Reorder the blocks for the salient parts of the dest image. Convert the blocks and tiles to the desired colorspace.
 
-    returns [blocked image, resized tiles, background tile] of sizes [(N x B^2), (M x B^2), BxB]
-    where N is the number of salient blocks in dest_img, B is the block size, and M is the number of tiles
+    returns [grid size, blocked image (1), resized & flattened tiles (2)]. (1) shape: (N x 3B^2). (2) shape (M x 3B^2)
+    where N is the number of salient blocks in dest_img, 3 is the number of channels, B is the block size, and M is the number of tiles
     """
-    dest_img = cv2.resize(dest_img, thresh_map.shape[::-1], interpolation=cv2.INTER_AREA)
-    bg = np.asarray(background[::-1], dtype=imgs[0].dtype)
-    bg *= 1 / 255.0
-    dest_img[thresh_map < lower_thresh] = bg
+    if dest_img.shape[:2] != thresh_map.shape:
+        dest_img = cv2.resize(dest_img, thresh_map.shape[::-1], interpolation=cv2.INTER_AREA)
+    dest_img[thresh_map < lower_thresh] = background_tile[0, 0, :]
 
     img_keys = [cv2.resize(img, (block_size, block_size), interpolation=cv2.INTER_AREA) for img in imgs]
     cvt_colorspace(colorspace, img_keys, dest_img)
-    dest_img.shape = (thresh_map.shape[0] // block_size, block_size, thresh_map.shape[1] // block_size, block_size, 3)
+    grid = (thresh_map.shape[1] // block_size, thresh_map.shape[0] // block_size)
+    dest_img.shape = (grid[1], block_size, grid[0], block_size, 3)
     dest_img = dest_img[ridx, :, cidx, :, :]
     dest_img.shape = (-1, block_size * block_size * 3)
-    return dest_img, \
-           np.array(img_keys).reshape(-1, dest_img.shape[1]), \
-           np.full(imgs[0].shape, bg, dtype=imgs[0].dtype)
+    return grid, dest_img, np.array(img_keys).reshape(-1, dest_img.shape[1])
 
 
 def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspace="lab", 
-                               ctype="float32", metric="euclidean", lower_thresh=0.5,
-                               background=(255, 255, 255), v=None) -> Tuple[Tuple[int, int], List[np.ndarray]]:
+                          ctype="float32", metric="euclidean", lower_thresh=0.5,
+                          background=(255, 255, 255), v=None) -> Tuple[Grid, List[np.ndarray]]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels constitute of salient objects of the
     target image, with the restriction that every image should be used the same amount of times
@@ -416,26 +433,21 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, c
     # this is just the initial grid size
     grid = calc_grid_size(width, height, len(imgs))
     block_size = min(width // grid[0], height // grid[1])
-    prev_block_size = block_size
     _, thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((dest_img * 255).astype(np.uint8))
 
     while True:
-        ridx, _, _ = compute_block_map(thresh_map, block_size, lower_thresh)
+        ridx, cidx, thresh_map = compute_block_map(thresh_map, block_size, lower_thresh)
         if len(ridx) >= len(imgs):
             break
-        prev_block_size = block_size
         block_size -= 1
     
-    block_size = prev_block_size
-    ridx, cidx, thresh_map = compute_block_map(thresh_map, block_size, lower_thresh)
     print("Block size:", block_size)
+    print(f"Note: {len(ridx) - len(imgs)} tiles will be used 1 more time than others.")
+    imgs.extend(imgs[:len(ridx) - len(imgs)])
 
-    grid = (width // block_size, height // block_size)
+    bg_img = get_background_tile(imgs[0].shape, background)
+    grid, dest_img, img_keys = compute_blocks_salient(colorspace, dest_img, imgs, block_size, ridx, cidx, thresh_map, lower_thresh, bg_img)
     print("Grid size:", grid)
-    assert len(ridx) <= len(imgs)
-    del imgs[len(ridx):]
-
-    dest_img, img_keys, bg_img = compute_blocks_salient(colorspace, dest_img, imgs, block_size, ridx, cidx, thresh_map, lower_thresh, background)
 
     print("Computing cost matrix...")
     cols, cost = solve_lap(cdist(img_keys, dest_img, metric=metric).astype(ctype), v)
@@ -448,13 +460,13 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, c
     return grid, [imgs[i] for i in assignment]
 
 
-def compute_blocks(colorspace: str, dest_img: np.ndarray, imgs: List[np.ndarray], grid: Tuple[int, int]) -> Tuple[np.ndarray, np.ndarray]:
+def compute_blocks(colorspace: str, dest_img: np.ndarray, imgs: List[np.ndarray], grid: Grid) -> Tuple[np.ndarray, np.ndarray]:
     """
     Compute and reorder the blocks of the dest_img. Block size is inferred from grid size.
     Convert the blocks and tiles to the desired colorspace.
 
-    returns [blocked image, resized tiles] of sizes [(N x B^2), (M x B^2)]
-    where N is the number of blocks in dest_img, B is the block size, and M is the number of tiles
+    returns [blocked image, resized tiles] of sizes [(N x 3B^2), (M x 3B^2)]
+    where N is the number of blocks in dest_img, 3 is the number of channels, B is the block size, and M is the number of tiles
 
     N = grid width x grid height
     """
@@ -470,7 +482,7 @@ def compute_blocks(colorspace: str, dest_img: np.ndarray, imgs: List[np.ndarray]
 
 
 def calc_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspace="lab", 
-                  ctype="float32", metric="euclidean", v=None, grid=None) -> Tuple[Tuple[int, int], List[np.ndarray]]:
+                  ctype="float32", metric="euclidean", v=None, grid=None) -> Tuple[Grid, List[np.ndarray]]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
     with the restriction that every image should be used the same amount of times
@@ -490,8 +502,8 @@ def calc_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspac
     print("Duplicated {} times".format(dup))
     imgs = imgs * dup
 
-    print("Note:", len(imgs) - total, "images will be thrown away from the photomosaic")
-    del imgs[total:]
+    print(f"{total - len(imgs)} tiles will be used 1 more time than others.")
+    imgs.extend(imgs[:total - len(imgs)])
     
     dest_img, img_keys = compute_blocks(colorspace, dest_img, imgs, grid)
     print("Computing cost matrix...")
@@ -503,7 +515,7 @@ def calc_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspac
 
 def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width: int,
                  colorspace: str, metric: str, lower_thresh=None,
-                 background=None, freq_mul=1, randomize=True) -> Tuple[Tuple[int, int], List[np.ndarray]]:
+                 background=None, freq_mul=1, randomize=True) -> Tuple[Grid, List[np.ndarray]]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels that constitute 
     of the salient objects of the target image, given that every image could be used arbitrary amount of times
@@ -525,11 +537,13 @@ def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width: int,
         _, thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((dest_img * 255).astype(np.uint8))
 
         ridx, cidx, thresh_map = compute_block_map(thresh_map, block_size, lower_thresh)
-        dest_img, img_keys, bg_img = compute_blocks_salient(colorspace, dest_img, imgs, block_size, ridx, cidx, thresh_map, lower_thresh, background)
+        bg_img = get_background_tile(imgs[0].shape, background)
+        _grid, dest_img, img_keys = compute_blocks_salient(colorspace, dest_img, imgs, block_size, ridx, cidx, thresh_map, lower_thresh, bg_img)
+        assert grid == _grid
     else:
         dest_img, img_keys = compute_blocks(colorspace, dest_img, imgs, grid)
 
-    print("Computing assignments...")
+    print("Computing cost matrix...")
     img_keys = np.asarray(img_keys)
     assignment = np.full(dest_img.shape[0], -1, dtype=np.int32)
     _indices = np.arange(0, dest_img.shape[0], 1, dtype=np.int32)
@@ -537,7 +551,7 @@ def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width: int,
         np.random.shuffle(_indices)
     indices_freq = np.zeros(len(img_keys), dtype=np.float64)
 
-    dist_mat = cdist(img_keys, dest_img, metric=metric).transpose().copy()
+    dist_mat = cdist(dest_img, img_keys, metric=metric)
     if freq_mul > 0:
         for i in tqdm(_indices, desc="[Computing assignments]", unit="pixel", unit_divisor=1000, unit_scale=True,
                         ncols=pbar_ncols):
@@ -551,7 +565,7 @@ def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width: int,
             indices_freq[idx] += freq_mul
     else:
         np.argmin(dist_mat, axis=1, out=assignment)
-    print("Total assignment cost:", dist_mat[assignment, :].sum())
+    print("Total assignment cost:", dist_mat[:, assignment].sum())
 
     if salient:
         imgs.append(bg_img)
@@ -773,7 +787,7 @@ def main(args):
                     None, None, args.freq_mul, not args.deterministic)
         else:
             grid, sorted_imgs = calc_col_even(
-                dest_img, imgs, args.dup, args.colorspace, args.ctype, args.metric)
+                dest_img, imgs, args.dup, args.colorspace, args.ctype, args.metric, args.background)
     
     collage = make_collage(grid, sorted_imgs, args.rev_row)
     if args.blending == "alpha":

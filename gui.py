@@ -168,7 +168,7 @@ if __name__ == "__main__":
 
     # ---------------- left panel's children ----------------
     # left panel ROW 0
-    canvas = Canvas(left_panel, width=800, height=560)
+    canvas = Canvas(left_panel, width=800, height=600)
     canvas.grid(row=0, column=0)
 
     # left panel ROW 1
@@ -257,7 +257,7 @@ if __name__ == "__main__":
         try:
             imgs = mkg.read_images(fp, (size, size), recursive.get(), 4, resize_opt.get())
             grid = mkg.calc_grid_size(16, 10, len(imgs))
-            return mkg.make_collage(grid, imgs, False)
+            return mkg.make_collage(grid, imgs.copy(), False)
         except:
             messagebox.showerror("Error", traceback.format_exc())
 
@@ -526,7 +526,7 @@ if __name__ == "__main__":
                 else:               
                     def action():
                         return mkg.calc_col_even(
-                            dest_img, imgs, dup.get(), colorspace.get(), ctype.get(), dist_metric.get(), out_wrapper)
+                            dest_img, imgs, dup.get(), colorspace.get(), ctype.get(), dist_metric.get(), v=out_wrapper)
             else:
                 assert max_width.get() > 0, "Max width must be a positive number"
                 assert freq_mul.get() >= 0, "Max width must be a nonnegative real number"
