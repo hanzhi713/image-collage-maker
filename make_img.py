@@ -9,15 +9,10 @@ import platform
 from typing import Any, List, Tuple
 import itertools
 import math
-import traceback
 
 import cv2
 import numpy as np
 from tqdm import tqdm
-from scipy.stats import rankdata
-from scipy.spatial.distance import cdist
-from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
 
 Grid = Tuple[int, int] # grid size = (width, height)
 BackgroundRGB = Tuple[int, int, int]
@@ -52,9 +47,7 @@ class PARAMS:
     # ---------------- sort collage options ------------------
     ratio = _PARAMETER(type=int, default=(16, 9), help="Aspect ratio of the output image", nargs=2)
     sort = _PARAMETER(type=str, default="bgr_sum", help="Sort method to use", choices=[
-        "none", "bgr_sum", "av_hue", "av_sat", "av_lum", "rand",
-        "pca_bgr", "pca_hsv", "pca_lab", "pca_gray", "pca_lum", "pca_sat", "pca_hue",
-        "tsne_bgr", "tsne_hsv", "tsne_lab", "tsne_gray", "tsne_lum", "tsne_sat", "tsne_hue"
+        "none", "bgr_sum", "av_hue", "av_sat", "av_lum", "rand"
     ])
     rev_row = _PARAMETER(type=bool, default=False, help="Whether to use the S-shaped alignment.")
     rev_sort = _PARAMETER(type=bool, default=False, help="Sort in the reverse direction.")
@@ -63,10 +56,8 @@ class PARAMS:
     dest_img = _PARAMETER(type=str, default="", help="The path to the destination image that you want to build a photomosaic for")
     colorspace = _PARAMETER(type=str, default="lab", choices=["hsv", "hsl", "bgr", "lab", "luv"], 
         help="The colorspace used to calculate the metric")
-    metric = _PARAMETER(type=str, default="euclidean", choices=["euclidean", "cityblock", "chebyshev"], 
+    metric = _PARAMETER(type=str, default="euclidean", choices=["euclidean", "cityblock", "chebyshev", "cosine"], 
         help="Distance metric used when evaluating the distance between two color vectors")
-    ctype = _PARAMETER(type=str, default="float32", choices=["float32", "float64"],
-        help="C type of the cost matrix. float32 is a good compromise between computational time and accuracy. Leave as default if unsure.")
     
     # ---- unfair tile assginment options -----
     unfair = _PARAMETER(type=bool, default=False, 
@@ -95,6 +86,41 @@ class PARAMS:
     blending_level = _PARAMETER(type=float, default=0.0, 
         help="Level of blending, between 0.0 (no blending) and 1.0 (maximum blending). Default is no blending")
 
+
+def cdist(A: np.ndarray, B: np.ndarray, metric="euclidean") -> np.ndarray:
+    """
+    Simple implementation of scipy.spatial.distance.cdist
+    """
+    if metric == "cosine":
+        A = A / np.linalg.norm(A, axis=1, keepdims=True)
+        B = B / np.linalg.norm(B, axis=1, keepdims=True)
+        return 1 - np.inner(A, B)
+
+    # in theory we can do diff = A[:, np.newaxis, :] - B[np.newaxis, :, :]
+    # but this may consume too much memory
+    # so we calculate the distance matrix row by row instead
+    dist_mat = np.zeros((A.shape[0], B.shape[0]), dtype=np.float32)
+    if metric == "euclidean":
+        for i in range(A.shape[0]):
+            diff = A[i, np.newaxis, :] - B
+            dist_mat[i, :] = np.linalg.norm(diff, axis=1)
+        return dist_mat
+    elif metric == "cityblock":
+        for i in range(A.shape[0]):
+            diff = A[i, np.newaxis, :] - B
+            np.abs(diff, out=diff)
+            np.sum(diff, axis=1, out=dist_mat[i, :])
+        return dist_mat
+    elif metric == "chebyshev":
+        for i in range(A.shape[0]):
+            diff = A[i, np.newaxis, :] - B
+            np.abs(diff, out=diff)
+            np.max(diff, axis=1, out=dist_mat[i, :])
+        return dist_mat
+    else:
+        raise ValueError(f"invalid metric {metric}")
+
+
 def bgr_sum(img: np.ndarray) -> float:
     """
     compute the sum of all RGB values across an image
@@ -116,6 +142,7 @@ def av_sat(img: np.ndarray) -> float:
     """
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     return np.mean(hsv[:, :, 1])
+
 
 def av_lum(img) -> float:
     """
@@ -296,24 +323,13 @@ def sort_collage(imgs: List[np.ndarray], ratio: Grid, sort_method="pca_lab", rev
     grid = calc_grid_size(ratio[0], ratio[1], num_imgs)
 
     print("Calculated grid size based on your aspect ratio:", grid)
-    print("Note that", num_imgs - grid[0] * grid[1], "images will be thrown away from the collage")
     print("Sorting images...")
 
     if sort_method == "none":
         return grid, imgs
     
-    if sort_method.startswith("pca_"):
-        sort_function = eval(sort_method)
-        img_keys = PCA(1).fit_transform(list(map(sort_function, imgs)))[:, 0]
-    elif sort_method.startswith("tsne_"):
-        sort_function = eval(sort_method.replace("tsne", "pca"))
-        img_keys = TSNE(n_components=1, verbose=1, init="pca").fit_transform(
-            list(map(sort_function, imgs)))[:, 0]
-    else:
-        sort_function = eval(sort_method)
-        img_keys = np.array(list(map(sort_function, imgs)))
-
-    indices = np.argsort(img_keys)
+    sort_function = eval(sort_method)
+    indices = np.array(list(map(sort_function, imgs))).argsort()
     if rev_sort:
         indices = indices[::-1]
     print("Time taken: {}s".format(np.round(time.time() - t, 2)))
@@ -417,8 +433,7 @@ def compute_blocks_salient(
 
 
 def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspace="lab", 
-                          ctype="float32", metric="euclidean", lower_thresh=0.5,
-                          background=(255, 255, 255), v=None) -> Tuple[Grid, List[np.ndarray]]:
+                          metric="euclidean", lower_thresh=0.5, background=(255, 255, 255), v=None) -> Tuple[Grid, List[np.ndarray]]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels constitute of salient objects of the
     target image, with the restriction that every image should be used the same amount of times
@@ -450,7 +465,7 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, c
     print("Grid size:", grid)
 
     print("Computing cost matrix...")
-    cols, cost = solve_lap(cdist(img_keys, dest_img, metric=metric).astype(ctype), v)
+    cols, cost = solve_lap(cdist(img_keys, dest_img, metric=metric), v)
 
     imgs.append(bg_img)
     assignment = np.full(grid[::-1], len(imgs) - 1, dtype=np.int32)
@@ -482,7 +497,7 @@ def compute_blocks(colorspace: str, dest_img: np.ndarray, imgs: List[np.ndarray]
 
 
 def calc_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspace="lab", 
-                  ctype="float32", metric="euclidean", v=None, grid=None) -> Tuple[Grid, List[np.ndarray]]:
+                  metric="euclidean", v=None, grid=None) -> Tuple[Grid, List[np.ndarray]]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
     with the restriction that every image should be used the same amount of times
@@ -507,7 +522,7 @@ def calc_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspac
     
     dest_img, img_keys = compute_blocks(colorspace, dest_img, imgs, grid)
     print("Computing cost matrix...")
-    cols, cost = solve_lap(cdist(img_keys, dest_img, metric=metric).astype(ctype), v)
+    cols, cost = solve_lap(cdist(img_keys, dest_img, metric=metric), v)
 
     print("Time taken: {}s".format((np.round(time.time() - t, 2))))
     return grid, [imgs[i] for i in cols]
@@ -546,26 +561,29 @@ def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width: int,
     print("Computing cost matrix...")
     img_keys = np.asarray(img_keys)
     assignment = np.full(dest_img.shape[0], -1, dtype=np.int32)
-    _indices = np.arange(0, dest_img.shape[0], 1, dtype=np.int32)
-    if randomize:
-        np.random.shuffle(_indices)
-    indices_freq = np.zeros(len(img_keys), dtype=np.float64)
-
     dist_mat = cdist(dest_img, img_keys, metric=metric)
-    if freq_mul > 0:
-        for i in tqdm(_indices, desc="[Computing assignments]", unit="pixel", unit_divisor=1000, unit_scale=True,
-                        ncols=pbar_ncols):
-            # Compute the distance between the current pixel and each image in the set
-            ranks = rankdata(dist_mat[i, :], "average")
-            ranks += indices_freq
-            idx = np.argmin(ranks)
+    row_range = np.arange(0, dist_mat.shape[0], dtype=np.int32)
 
+    if freq_mul > 0:
+        print("Computing rank matrix...")
+        rank_mat = np.argsort(dist_mat, axis=1)
+        rank_mat_float = rank_mat.astype(np.float32)
+        rank_mat_float[row_range[:, np.newaxis], rank_mat] = np.arange(0, dist_mat.shape[1], dtype=np.int32)
+
+        print("Computing assignments...")
+        _indices = row_range
+        if randomize:
+            _indices = row_range.copy()
+            np.random.shuffle(_indices)
+        indices_freq = np.zeros(len(img_keys), dtype=np.float32)
+        for i in _indices:
             # Find the index of the image which best approximates the current pixel
+            idx = np.argmin(rank_mat_float[i, :] + indices_freq)
             assignment[i] = idx
             indices_freq[idx] += freq_mul
     else:
         np.argmin(dist_mat, axis=1, out=assignment)
-    print("Total assignment cost:", dist_mat[:, assignment].sum())
+    print("Total assignment cost:", dist_mat[row_range, assignment].sum())
 
     if salient:
         imgs.append(bg_img)
@@ -778,7 +796,7 @@ def main(args):
                 args.lower_thresh, args.background, args.freq_mul, not args.deterministic)
         else:
             grid, sorted_imgs = calc_salient_col_even(
-                dest_img, imgs, args.dup, args.colorspace, args.ctype,
+                dest_img, imgs, args.dup, args.colorspace,
                 args.metric, args.lower_thresh, args.background)
     else:
         if args.unfair:
@@ -787,7 +805,7 @@ def main(args):
                     None, None, args.freq_mul, not args.deterministic)
         else:
             grid, sorted_imgs = calc_col_even(
-                dest_img, imgs, args.dup, args.colorspace, args.ctype, args.metric, args.background)
+                dest_img, imgs, args.dup, args.colorspace, args.metric, args.background)
     
     collage = make_collage(grid, sorted_imgs, args.rev_row)
     if args.blending == "alpha":

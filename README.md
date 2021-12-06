@@ -73,7 +73,7 @@ python3 gui.py
 ### Option 1: Sorting
 
 ```bash
-python3 make_img.py --path img --sort pca_bgr --size 50
+python3 make_img.py --path img --sort bgr_sum --size 50
 ```
 
 Use ```--ratio w h``` to change the aspect ratio, whose default is 16:9

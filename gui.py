@@ -463,12 +463,6 @@ if __name__ == "__main__":
     collage_even_panel = PanedWindow(right_col_opt_panel)
     collage_even_panel.grid(row=11, columnspan=2, sticky="W")
 
-    # collage even panel ROW 0
-    Label(collage_even_panel, text="C Types: ").grid(row=0, column=0, sticky="W")
-    ctype = StringVar()
-    ctype.set("float32")
-    OptionMenu(collage_even_panel, ctype, "", *mkg.PARAMS.ctype.choices).grid(row=0, column=1, sticky="W")
-
     # collage even panel ROW 1
     LabelWithTooltip(collage_even_panel, text="Duplicates:", tooltip=mkg.PARAMS.dup.help).grid(row=1, column=0, sticky="W", pady=2)
     dup = IntVar()
@@ -520,13 +514,13 @@ if __name__ == "__main__":
                 if is_salient.get():
                     def action():
                         return mkg.calc_salient_col_even(
-                            dest_img, imgs, dup.get(), colorspace.get(), ctype.get(), dist_metric.get(), 
+                            dest_img, imgs, dup.get(), colorspace.get(), dist_metric.get(), 
                             lower_thresh, salient_bg_color, out_wrapper)
 
                 else:               
                     def action():
                         return mkg.calc_col_even(
-                            dest_img, imgs, dup.get(), colorspace.get(), ctype.get(), dist_metric.get(), v=out_wrapper)
+                            dest_img, imgs, dup.get(), colorspace.get(), dist_metric.get(), v=out_wrapper)
             else:
                 assert max_width.get() > 0, "Max width must be a positive number"
                 assert freq_mul.get() >= 0, "Max width must be a nonnegative real number"
