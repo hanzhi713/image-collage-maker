@@ -133,7 +133,7 @@ def av_hue(img: np.ndarray) -> float:
     compute the average hue of all pixels in HSV color space
     """
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    return np.mean(hsv[:, :, 0])
+    return np.sum(hsv[:, :, 0])
 
 
 def av_sat(img: np.ndarray) -> float:
@@ -141,63 +141,14 @@ def av_sat(img: np.ndarray) -> float:
     compute the average saturation of all pixels in HSV color space
     """
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    return np.mean(hsv[:, :, 1])
+    return np.sum(hsv[:, :, 1])
 
 
 def av_lum(img) -> float:
     """
     compute the average luminosity
     """
-    return np.mean(np.sqrt(0.241 * img[:, :, 0] + 0.691 * img[:, :, 1] + 0.068 * img[:, :, 2]))
-
-
-def pca_lum(img: np.ndarray) -> np.ndarray:
-    """
-    flatten the image using the luminosity of each pixel
-    """
-    return np.sqrt(0.241 * img[:, :, 0] + 0.691 * img[:, :, 1] + 0.068 * img[:, :, 2]).flatten()
-
-
-def pca_sat(img: np.ndarray) -> np.ndarray:
-    """
-    flatten the image using the saturation of each pixel
-    """
-    return (cv2.cvtColor(img, cv2.COLOR_BGR2HSV)[:, :, 1]).flatten()
-
-
-def pca_bgr(img: np.ndarray) -> np.ndarray:
-    """
-    flatten the image in BGR color space
-    """
-    return img.flatten()
-
-
-def pca_hsv(img: np.ndarray) -> np.ndarray:
-    """
-    flatten the image in HSV color space
-    """
-    return cv2.cvtColor(img, cv2.COLOR_BGR2HSV).flatten()
-
-
-def pca_lab(img: np.ndarray) -> np.ndarray:
-    """
-    flatten the image in LAB color space
-    """
-    return cv2.cvtColor(img, cv2.COLOR_BGR2Lab).flatten()
-
-
-def pca_hue(img: np.ndarray) -> np.ndarray:
-    """
-    flatten the image using the hue value of each pixel
-    """
-    return cv2.cvtColor(img, cv2.COLOR_BGR2HSV)[:, :, 0].flatten()
-
-
-def pca_gray(img: np.ndarray) -> np.ndarray:
-    """
-    flatten the image in gray scale
-    """
-    return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).flatten()
+    return np.sum(np.sqrt(img * np.array([0.241, 0.691, 0.068], dtype=np.float32)[np.newaxis, np.newaxis, :]))
 
 
 def rand(img: np.ndarray) -> float:
@@ -323,11 +274,16 @@ def sort_collage(imgs: List[np.ndarray], ratio: Grid, sort_method="pca_lab", rev
     grid = calc_grid_size(ratio[0], ratio[1], num_imgs)
 
     print("Calculated grid size based on your aspect ratio:", grid)
-    print("Sorting images...")
+    total = np.prod(grid)
+    if len(imgs) < total:
+        diff = total - len(imgs)
+        print(f"Note: {diff} white tiles will be added to the sorted collage.")
+        imgs = imgs + [get_background_tile(imgs[0].shape, (255, 255, 255))] * diff
 
     if sort_method == "none":
         return grid, imgs
-    
+
+    print("Sorting images...")    
     sort_function = eval(sort_method)
     indices = np.array(list(map(sort_function, imgs))).argsort()
     if rev_sort:
