@@ -107,19 +107,19 @@ def cdist(A: np.ndarray, B: np.ndarray, metric="euclidean") -> np.ndarray:
     # unfortunately, there is no Eigen-like expression template in numpy
     # so we used in-place operations to speed up the computation
     if metric == "euclidean":
-        for i in tqdm(range(A.shape[0]), desc="[Computing costs]"):
+        for i in tqdm(range(A.shape[0]), desc="[Computing costs]", ncols=pbar_ncols):
             np.subtract(A[i, np.newaxis, :], B, out=diff)
             np.square(diff, out=diff)
             np.sum(diff, axis=1, out=dist_mat[i, :])
         return dist_mat
     elif metric == "cityblock":
-        for i in tqdm(range(A.shape[0]), desc="[Computing costs]"):
+        for i in tqdm(range(A.shape[0]), desc="[Computing costs]", ncols=pbar_ncols):
             np.subtract(A[i, np.newaxis, :], B, out=diff)
             np.abs(diff, out=diff)
             np.sum(diff, axis=1, out=dist_mat[i, :])
         return dist_mat
     elif metric == "chebyshev":
-        for i in tqdm(range(A.shape[0]), desc="[Computing costs]"):
+        for i in tqdm(range(A.shape[0]), desc="[Computing costs]", ncols=pbar_ncols):
             np.subtract(A[i, np.newaxis, :], B, out=diff)
             np.abs(diff, out=diff)
             np.max(diff, axis=1, out=dist_mat[i, :])
