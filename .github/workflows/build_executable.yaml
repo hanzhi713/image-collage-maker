@@ -2,6 +2,9 @@ name: Build executables
 
 on: [push]
 
+env:
+  VERSION: 3.2
+
 jobs:
   # in theory we can use build matrix, but it has some complications so I will just repeat here
   build-macos:
@@ -21,9 +24,9 @@ jobs:
       with:
         draft: true
         files: |
-          ./dist/photomosaic-maker-3.1-macos-x64
-          ./dist/photomosaic-maker-3.1-macos-x64.tar.gz
-          ./photomosaic-maker-3.1-macos-x64-build.tar.gz
+          ./dist/photomosaic-maker-${{ env.VERSION }}-macos-x64
+          ./dist/photomosaic-maker-${{ env.VERSION }}-macos-x64.tar.gz
+          ./photomosaic-maker-${{ env.VERSION }}-macos-x64-build.tar.gz
   build-linux:
     runs-on: ubuntu-18.04
     steps:
@@ -41,9 +44,9 @@ jobs:
       with:
         draft: true
         files: |
-          ./dist/photomosaic-maker-3.1-ubuntu-x64
-          ./dist/photomosaic-maker-3.1-ubuntu-x64.tar.gz
-          ./photomosaic-maker-3.1-ubuntu-x64-build.tar.gz
+          ./dist/photomosaic-maker-${{ env.VERSION }}-ubuntu-x64
+          ./dist/photomosaic-maker-${{ env.VERSION }}-ubuntu-x64.tar.gz
+          ./photomosaic-maker-${{ env.VERSION }}-ubuntu-x64-build.tar.gz
   build-windows:
     runs-on: windows-2019
     steps:
@@ -62,6 +65,6 @@ jobs:
       with:
         draft: true
         files: |
-          ./dist/photomosaic-maker-3.1-windows-x64.exe
-          ./dist/photomosaic-maker-3.1-windows-x64.tar.gz
-          ./photomosaic-maker-3.1-windows-x64-build.tar.gz
+          ./dist/photomosaic-maker-${{ env.VERSION }}-windows-x64.exe
+          ./dist/photomosaic-maker-${{ env.VERSION }}-windows-x64.tar.gz
+          ./photomosaic-maker-${{ env.VERSION }}-windows-x64-build.tar.gz
