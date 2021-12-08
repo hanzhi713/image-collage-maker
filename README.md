@@ -4,16 +4,16 @@
         <td>Photomosaic (Fair tile usage)</td>
     </tr>
     <tr>
-        <td><img src="examples/result-rand.png" width="480px"></td>
-        <td><img src="examples/dest-fair-48x49.png" width="270px"></td>
+        <td><img src="examples/unsorted.png" width="480px"></td>
+        <td><img src="examples/fair-dup-10.png" width="270px"></td>
     </tr>
     <tr>
         <td>Tiles Sorted by RGB sum</td>
         <td>Photomosaic (Best-fit)</td>
     </tr>
     <tr>
-        <td><img src="examples/result-pca_bgr.png" width="480px"></td>
-        <td><img src="examples/dest-best-fit-49x49.png" width="270px"></td>
+        <td><img src="examples/sort-bgr.png" width="480px"></td>
+        <td><img src="examples/best-fit.png" width="270px"></td>
     </tr>
 </table>
 
@@ -43,13 +43,13 @@ Binaries can be downloaded from [release](https://github.com/hanzhi713/image-col
 On Windows, my program may be blocked by Windows Defender because it is not signed (signing costs money!). Don't worry as there is no security risk. On MacOS or Linux, after downloading the binary, you may need to add executing permission. Open your terminal, go to the file's directory and type
 
 ```bash
-chmod +x ./photomosaic-maker-3.0-macos-x64
+chmod +x ./photomosaic-maker-3.2-macos-x64
 ```
 
 Then you can run from terminal as
 
 ```bash
-./photomosaic-maker-3.0-macos-x64
+./photomosaic-maker-3.2-macos-x64
 ```
 
 ### Running Python script directly
@@ -57,13 +57,13 @@ Then you can run from terminal as
 First, you need Python >= 3.6 with pip. You can install dependencies by running
 
 ```bash
-pip3 install -r requirements.txt
+pip install -r requirements.txt
 ```
 
 Then, you can launch the GUI by running
 
 ```bash
-python3 gui.py
+python gui.py
 ```
 
 ## Command line usage
@@ -73,16 +73,16 @@ python3 gui.py
 ### Option 1: Sorting
 
 ```bash
-python3 make_img.py --path img --sort bgr_sum --size 50
+python make_img.py --path img/zhou --sort bgr_sum --size 50 --out examples/sort-bgr.png
 ```
 
-Use ```--ratio w h``` to change the aspect ratio, whose default is 16:9
+Use `--ratio w h` to change the aspect ratio, whose default is 16:9. E.g. `--ratio 21 9` specifies the aspect ratio to be 21:9. 
 
-Example: use ```--ratio 21 9``` to change the aspect ratio to 21:9
+> Note: when the tiles are a bit short to completely fill the grid, white tiles will be added. 
 
 Result:
 
-<img src="examples/result-pca_bgr.png"/>
+<img src="examples/sort-bgr.png"/>
 
 ### Option 2: Make a photomosaic
 
@@ -92,16 +92,17 @@ To make a photomosaic, specify the path to the destination image using `--dest_i
 
 This fitting option ensures that each tile is used for the same amount of times.
 
+> a few tiles might be used one more time than others. This may happen when the number of tiles is not an integer multiple of the blocks of the destination image. 
+
 ```bash
-python3 make_img.py --path img --dest_img img/1.png --size 25 --dup 6 --out collage.png
+python make_img.py --path img/zhou --dest_img examples/dest.jpg --size 25 --dup 8 --out examples/fair-dup-10.png
 ```
 
 ```--dup 6``` specifies that each tile needs to be used 6 times (i.e. duplicates the set of tiles 6 times). Increase that number if you don't have enough source tiles or you want a better fitting result. Note that a large number of tiles may result in long computational time. To make sure the computation completes within a reasonable amount of time, it is recommended that you use less than 6000 tiles after duplication. Tile number larger than 6000 will probably takes longer than a minute to compute. Note that this recommended limit does **not** apply for the best fit option (see section below). 
 
-| Original                                    | Fitting Result                                 |
-| ------------------------------------------- | ---------------------------------------------- |
-| <img src="examples/dest.jpg" width="350px"> | <img src="examples\dest-fair-48x49.png" width="350px"> |
-
+| Original                                    | Fitting Result                                     |
+| ------------------------------------------- | -------------------------------------------------- |
+| <img src="examples/dest.jpg" width="350px"> | <img src="examples/fair-dup-10.png" width="350px"> |
 
 #### Option 2.2: Best fit (unfair tile usage)
 
@@ -110,19 +111,20 @@ This fitting option just selects the best subset of tiles you provided to approx
 Add `--unfair` flag to enable this option. You can also specify `--max_width` to change the width of the grid. The height will be automatically calculated based on the max_width provided. Generally, a larger grid will give a better result. The default value is 80.
 
 ```bash
-python3 make_img.py --path img --out best-fit.png --dest_img img/1.png --size 25 --unfair
+python make_img.py --path img/zhou --dest_img examples/dest.jpg --size 25 --unfair --max_width 56 --out examples/best-fit.png
 ```
 
+|                  Original                   |                 Fitting Result                  |
+| :-----------------------------------------: | :---------------------------------------------: |
+| <img src="examples/dest.jpg" width="350px"> | <img src="examples/best-fit.png" width="350px"> |
 
-| Original                                    | Fitting Result                                                   |
-| :-------------------------------------------: | :--------------------------------------------------------------: |
-| <img src="examples/dest.jpg" width="350px"> | <img src="examples/dest-best-fit-49x49.png" width="350px"> |
+Optionally, you can specify the `--freq_mul` (frequency multiplier) parameter that trade offs between the fairness of the tiles and quality of the mosaic. 
 
-Optionally, you can specify the `--freq_mul` parameter that trade-off between the fairness of the tiles and quality of the mosaic. The larger the `freq_mul`, more tiles will be used to construct the photomosaic, but the quality will deteriorate. The results under different `freq_mul` are shown below. Note that if you need a large `freq_mul`, you will better off by going for the fair tile usage (see section above) instead.
-
-<!-- ```bash
+```bash
 python3 make_img.py --path img --out best-fit.png --dest_img img/1.png --size 25 --unfair --freq_mul 1.0
-``` -->
+```
+
+The larger the `freq_mul`, more tiles will be used to construct the photomosaic, but the quality will deteriorate. The results under different `freq_mul` are shown below. Note that if you need a large `freq_mul`, you will better off by going for the fair tile usage (see section above) instead.
 
 ![](examples/fairness.png)
 
@@ -137,33 +139,49 @@ Use ```--lower_thresh``` to specify the threshold for object detection. The thre
 Use ```--background``` to specify the background color for the collage. The color space for the background option is RGB. The default background color is white, i.e. (255, 255, 255).
 
 ```bash
-python make_img.py --recursive --path img/zhou --dest_img examples/messi.jpg --size 25 --salient --lower_thresh 0.15 --verbose --dup 5 --out examples/messi-fair.png
+python make_img.py --path img/zhou --dest_img examples/messi.jpg --size 25 --salient --lower_thresh 0.15 --dup 5 --out examples/messi-fair.png
 ```
 
 ```bash
-python make_img.py --recursive --path img/zhou --dest_img examples/messi.jpg --size 25 --salient --lower_thresh 0.15 --verbose --unfair --max_width 103 --freq_mul 0 --out examples/messi-unfair.png
+python make_img.py --path img/zhou --dest_img examples/messi.jpg --size 25 --salient --lower_thresh 0.15 --unfair --max_width 115 --out examples/messi-unfair.png
 ```
 
 | Original                                     | Unfair-Fitting Result                               | Fair-Fitting Result                               |
 | -------------------------------------------- | --------------------------------------------------- | ------------------------------------------------- |
 | <img src="examples/messi.jpg" width="350px"> | <img src="examples/messi-unfair.png" width="350px"> | <img src="examples/messi-fair.png" width="350px"> |
 
+#### Blending Options
+
+To enhance the effect of the photomosaic, you can enable alpha or brightness blending. Use the `--blending` option to select the types of blending and `--blending_level` to change the level of blending. 
+
+```bash
+# alpha blending
+python make_img.py --path img/zhou --dest_img examples/dest.jpg --size 25 --dup 8 --blending alpha --blending_level 0.25 --out examples/blend-alpha-0.25.png
+
+# brightness blending
+python make_img.py --path img/zhou --dest_img examples/dest.jpg --size 25 --dup 8 --blending brightness --blending_level 0.25 --out examples/blend-brightness-0.25.png
+```
+
+| Fair tile usage, no blending                       | Alpha blending (25%)                               | Brightness blending (25%)                               |
+| -------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------- |
+| <img src="examples/fair-dup-10.png" width="350px"> | <img src="examples/blend-alpha-0.25.png" width="350px"> | <img src="examples/blend-brightness-0.25.png" width="350px"> |
+
+
 #### Other options
 
 ```python3 make_img.py -h``` will give you all the available command line options.
 
 ```
-$ python make_img.py --help
+$ python make_img.py -h
 usage: make_img.py [-h] [--path PATH] [--recursive]
                    [--num_process NUM_PROCESS] [--out OUT] [--size SIZE]
-                   [--verbose] [--resize_opt {center,stretch}]
+                   [--quiet] [--resize_opt {center,stretch}]
                    [--ratio RATIO RATIO]
-                   [--sort {none,bgr_sum,av_hue,av_sat,av_lum,rand,pca_bgr,pca_hsv,pca_lab,pca_gray,pca_lum,pca_sat,pca_hue,tsne_bgr,tsne_hsv,tsne_lab,tsne_gray,tsne_lum,tsne_sat,tsne_hue}]
+                   [--sort {none,bgr_sum,av_hue,av_sat,av_lum,rand}]
                    [--rev_row] [--rev_sort] [--dest_img DEST_IMG]
                    [--colorspace {hsv,hsl,bgr,lab,luv}]
-                   [--metric {euclidean,cityblock,chebyshev}]
-                   [--ctype {float32,float64}] [--unfair]
-                   [--max_width MAX_WIDTH] [--freq_mul FREQ_MUL]
+                   [--metric {euclidean,cityblock,chebyshev,cosine}]
+                   [--unfair] [--max_width MAX_WIDTH] [--freq_mul FREQ_MUL]
                    [--deterministic] [--dup DUP] [--salient]
                    [--lower_thresh LOWER_THRESH]
                    [--background BACKGROUND BACKGROUND BACKGROUND]
@@ -179,16 +197,16 @@ optional arguments:
                         Number of processes to use when loading tile (default:
                         8)
   --out OUT             The filename of the output collage/photomosaic
-                        (default: )
+                        (default: result.png)
   --size SIZE           Size (side length) of each tile in pixels in the
                         resulting collage/photomosaic (default: 50)
-  --verbose             Print progress message to console (default: False)
+  --quiet               Print progress message to console (default: False)
   --resize_opt {center,stretch}
                         How to resize each tile so they become square images.
                         Center: crop a square in the center. Stretch: stretch
                         the tile (default: center)
   --ratio RATIO RATIO   Aspect ratio of the output image (default: (16, 9))
-  --sort {none,bgr_sum,av_hue,av_sat,av_lum,rand,pca_bgr,pca_hsv,pca_lab,pca_gray,pca_lum,pca_sat,pca_hue,tsne_bgr,tsne_hsv,tsne_lab,tsne_gray,tsne_lum,tsne_sat,tsne_hue}
+  --sort {none,bgr_sum,av_hue,av_sat,av_lum,rand}
                         Sort method to use (default: bgr_sum)
   --rev_row             Whether to use the S-shaped alignment. (default:
                         False)
@@ -198,13 +216,9 @@ optional arguments:
   --colorspace {hsv,hsl,bgr,lab,luv}
                         The colorspace used to calculate the metric (default:
                         lab)
-  --metric {euclidean,cityblock,chebyshev}
+  --metric {euclidean,cityblock,chebyshev,cosine}
                         Distance metric used when evaluating the distance
                         between two color vectors (default: euclidean)
-  --ctype {float32,float64}
-                        C type of the cost matrix. float32 is a good
-                        compromise between computational time and accuracy.
-                        Leave as default if unsure. (default: float32)
   --unfair              Whether to allow each tile to be used different amount
                         of times (unfair tile usage). (default: False)
   --max_width MAX_WIDTH
@@ -212,7 +226,8 @@ optional arguments:
                         valid if unfair option is enabled (default: 80)
   --freq_mul FREQ_MUL   Frequency multiplier to balance tile fairless and
                         mosaic quality. Minimum: 0. More weight will be put on
-                        tile fairness when this number increases. (default: 1)
+                        tile fairness when this number increases. (default:
+                        0.0)
   --deterministic       Do not randomize the tiles. This option is only valid
                         if unfair option is enabled (default: False)
   --dup DUP             Duplicate the set of tiles by how many times (default:
