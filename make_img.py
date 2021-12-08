@@ -37,9 +37,9 @@ class PARAMS:
     path = _PARAMETER(help="Path to the tiles", default=os.path.join(os.path.dirname(__file__), "img"), type=str)
     recursive = _PARAMETER(type=bool, default=False, help="Whether to read the sub-folders for the specified path")
     num_process = _PARAMETER(type=int, default=mp.cpu_count() // 2, help="Number of processes to use when loading tile")
-    out = _PARAMETER(default="", type=str, help="The filename of the output collage/photomosaic")
+    out = _PARAMETER(default="result.png", type=str, help="The filename of the output collage/photomosaic")
     size = _PARAMETER(type=int, default=50, help="Size (side length) of each tile in pixels in the resulting collage/photomosaic")
-    verbose = _PARAMETER(type=bool, default=False, help="Print progress message to console")
+    quiet = _PARAMETER(type=bool, default=False, help="Print progress message to console")
     resize_opt = _PARAMETER(type=str, default="center", choices=["center", "stretch"], 
         help="How to resize each tile so they become square images. "
              "Center: crop a square in the center. Stretch: stretch the tile")
@@ -64,7 +64,7 @@ class PARAMS:
         help="Whether to allow each tile to be used different amount of times (unfair tile usage). ")
     max_width = _PARAMETER(type=int, default=80, 
         help="Maximum width of the collage. This option is only valid if unfair option is enabled")    
-    freq_mul = _PARAMETER(type=int, default=1, 
+    freq_mul = _PARAMETER(type=float, default=0.0, 
         help="Frequency multiplier to balance tile fairless and mosaic quality. Minimum: 0. "
              "More weight will be put on tile fairness when this number increases.")
     deterministic = _PARAMETER(type=bool, default=False, 
@@ -91,6 +91,8 @@ def cdist(A: np.ndarray, B: np.ndarray, metric="euclidean") -> np.ndarray:
     """
     Simple implementation of scipy.spatial.distance.cdist
     """
+    assert A.dtype == np.float32
+    assert B.dtype == np.float32
     if metric == "cosine":
         A = A / np.linalg.norm(A, axis=1, keepdims=True)
         B = B / np.linalg.norm(B, axis=1, keepdims=True)
@@ -100,20 +102,25 @@ def cdist(A: np.ndarray, B: np.ndarray, metric="euclidean") -> np.ndarray:
     # but this may consume too much memory
     # so we calculate the distance matrix row by row instead
     dist_mat = np.zeros((A.shape[0], B.shape[0]), dtype=np.float32)
+    diff = np.zeros_like(B)
+
+    # unfortunately, there is no Eigen-like expression template in numpy
+    # so we used in-place operations to speed up the computation
     if metric == "euclidean":
-        for i in range(A.shape[0]):
-            diff = A[i, np.newaxis, :] - B
-            dist_mat[i, :] = np.linalg.norm(diff, axis=1)
+        for i in tqdm(range(A.shape[0]), desc="[Computing costs]"):
+            np.subtract(A[i, np.newaxis, :], B, out=diff)
+            np.square(diff, out=diff)
+            np.sum(diff, axis=1, out=dist_mat[i, :])
         return dist_mat
     elif metric == "cityblock":
-        for i in range(A.shape[0]):
-            diff = A[i, np.newaxis, :] - B
+        for i in tqdm(range(A.shape[0]), desc="[Computing costs]"):
+            np.subtract(A[i, np.newaxis, :], B, out=diff)
             np.abs(diff, out=diff)
             np.sum(diff, axis=1, out=dist_mat[i, :])
         return dist_mat
     elif metric == "chebyshev":
-        for i in range(A.shape[0]):
-            diff = A[i, np.newaxis, :] - B
+        for i in tqdm(range(A.shape[0]), desc="[Computing costs]"):
+            np.subtract(A[i, np.newaxis, :], B, out=diff)
             np.abs(diff, out=diff)
             np.max(diff, axis=1, out=dist_mat[i, :])
         return dist_mat
@@ -133,7 +140,7 @@ def av_hue(img: np.ndarray) -> float:
     compute the average hue of all pixels in HSV color space
     """
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    return np.sum(hsv[:, :, 0])
+    return np.mean(hsv[:, :, 0])
 
 
 def av_sat(img: np.ndarray) -> float:
@@ -141,14 +148,19 @@ def av_sat(img: np.ndarray) -> float:
     compute the average saturation of all pixels in HSV color space
     """
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    return np.sum(hsv[:, :, 1])
+    return np.mean(hsv[:, :, 1])
+
+
+lum_coeffs = np.array([0.241, 0.691, 0.068], dtype=np.float32)[np.newaxis, np.newaxis, :]
 
 
 def av_lum(img) -> float:
     """
     compute the average luminosity
     """
-    return np.sum(np.sqrt(img * np.array([0.241, 0.691, 0.068], dtype=np.float32)[np.newaxis, np.newaxis, :]))
+    lum = img * lum_coeffs
+    np.sqrt(lum, out=lum)
+    return np.mean(lum)
 
 
 def rand(img: np.ndarray) -> float:
@@ -419,8 +431,8 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, c
     bg_img = get_background_tile(imgs[0].shape, background)
     grid, dest_img, img_keys = compute_blocks_salient(colorspace, dest_img, imgs, block_size, ridx, cidx, thresh_map, lower_thresh, bg_img)
     print("Grid size:", grid)
+    print(f"Salient blocks/total blocks = {len(ridx)}/{np.prod(grid)}")
 
-    print("Computing cost matrix...")
     cols, cost = solve_lap(cdist(img_keys, dest_img, metric=metric), v)
 
     imgs.append(bg_img)
@@ -468,16 +480,19 @@ def calc_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspac
         # Compute the grid size based on the number images that we have
         grid = calc_grid_size(dest_img.shape[1],  dest_img.shape[0], len(imgs) * dup)
         print("Calculated grid size based on the aspect ratio of the image provided:", grid)
-    total = grid[0] * grid[1]
+    total = np.prod(grid)
 
     print("Duplicated {} times".format(dup))
     imgs = imgs * dup
 
-    print(f"{total - len(imgs)} tiles will be used 1 more time than others.")
-    imgs.extend(imgs[:total - len(imgs)])
+    if total > len(imgs):
+        print(f"{total - len(imgs)} tiles will be used 1 more time than others.")
+        imgs.extend(imgs[:total - len(imgs)])
+    elif total < len(imgs): # should only happen when grid is explicitly specified
+        print(f"{len(imgs) - total} tiles will be used 1 less time than others.")
+        del imgs[total:]
     
     dest_img, img_keys = compute_blocks(colorspace, dest_img, imgs, grid)
-    print("Computing cost matrix...")
     cols, cost = solve_lap(cdist(img_keys, dest_img, metric=metric), v)
 
     print("Time taken: {}s".format((np.round(time.time() - t, 2))))
@@ -510,11 +525,10 @@ def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width: int,
         ridx, cidx, thresh_map = compute_block_map(thresh_map, block_size, lower_thresh)
         bg_img = get_background_tile(imgs[0].shape, background)
         _grid, dest_img, img_keys = compute_blocks_salient(colorspace, dest_img, imgs, block_size, ridx, cidx, thresh_map, lower_thresh, bg_img)
-        assert grid == _grid
+        print(f"Salient blocks/total blocks = {len(ridx)}/{np.prod(grid)}")
     else:
         dest_img, img_keys = compute_blocks(colorspace, dest_img, imgs, grid)
 
-    print("Computing cost matrix...")
     img_keys = np.asarray(img_keys)
     assignment = np.full(dest_img.shape[0], -1, dtype=np.int32)
     dist_mat = cdist(dest_img, img_keys, metric=metric)
@@ -697,9 +711,9 @@ def unfair_exp(dest_img, args, imgs):
             # plt.xlabel(xlabel)
 
         collect_imgs("colorspace", [c.upper() for c in all_colorspaces], futures1, 36)
-        collect_imgs("fairness", [f"$\lambda = {c}$" for c in all_freqs] + ["Fair"], futures2, 20)
+        collect_imgs("fairness", [f"Frequency multiplier ($\lambda$) = ${c}$" for c in all_freqs] + ["Fair"], futures2, 20)
         pbar.refresh()
-        plt.show()
+        # plt.show()
 
 
 def sort_exp(args, imgs):
@@ -717,7 +731,7 @@ def sort_exp(args, imgs):
 
 
 def main(args):
-    if not args.verbose:
+    if args.quiet:
         sys.stdout = open(os.devnull, "w")
 
     if len(args.out) > 0:

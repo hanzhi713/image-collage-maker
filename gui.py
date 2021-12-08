@@ -3,7 +3,8 @@ from tkinter import *
 from tkinter import filedialog, messagebox, colorchooser
 from tkinter.ttk import *
 from concurrent.futures import ThreadPoolExecutor
-from multiprocessing import Queue, freeze_support
+from multiprocessing import freeze_support
+import queue
 from typing import Tuple, List
 import argparse
 import traceback
@@ -35,7 +36,7 @@ class SafeText(Text):
     def __init__(self, master, stdout, **options):
         Text.__init__(self, master, **options)
         self.stdout = stdout
-        self.queue = Queue()
+        self.queue = queue.Queue()
         self.encoding = "utf-8"
         self.gui = True
         self.initial_width = 85
@@ -47,26 +48,23 @@ class SafeText(Text):
         self.queue.put(line)
 
     def flush(self):
-        pass
+        self.stdout.flush()
 
     # this one run in the main thread
     def update_me(self):
-        try:
-            while True:
-                line = self.queue.get_nowait()
+        while not self.queue.empty():
+            line = self.queue.get_nowait()
 
-                # a naive way to process the \r control char
-                if line.find("\r") > -1:
-                    line = line.replace("\r", "")
-                    row = int(self.index(END).split(".")[0])
-                    self.delete("{}.0".format(row - 1),
-                                "{}.{}".format(row - 1, len(line)))
-                    self.insert("end-1c linestart", line)
-                else:
-                    self.insert(END, line)
-                self.see("end-1c")
-        except:
-            pass
+            # a naive way to process the \r control char
+            if line.find("\r") > -1:
+                line = line.replace("\r", "")
+                row = int(self.index(END).split(".")[0])
+                self.delete("{}.0".format(row - 1),
+                            "{}.{}".format(row - 1, len(line)))
+                self.insert("end-1c linestart", line)
+            else:
+                self.insert(END, line)
+            self.see("end-1c")
         self.update_idletasks()
         self.after(50, self.update_me)
 
