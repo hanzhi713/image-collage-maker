@@ -169,7 +169,7 @@ python make_img.py --path img/zhou --dest_img examples/dest.jpg --size 25 --dup 
 
 #### Other options
 
-```python3 make_img.py -h``` will give you all the available command line options.
+```python make_img.py -h``` will give you all the available command line options.
 
 ```
 $ python make_img.py -h
