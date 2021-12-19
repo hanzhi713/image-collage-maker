@@ -8,10 +8,30 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from tqdm import tqdm
 import argparse
 import multiprocessing as mp
+import unicodedata
+import re
+
+
+def slugify(value, allow_unicode=True):
+    """
+    Taken from https://github.com/django/django/blob/master/django/utils/text.py
+    Convert to ASCII if 'allow_unicode' is False. Convert spaces or repeated
+    dashes to single dashes. Remove characters that aren't alphanumerics,
+    underscores, or hyphens. Convert to lowercase. Also strip leading and
+    trailing whitespace, dashes, and underscores.
+    """
+    value = str(value)
+    if allow_unicode:
+        value = unicodedata.normalize('NFKC', value)
+    else:
+        value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode('ascii')
+    value = re.sub(r'[^\w\s-]', '', value.lower())
+    return re.sub(r'[-\s]+', '-', value).strip('-_')
 
 
 def download_pic(args):
     itchat.get_head_img(**args)
+    return os.path.getsize(args['picDir'])
 
 
 def get_chatroom_by_name(name, chatrooms):
@@ -49,12 +69,13 @@ if __name__ == "__main__":
         for mem in itchat.get_friends(update=True):
             download_args[mem['UserName']] = {
                 "userName": mem['UserName'], 
-                "picDir": os.path.join(download_dir, f"{mem['UserName']}.jpg")
+                "picDir": os.path.join(download_dir, slugify(f"{mem['NickName']}_{mem['RemarkName']}") + ".jpg")
             }
 
     if args.type == "groupchat" or args.type == "all":
         print("Getting groupchats...")
         chatrooms = itchat.get_chatrooms(update=True)
+        # Nickname PYQuanPin RemarkPYQuanPin
         if not args.name:
             print("Updating groupchats... this might take a while (several minutes if you have tens of large group chats)")
             itchat.update_chatroom([chatroom['UserName'] for chatroom in chatrooms], True)
@@ -71,13 +92,13 @@ if __name__ == "__main__":
             chatrooms = [get_chatroom_by_name(name, chatrooms) for name in args.name]
         
         for chatroom in chatrooms:
+            cr_name = chatroom['NickName']
             for mem in chatroom['MemberList']:
-                uname = mem['UserName']
-                if uname not in download_args:
-                    download_args[uname] = {
-                        "userName": uname,
+                if mem['UserName'] not in download_args:
+                    download_args[mem['UserName']] = {
+                        "userName": mem['UserName'],
                         'chatroomUserName': chatroom['UserName'],
-                        "picDir": os.path.join(download_dir, f"{uname}.jpg")
+                        "picDir": os.path.join(download_dir, slugify(f"{cr_name}_{mem['NickName']}") + ".jpg")
                     }
 
     if not os.path.isdir(download_dir):
@@ -86,14 +107,18 @@ if __name__ == "__main__":
     download_args = download_args.values()
     download_args = [arg for arg in download_args if not os.path.exists(arg['picDir']) or os.path.getsize(arg['picDir']) == 0]
     
-    pool = ThreadPoolExecutor(min(mp.cpu_count() * 4, len(download_args)))
+    pool = ThreadPoolExecutor(min(mp.cpu_count(), len(download_args)))
     pbar = tqdm(desc="[Downloading]", total=len(download_args))
     count = 1
     while len(download_args) > 0:
-        download_args = [arg for arg in download_args if not os.path.exists(arg['picDir'])]
+        download_args = [arg for arg in download_args if not os.path.exists(arg['picDir']) or os.path.getsize(arg['picDir']) == 0]
         try:
-            for _ in pool.map(download_pic, download_args, timeout=10):
-                pbar.update()
+            for sz in pool.map(download_pic, download_args, timeout=10):
+                if sz > 0:
+                    pbar.update()
         except TimeoutError:
+            pool.shutdown(False)
+            pool = ThreadPoolExecutor(min(mp.cpu_count(), len(download_args)))
             tqdm.write(f"timeout downloading pics, retrying.... attempt {count}")
             count += 1
+    pool.shutdown()

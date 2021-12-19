@@ -642,18 +642,17 @@ if __name__ == "__main__":
 
     def canvas_resize(event):
         global last_resize_time
-        if time.time() - last_resize_time > 0.25 and event.width >= 850 and event.height >= 550:
+        if time.time() - last_resize_time > 0.1 and event.width >= 850 and event.height >= 550:
             last_resize_time = time.time()
             log_entry.configure(
                 height=6 + math.floor((event.height - 500) / 80))
             log_entry.width = log_entry.initial_width + \
                 math.floor((event.width - 800) / 10)
-            mkg.pbar_ncols = log_entry.width
+            mkg.pbar_ncols = log_entry.width - 1
             log_entry.update()
             w, h = event.width - right_panel_width - \
                 20, event.height - log_entry.winfo_height() - 15
             pw, ph = canvas.winfo_width(), canvas.winfo_height()
-            w_scale, h_scale = w / pw, h / ph
             canvas.configure(width=w, height=h)
             canvas.update()
             if result_img is not None:
