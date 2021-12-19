@@ -258,13 +258,13 @@ optional arguments:
 If you have a WeChat account, an utility script `extract_img.py` is provided to download your friends' profile pictures so you can make a photomosaic using them. To use this script, you need to have itchat-uos installed
 
 ```bash
-pip3 install itchat-uos
+pip install itchat-uos
 ```
 
 Then, use `--dir` to specify the directory to store the profile pictures of your WeChat friends. 
 
 ```bash
-python3 extract_img.py --dir img
+python extract_img.py --dir img
 ```
 
 #### Groupchat Members
@@ -272,13 +272,13 @@ python3 extract_img.py --dir img
 You can also download the group members' profiles images from a group chat
 
 ```bash
-python3 extract_img.py --dir img --type groupchat --name "groupchatname"
+python extract_img.py --dir img --type groupchat --name "groupchatname"
 ```
 
 You can download members' profile pictures from all your groupchats if you omit the `--name` argument
 
 ```bash
-python3 extract_img.py --dir img --type groupchat
+python extract_img.py --dir img --type groupchat
 ```
 
 #### All available profile pictures
@@ -286,12 +286,13 @@ python3 extract_img.py --dir img --type groupchat
 You can download profile pictures from both your friends and members from all your groupchats by specifying `--type all`. 
 
 ```bash
-python3 extract_img.py --dir img --type all
+python extract_img.py --dir img --type all
 ```
 
 #### Notes
 
-Due to unknown issues, sometimes some profile pictures are not available, so they will be blank and unusable. The photomosaic maker will automatically ignore them when loading images. 
+1. Due to unknown issues, sometimes some profile pictures are not available, so they will be blank and unusable. The photomosaic maker will automatically ignore them when loading images. 
+2. When you download a large amount of profile pictures at once, WeChat may block you from downloading more. This will appear as `timeout downloading pics, retrying.... attempt x` in terminal. When this happens, you can terminate the program and run it again a day after. Already downloaded profile pictures will not be downloaded again. 
 
 ## Credits (Names in alphabetical order)
 
