@@ -10,6 +10,7 @@ import argparse
 import multiprocessing as mp
 import unicodedata
 import re
+import traceback
 
 
 def slugify(value, allow_unicode=True):
@@ -30,8 +31,12 @@ def slugify(value, allow_unicode=True):
 
 
 def download_pic(args):
-    itchat.get_head_img(**args)
-    return os.path.getsize(args['picDir'])
+    try:
+        itchat.get_head_img(**args)
+        return os.path.getsize(args['picDir'])
+    except:
+        traceback.print_exc()
+        return 0
 
 
 def get_chatroom_by_name(name, chatrooms):
@@ -113,7 +118,7 @@ if __name__ == "__main__":
     while len(download_args) > 0:
         download_args = [arg for arg in download_args if not os.path.exists(arg['picDir']) or os.path.getsize(arg['picDir']) == 0]
         try:
-            for sz in pool.map(download_pic, download_args, timeout=10):
+            for sz in pool.map(download_pic, download_args, timeout=20):
                 if sz > 0:
                     pbar.update()
         except TimeoutError:
