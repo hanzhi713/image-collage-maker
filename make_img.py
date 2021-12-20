@@ -1,18 +1,20 @@
 import os
-import argparse
-import random
-import concurrent.futures as con
-import multiprocessing as mp
 import sys
 import time
-import platform
-from typing import Any, List, Tuple
-import itertools
 import math
+import random
+import argparse
+import itertools
+import multiprocessing as mp
+import concurrent.futures as con
+from typing import Any, List, Tuple
+
+from io_utils import stdout_redirector, JVOutWrapper
 
 import cv2
 import numpy as np
 from tqdm import tqdm
+from lapjv import lapjv
 
 Grid = Tuple[int, int] # grid size = (width, height)
 BackgroundRGB = Tuple[int, int, int]
@@ -59,7 +61,7 @@ class PARAMS:
     metric = _PARAMETER(type=str, default="euclidean", choices=["euclidean", "cityblock", "chebyshev", "cosine"], 
         help="Distance metric used when evaluating the distance between two color vectors")
     
-    # ---- unfair tile assginment options -----
+    # ---- unfair tile assignment options -----
     unfair = _PARAMETER(type=bool, default=False, 
         help="Whether to allow each tile to be used different amount of times (unfair tile usage). ")
     max_width = _PARAMETER(type=int, default=80, 
@@ -168,46 +170,6 @@ def rand(img: np.ndarray) -> float:
     generate a random number for each image
     """
     return random.random()
-
-
-class JVOutWrapper:
-    """
-    The output wrapper for displaying the progress of J-V algorithm
-    Only available for the GUI running in Linux or Unix-like systems
-    """
-
-    def __init__(self, io_wrapper):
-        self.io_wrapper = io_wrapper
-        self.tqdm = None
-
-    def write(self, lines: str):
-        for line in lines.split("\n"):
-            if not line.startswith("lapjv: "):
-                continue
-            if line.find("AUGMENT SOLUTION row ") > 0:
-                line = line.replace(" ", "")
-                slash_idx = line.find("/")
-                s_idx = line.find("[")
-                e_idx = line.find("]")
-                if s_idx > -1 and slash_idx > -1 and e_idx > -1:
-                    if self.tqdm:
-                        self.tqdm.n = int(line[s_idx + 1:slash_idx])
-                        self.tqdm.update(0)
-                    else:
-                        self.tqdm = tqdm(file=self.io_wrapper, ncols=self.io_wrapper.width,
-                                         total=int(line[slash_idx + 1:e_idx]))
-                continue
-            if not self.tqdm:
-                self.io_wrapper.write(line + "\n")
-
-    def flush(self):
-        pass
-
-    def finish(self):
-        if self.tqdm:
-            self.tqdm.n = self.tqdm.total
-            self.tqdm.update(0)
-            self.tqdm.close()
 
 
 def calc_grid_size(rw: int, rh: int, num_imgs: int) -> Grid:
@@ -331,28 +293,41 @@ def cvt_colorspace(colorspace: str, imgs: List[np.ndarray], dest_img: np.ndarray
         dest_img[:, :, 0] *= 1 / 360.0
 
 
-def solve_lap(cost_matrix: np.ndarray, v=None):
+def solve_lap(cost_matrix: np.ndarray, v=sys.__stderr__):
     """
-    solve the lap problem with progress info on Unix platform
+    solve the linear sum assignment (LAP) problem with progress info
     """
     print("Computing optimal assignment on a {}x{} matrix...".format(cost_matrix.shape[0], cost_matrix.shape[1]))
-    from lapjv import lapjv
-    if v is not None and (platform.system() == "Linux" or platform.system() == "Darwin") and v.gui:
-        try:
-            from wurlitzer import pipes, STDOUT
-            from wurlitzer import Wurlitzer
-            Wurlitzer.flush_interval = 0.1
-            wrapper = JVOutWrapper(v)
-            with pipes(stdout=wrapper, stderr=STDOUT):
-                _, cols, cost = lapjv(cost_matrix, verbose=1)
-                wrapper.finish()
-        except ImportError:
-            _, cols, cost = lapjv(cost_matrix)
-    else:
-        _, cols, cost = lapjv(cost_matrix)
+    wrapper = JVOutWrapper(v, pbar_ncols)
+    with stdout_redirector(wrapper):
+        _, cols, cost = lapjv(cost_matrix, verbose=1)
+        wrapper.finish()
     cost = cost[0]
     print("Total assignment cost:", cost)
     return cols, cost
+
+
+def solve_lap_greedy(cost_matrix: np.ndarray, v=None):
+    assert cost_matrix.shape[0] == cost_matrix.shape[1]
+
+    print("Computing greedy assignment on a {}x{} matrix...".format(cost_matrix.shape[0], cost_matrix.shape[1]))
+    row_idx, col_idx = np.unravel_index(np.argsort(cost_matrix, axis=None), cost_matrix.shape)
+    cost = 0
+    row_assigned = np.full(cost_matrix.shape[0], -1, dtype=np.int32)
+    col_assigned = np.full(cost_matrix.shape[0], -1, dtype=np.int32)
+    pbar = tqdm(ncols=pbar_ncols, total=cost_matrix.shape[0])
+    for ridx, cidx in zip(row_idx, col_idx):
+        if row_assigned[ridx] == -1 and col_assigned[cidx] == -1:
+            row_assigned[ridx] = cidx
+            col_assigned[cidx] = ridx
+            cost += cost_matrix[ridx, cidx]
+
+            pbar.update()
+            if pbar.n == pbar.total:
+                break
+    pbar.close()
+    print("Total assignment cost:", cost)
+    return col_assigned, cost
 
 
 def compute_block_map(thresh_map: np.ndarray, block_size: int, lower_thresh: int):
@@ -454,8 +429,10 @@ def compute_blocks(colorspace: str, dest_img: np.ndarray, imgs: List[np.ndarray]
     N = grid width x grid height
     """
     block_size = min(dest_img.shape[0] // grid[1], dest_img.shape[1] // grid[0])
+    target_sz = (grid[0] * block_size, grid[1] * block_size)
     print("Block size:", block_size)
-    dest_img = cv2.resize(dest_img, (grid[0] * block_size, grid[1] * block_size), interpolation=cv2.INTER_AREA)
+    print(f"Resizing dest image from {dest_img.shape[1]}x{dest_img.shape[0]} to {target_sz[0]}x{target_sz[1]}")
+    dest_img = cv2.resize(dest_img, target_sz, interpolation=cv2.INTER_AREA)
     img_keys = [cv2.resize(img, (block_size, block_size), interpolation=cv2.INTER_AREA) for img in imgs]
     cvt_colorspace(colorspace, img_keys, dest_img)
     flat_block_size = block_size * block_size * 3
@@ -774,8 +751,7 @@ def main(args):
                 dest_img, imgs, args.max_width, args.colorspace, args.metric, 
                     None, None, args.freq_mul, not args.deterministic)
         else:
-            grid, sorted_imgs = calc_col_even(
-                dest_img, imgs, args.dup, args.colorspace, args.metric, args.background)
+            grid, sorted_imgs = calc_col_even(dest_img, imgs, args.dup, args.colorspace, args.metric)
     
     collage = make_collage(grid, sorted_imgs, args.rev_row)
     if args.blending == "alpha":

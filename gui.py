@@ -4,8 +4,6 @@ from tkinter import filedialog, messagebox, colorchooser
 from tkinter.ttk import *
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import freeze_support
-import queue
-from typing import Tuple, List
 import argparse
 import traceback
 import math
@@ -16,9 +14,10 @@ import time
 import cv2
 import numpy as np
 import make_img as mkg
+from io_utils import SafeText
 
 
-def limit_wh(w: int, h: int, max_width: int, max_height: int) -> Tuple[int, int]:
+def limit_wh(w: int, h: int, max_width: int, max_height: int):
     if h > max_height:
         ratio = max_height / h
         h = max_height
@@ -29,44 +28,6 @@ def limit_wh(w: int, h: int, max_width: int, max_height: int) -> Tuple[int, int]
         h = math.floor(h * ratio)
     return w, h
 
-
-# adapted from
-# https://stackoverflow.com/questions/16745507/tkinter-how-to-use-threads-to-preventing-main-event-loop-from-freezing
-class SafeText(Text):
-    def __init__(self, master, stdout, **options):
-        Text.__init__(self, master, **options)
-        self.stdout = stdout
-        self.queue = queue.Queue()
-        self.encoding = "utf-8"
-        self.gui = True
-        self.initial_width = 85
-        self.width = self.initial_width
-        self.update_me()
-
-    def write(self, line: str):
-        self.stdout.write(line)
-        self.queue.put(line)
-
-    def flush(self):
-        self.stdout.flush()
-
-    # this one run in the main thread
-    def update_me(self):
-        while not self.queue.empty():
-            line = self.queue.get_nowait()
-
-            # a naive way to process the \r control char
-            if line.find("\r") > -1:
-                line = line.replace("\r", "")
-                row = int(self.index(END).split(".")[0])
-                self.delete("{}.0".format(row - 1),
-                            "{}.{}".format(row - 1, len(line)))
-                self.insert("end-1c linestart", line)
-            else:
-                self.insert(END, line)
-            self.see("end-1c")
-        self.update_idletasks()
-        self.after(50, self.update_me)
 
 """ tk_ToolTip_class101.py
 gives a Tkinter widget a tooltip as the mouse is above the widget
@@ -176,7 +137,7 @@ if __name__ == "__main__":
     log_panel = PanedWindow(left_panel)
     log_panel.grid(row=2, column=0, columnspan=2, sticky="WE")
     log_panel.grid_columnconfigure(0, weight=1)
-    log_entry = SafeText(log_panel, sys.stdout, height=6, bd=0)
+    log_entry = SafeText(log_panel, height=6, bd=0)
     mkg.pbar_ncols = log_entry.width
     # log_entry.configure(font=("", 10, ""))
     log_entry.grid(row=1, column=0, sticky="NSEW")
@@ -644,16 +605,13 @@ if __name__ == "__main__":
         global last_resize_time
         if time.time() - last_resize_time > 0.1 and event.width >= 850 and event.height >= 550:
             last_resize_time = time.time()
-            log_entry.configure(
-                height=6 + math.floor((event.height - 500) / 80))
-            log_entry.width = log_entry.initial_width + \
-                math.floor((event.width - 800) / 10)
-            mkg.pbar_ncols = log_entry.width - 1
+            log_entry.configure(height=6 + math.floor((event.height - 500) / 80))
+            log_entry.width = log_entry.initial_width + math.floor((event.width - 800) / 10)
+            mkg.pbar_ncols = log_entry.width
             log_entry.update()
-            w, h = event.width - right_panel_width - \
-                20, event.height - log_entry.winfo_height() - 15
-            pw, ph = canvas.winfo_width(), canvas.winfo_height()
-            canvas.configure(width=w, height=h)
+            canvas.configure(
+                width=event.width - right_panel_width - 20, 
+                height=event.height - log_entry.winfo_height() - 15)
             canvas.update()
             if result_img is not None:
                 show_img(result_img, False)
