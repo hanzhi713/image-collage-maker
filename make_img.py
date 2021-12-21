@@ -362,8 +362,7 @@ def compute_blocks_salient(
     returns [grid size, blocked image (1), resized & flattened tiles (2)]. (1) shape: (N x 3B^2). (2) shape (M x 3B^2)
     where N is the number of salient blocks in dest_img, 3 is the number of channels, B is the block size, and M is the number of tiles
     """
-    if dest_img.shape[:2] != thresh_map.shape:
-        dest_img = cv2.resize(dest_img, thresh_map.shape[::-1], interpolation=cv2.INTER_AREA)
+    dest_img = cv2.resize(dest_img, thresh_map.shape[::-1], interpolation=cv2.INTER_AREA)
     dest_img[thresh_map < lower_thresh] = background_tile[0, 0, :]
 
     img_keys = [cv2.resize(img, (block_size, block_size), interpolation=cv2.INTER_AREA) for img in imgs]
@@ -391,13 +390,14 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, c
     # this is just the initial grid size
     grid = calc_grid_size(width, height, len(imgs))
     block_size = min(width // grid[0], height // grid[1])
-    _, thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((dest_img * 255).astype(np.uint8))
+    _, orig_thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((dest_img * 255).astype(np.uint8))
 
     while True:
-        ridx, cidx, thresh_map = compute_block_map(thresh_map, block_size, lower_thresh)
+        ridx, cidx, thresh_map = compute_block_map(orig_thresh_map, block_size, lower_thresh)
         if len(ridx) >= len(imgs):
             break
         block_size -= 1
+        assert block_size > 0, "Salient area is too small to put down all tiles. Please try to increase the saliency threshold."
     
     print("Block size:", block_size)
     print(f"Note: {len(ridx) - len(imgs)} tiles will be used 1 more time than others.")
