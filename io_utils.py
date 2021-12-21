@@ -28,7 +28,7 @@ def stdout_redirector(stream: io.TextIOBase):
         else:
             libc = ctypes.CDLL('api-ms-win-crt-stdio-l1-1-0')
     else:
-        libc = ctypes.CDLL()
+        libc = ctypes.CDLL(None)
         
     stdout = sys.__stdout__
     stdout_fd = stdout.fileno()
