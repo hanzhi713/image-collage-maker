@@ -94,7 +94,7 @@ class JVOutWrapper:
                         self.tqdm.update(0)
                     else:
                         wrapper = self.io_wrapper if self.io_wrapper is not sys.__stderr__ else None
-                        self.tqdm = tqdm(file=wrapper, ncols=self.ncols, total=int(line[slash_idx + 1:e_idx]))
+                        self.tqdm = tqdm(file=wrapper, ncols=self.ncols, total=int(line[slash_idx + 1:e_idx]), desc="lapjv: ")
                 continue
             if not self.tqdm:
                 self.io_wrapper.write(line + "\n")

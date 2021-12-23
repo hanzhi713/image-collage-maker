@@ -3,7 +3,7 @@ from tkinter import *
 from tkinter import filedialog, messagebox, colorchooser
 from tkinter.ttk import *
 from concurrent.futures import ThreadPoolExecutor
-from multiprocessing import freeze_support
+from multiprocessing import freeze_support, cpu_count
 import argparse
 import traceback
 import math
@@ -214,7 +214,7 @@ if __name__ == "__main__":
         fp = file_path.get()
         size = img_size.get()
         try:
-            imgs = mkg.read_images(fp, (size, size), recursive.get(), 4, resize_opt.get())
+            imgs = mkg.read_images(fp, (size, size), recursive.get(), cpu_count() // 2, resize_opt.get())
             grid = mkg.calc_grid_size(16, 10, len(imgs))
             return mkg.make_collage(grid, imgs.copy(), False)
         except:
@@ -529,7 +529,7 @@ if __name__ == "__main__":
             lower_thresh = saliency_thresh_scale.get() / 100
             assert 0.0 <= lower_thresh <= 1.0
             _, thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((dest_img * 255).astype(np.uint8))
-            tmp_dest_img = cv2.resize(dest_img, thresh_map.shape[::-1], interpolation=cv2.INTER_AREA)
+            tmp_dest_img = dest_img.copy()
             tmp_dest_img[thresh_map < lower_thresh] = np.asarray(salient_bg_color[::-1], dtype=np.float32) / 255.0
             show_img(tmp_dest_img, False)
             

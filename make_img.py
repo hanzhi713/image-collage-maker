@@ -103,8 +103,8 @@ def cdist(A: np.ndarray, B: np.ndarray, metric="euclidean") -> np.ndarray:
     # in theory we can do diff = A[:, np.newaxis, :] - B[np.newaxis, :, :]
     # but this may consume too much memory
     # so we calculate the distance matrix row by row instead
-    dist_mat = np.zeros((A.shape[0], B.shape[0]), dtype=np.float32)
-    diff = np.zeros_like(B)
+    dist_mat = np.empty((A.shape[0], B.shape[0]), dtype=np.float32)
+    diff = np.empty_like(B)
 
     # unfortunately, there is no Eigen-like expression template in numpy
     # so we used in-place operations to speed up the computation
@@ -304,7 +304,7 @@ def solve_lap(cost_matrix: np.ndarray, v=sys.__stderr__):
         wrapper.finish()
     cost = cost[0]
     print("Total assignment cost:", cost)
-    return cols, cost
+    return cols
 
 
 def solve_lap_greedy(cost_matrix: np.ndarray, v=None):
@@ -327,7 +327,7 @@ def solve_lap_greedy(cost_matrix: np.ndarray, v=None):
                 break
     pbar.close()
     print("Total assignment cost:", cost)
-    return col_assigned, cost
+    return col_assigned
 
 
 def compute_block_map(thresh_map: np.ndarray, block_size: int, lower_thresh: int):
@@ -374,6 +374,23 @@ def compute_blocks_salient(
     return grid, dest_img, np.array(img_keys).reshape(-1, dest_img.shape[1])
 
 
+def dup_to_meet_total(imgs: List[np.ndarray], total: int):
+    """
+    note that this function modifies imgs in place
+    """
+    orig_len = len(imgs)
+    full_count = total // orig_len
+    remaining = total % orig_len
+
+    imgs *= full_count
+    if remaining > 0:
+        print(f"{orig_len - remaining} tiles will be used {full_count} times. {remaining} tiles will be used {full_count + 1} times. Total tiles: {orig_len}.")
+        imgs.extend(imgs[:remaining])
+    else:
+        print(f"Total tiles: {orig_len}. All of them will be used {full_count} times.")
+    return imgs
+        
+
 def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspace="lab", 
                           metric="euclidean", lower_thresh=0.5, background=(255, 255, 255), v=None) -> Tuple[Grid, List[np.ndarray]]:
     """
@@ -384,31 +401,31 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, c
     """
     t = time.time()
     print("Duplicating {} times".format(dup))
-    imgs = imgs * dup
     height, width, _ = dest_img.shape
 
     # this is just the initial grid size
-    grid = calc_grid_size(width, height, len(imgs))
+    total = len(imgs) * dup
+    grid = calc_grid_size(width, height, total)
     block_size = min(width // grid[0], height // grid[1])
     _, orig_thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((dest_img * 255).astype(np.uint8))
 
     while True:
         ridx, cidx, thresh_map = compute_block_map(orig_thresh_map, block_size, lower_thresh)
-        if len(ridx) >= len(imgs):
+        if len(ridx) >= total:
             break
         block_size -= 1
         assert block_size > 0, "Salient area is too small to put down all tiles. Please try to increase the saliency threshold."
     
     print("Block size:", block_size)
-    print(f"Note: {len(ridx) - len(imgs)} tiles will be used 1 more time than others.")
-    imgs.extend(imgs[:len(ridx) - len(imgs)])
+    total = len(ridx)
+    imgs = dup_to_meet_total(imgs.copy(), total)
 
     bg_img = get_background_tile(imgs[0].shape, background)
     grid, dest_img, img_keys = compute_blocks_salient(colorspace, dest_img, imgs, block_size, ridx, cidx, thresh_map, lower_thresh, bg_img)
     print("Grid size:", grid)
-    print(f"Salient blocks/total blocks = {len(ridx)}/{np.prod(grid)}")
+    print(f"Salient blocks/total blocks = {total}/{np.prod(grid)}")
 
-    cols, cost = solve_lap(cdist(img_keys, dest_img, metric=metric), v)
+    cols = solve_lap(cdist(img_keys, dest_img, metric=metric), v)
 
     imgs.append(bg_img)
     assignment = np.full(grid[::-1], len(imgs) - 1, dtype=np.int32)
@@ -459,18 +476,15 @@ def calc_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspac
         print("Calculated grid size based on the aspect ratio of the image provided:", grid)
     total = np.prod(grid)
 
-    print("Duplicated {} times".format(dup))
-    imgs = imgs * dup
-
-    if total > len(imgs):
-        print(f"{total - len(imgs)} tiles will be used 1 more time than others.")
-        imgs.extend(imgs[:total - len(imgs)])
-    elif total < len(imgs): # should only happen when grid is explicitly specified
+    imgs = imgs.copy()
+    if total > len(imgs) * dup:
+        dup_to_meet_total(imgs, total)
+    elif total < len(imgs) * dup: # should only happen when grid is explicitly specified
         print(f"{len(imgs) - total} tiles will be used 1 less time than others.")
         del imgs[total:]
     
     dest_img, img_keys = compute_blocks(colorspace, dest_img, imgs, grid)
-    cols, cost = solve_lap(cdist(img_keys, dest_img, metric=metric), v)
+    cols = solve_lap(cdist(img_keys, dest_img, metric=metric), v)
 
     print("Time taken: {}s".format((np.round(time.time() - t, 2))))
     return grid, [imgs[i] for i in cols]
@@ -547,9 +561,8 @@ def imwrite(filename: str, img: np.ndarray) -> None:
     if img.dtype != np.uint8:
         img = (img * 255).astype(np.uint8)
     result, n = cv2.imencode(ext, img)
-    if result:
-        with open(filename, mode='wb') as f:
-            n.tofile(f)
+    assert result, "Error saving the collage"
+    n.tofile(filename)
 
 
 def save_img(img: np.ndarray, path: str, suffix: str) -> None:
@@ -581,22 +594,25 @@ def read_images(pic_path: str, img_size: Tuple[int, int], recursive=False, num_p
                 pool.imap_unordered(
                     read_img_center if flag == "center" else read_img_other, 
                     zip(files, itertools.repeat(img_size, len(files))), 
-                chunksize=64), 
+                chunksize=32), 
                 total=len(files), desc="[Reading files]", unit="file", ncols=pbar_ncols) 
                     if r is not None
         ]
     print("Read", len(result), "images")
     return result
 
-# this imread method can read images whose path contain unicode characters
+
 def imread(filename: str) -> np.ndarray:
-    img = cv2.imdecode(np.fromfile(filename, np.uint8), cv2.IMREAD_COLOR)
-    img = img.astype(np.float32)
+    """
+    like cv2.imread, but can read images whose path contain unicode characters
+    """
+    img = cv2.imdecode(np.fromfile(filename, np.uint8), cv2.IMREAD_COLOR).astype(np.float32)
     img *= 1 / 255.0
     return img
 
 
 def read_img_center(args: Tuple[str, Tuple[int, int]]):
+    # crop the largest square from the center of a non-square image
     img_file, img_size = args
     try:
         img = imread(img_file)
@@ -604,16 +620,14 @@ def read_img_center(args: Tuple[str, Tuple[int, int]]):
         if w == h:
             img = cv2.resize(img, img_size, interpolation=cv2.INTER_AREA)
         elif w > h:
-            ratio = img_size[1] / h
-            img = cv2.resize(img, (round(w * ratio), img_size[1]), interpolation=cv2.INTER_AREA)
-            s = int((w * ratio - img_size[0]) / 2)
-            img = img[:, s:s + img_size[0], :]
+            margin = (w - h) // 2
+            add = (w - h) % 2
+            img = img[:, margin:w - margin + add, :]
         else:
-            ratio = img_size[0] / w
-            img = cv2.resize(img, (img_size[0], round(h * ratio)), interpolation=cv2.INTER_AREA)
-            s = int((h * ratio - img_size[1]) / 2)
-            img = img[s:s + img_size[1], :, :]
-        return img
+            margin = (h - w) // 2
+            add = (h - w) % 2
+            img = img[margin:h - margin + add, :, :]
+        return cv2.resize(img, img_size, interpolation=cv2.INTER_AREA)
     except:
         return None
 
