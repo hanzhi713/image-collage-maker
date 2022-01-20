@@ -529,17 +529,19 @@ def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width: int,
         print("Computing rank matrix...")
         rank_mat = np.argsort(dist_mat, axis=1)
         rank_mat_float = rank_mat.astype(np.float32)
-        rank_mat_float[row_range[:, np.newaxis], rank_mat] = np.arange(0, dist_mat.shape[1], dtype=np.int32)
+        rank_mat_float[row_range[:, np.newaxis], rank_mat] = np.arange(0, dist_mat.shape[1], dtype=np.float32)
 
         print("Computing assignments...")
         _indices = row_range
         if randomize:
             _indices = row_range.copy()
             np.random.shuffle(_indices)
-        indices_freq = np.zeros(len(img_keys), dtype=np.float32)
+        indices_freq = np.zeros(dist_mat.shape[1], dtype=np.float32)
         for i in _indices:
             # Find the index of the image which best approximates the current pixel
-            idx = np.argmin(rank_mat_float[i, :] + indices_freq)
+            row = rank_mat_float[i, :]
+            row += indices_freq
+            idx = np.argmin(row)
             assignment[i] = idx
             indices_freq[idx] += freq_mul
     else:
