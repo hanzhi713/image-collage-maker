@@ -734,7 +734,7 @@ def main(args):
         # ext = os.path.splitext(file_name)[-1]
         # assert ext.lower() == ".jpg" or ext.lower() == ".png", "The file extension must be .jpg or .png"
 
-    imgs = read_images(args.path, (args.size, args.size), args.recursive, args.num_process)
+    imgs = read_images(args.path, (args.size, args.size), args.recursive, args.num_process, args.resize_opt)
     if len(args.dest_img) == 0:
         if args.exp:
             sort_exp(args, imgs)
