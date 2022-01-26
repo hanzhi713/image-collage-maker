@@ -1,6 +1,10 @@
 #!/bin/bash
 PLATFORM=$1
-NAME=photomosaic-maker-${VERSION}-$PLATFORM-x64
+PLATV=$2
+if [[ $2 != "" ]]; then
+    PLATV="-$2"
+fi
+NAME=photomosaic-maker-${VERSION}-${PLATFORM}${PLATV}-x64
 
 rm -rf dist/*
 

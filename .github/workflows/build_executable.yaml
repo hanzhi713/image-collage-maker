@@ -17,16 +17,36 @@ jobs:
     - name: Build
       run: |
         . ./build_scripts/install_dependencies.sh macos
-        . ./build_scripts/build.sh macos
+        . ./build_scripts/build.sh macos 10.15
     - name: Release
       uses: softprops/action-gh-release@v1
       # if: startsWith(github.ref, 'refs/tags/')
       with:
         draft: true
         files: |
-          ./dist/photomosaic-maker-${{ env.VERSION }}-macos-x64
-          ./dist/photomosaic-maker-${{ env.VERSION }}-macos-x64.tar.gz
-          ./photomosaic-maker-${{ env.VERSION }}-macos-x64-build.tar.gz
+          ./dist/photomosaic-maker-${{ env.VERSION }}-macos-10.15-x64
+          ./dist/photomosaic-maker-${{ env.VERSION }}-macos-10.15-x64.tar.gz
+          ./photomosaic-maker-${{ env.VERSION }}-macos-10.15-x64-build.tar.gz
+  build-macos11:
+    runs-on: macos-11
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/setup-python@v2
+      with:
+        python-version: '3.9'
+    - name: Build
+      run: |
+        . ./build_scripts/install_dependencies.sh macos
+        . ./build_scripts/build.sh macos 11
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      # if: startsWith(github.ref, 'refs/tags/')
+      with:
+        draft: true
+        files: |
+          ./dist/photomosaic-maker-${{ env.VERSION }}-macos-11-x64
+          ./dist/photomosaic-maker-${{ env.VERSION }}-macos-11-x64.tar.gz
+          ./photomosaic-maker-${{ env.VERSION }}-macos-11-x64-build.tar.gz
   build-linux:
     runs-on: ubuntu-18.04
     steps:
