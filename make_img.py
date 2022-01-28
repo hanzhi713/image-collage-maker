@@ -5,6 +5,7 @@ import math
 import random
 import argparse
 import itertools
+import traceback
 import multiprocessing as mp
 import concurrent.futures as con
 from typing import Any, List, Tuple
@@ -40,8 +41,11 @@ class PARAMS:
     recursive = _PARAMETER(type=bool, default=False, help="Whether to read the sub-folders for the specified path")
     num_process = _PARAMETER(type=int, default=mp.cpu_count() // 2, help="Number of processes to use when loading tile")
     out = _PARAMETER(default="result.png", type=str, help="The filename of the output collage/photomosaic")
-    size = _PARAMETER(type=int, default=50, help="Size (side length) of each tile in pixels in the resulting collage/photomosaic")
+    size = _PARAMETER(type=int, nargs=2, default=(50, 50), help="Width and height of each tile in pixels in the resulting collage/photomosaic")
     quiet = _PARAMETER(type=bool, default=False, help="Print progress message to console")
+    auto_rotate = _PARAMETER(type=int, default=0, choices=[-1, 0, 1],
+        help="Options to auto rotate tiles to best match the specified tile size. 0: do not auto rotate. "
+             "1: attempt to rotate counterclockwise by 90 degrees. -1: attempt to rotate clockwise by 90 degrees")
     resize_opt = _PARAMETER(type=str, default="center", choices=["center", "stretch"], 
         help="How to resize each tile so they become square images. "
              "Center: crop a square in the center. Stretch: stretch the tile")
@@ -172,19 +176,21 @@ def rand(img: np.ndarray) -> float:
     return random.random()
 
 
-def calc_grid_size(rw: int, rh: int, num_imgs: int) -> Grid:
+def calc_grid_size(rw: int, rh: int, num_imgs: int, shape: Tuple[int, int, int]) -> Grid:
     """
     :param rw: the width of the target image
     :param rh: the height of the target image
     :param num_imgs: number of images available
+    :param shape: the shape of a tile
     :return: an optimal grid size
     """
     possible_wh = []
+    th, tw, _ = shape
     for width in range(1, num_imgs):
         height = math.ceil(num_imgs / width)
-        possible_wh.append((width, height))
-
-    return min(possible_wh, key=lambda x: ((x[0] / x[1]) - (rw / rh)) ** 2)
+        possible_wh.append((width * tw / (th * height), width, height))
+    dest_ratio = rw / rh
+    return min(possible_wh, key=lambda x: (x[0] - dest_ratio) ** 2)[1:]
 
 
 def make_collage(grid: Grid, sorted_imgs: List[np.ndarray], rev=False) -> np.ndarray:
@@ -244,8 +250,7 @@ def sort_collage(imgs: List[np.ndarray], ratio: Grid, sort_method="pca_lab", rev
     :return: [calculated grid size, sorted image array]
     """
     t = time.time()
-    num_imgs = len(imgs)
-    grid = calc_grid_size(ratio[0], ratio[1], num_imgs)
+    grid = calc_grid_size(ratio[0], ratio[1], len(imgs), imgs[0].shape)
 
     print("Calculated grid size based on your aspect ratio:", grid)
     total = np.prod(grid)
@@ -293,7 +298,9 @@ def cvt_colorspace(colorspace: str, imgs: List[np.ndarray], dest_img: np.ndarray
         dest_img[:, :, 0] *= 1 / 360.0
 
 
-def solve_lap(cost_matrix: np.ndarray, v=sys.__stderr__):
+def solve_lap(cost_matrix: np.ndarray, v=None):
+    if v is None:
+        v = sys.__stderr__
     """
     solve the linear sum assignment (LAP) problem with progress info
     """
@@ -330,18 +337,18 @@ def solve_lap_greedy(cost_matrix: np.ndarray, v=None):
     return col_assigned
 
 
-def compute_block_map(thresh_map: np.ndarray, block_size: int, lower_thresh: int):
+def compute_block_map(thresh_map: np.ndarray, block_width: int, block_height: int, lower_thresh: int):
     """
     Find the indices of the blocks that contain salient pixels according to the thresh_map
 
     returns [row indices, column indices, resized threshold map] of sizes [(N,), (N,), (W x H)]
     """
     height, width = thresh_map.shape
-    dst_size = (width - width % block_size, height - height % block_size)
+    dst_size = (width - width % block_width, height - height % block_height)
     if thresh_map.shape[::-1] != dst_size:
         thresh_map = cv2.resize(thresh_map, dst_size, interpolation=cv2.INTER_AREA)
     row_idx, col_idx = np.nonzero(thresh_map.reshape(
-        dst_size[1] // block_size, block_size, dst_size[0] // block_size, block_size).max(axis=(1, 3)) >= lower_thresh
+        dst_size[1] // block_height, block_height, dst_size[0] // block_width, block_width).max(axis=(1, 3)) >= lower_thresh
     )
     return row_idx, col_idx, thresh_map
 
@@ -354,23 +361,23 @@ def get_background_tile(shape: Tuple[int], background: BackgroundRGB) -> np.ndar
 
 def compute_blocks_salient(
     colorspace: str, dest_img: np.ndarray, imgs: List[np.ndarray], 
-    block_size: int, ridx: np.ndarray, cidx: np.ndarray, 
+    block_width: int, block_height: int, ridx: np.ndarray, cidx: np.ndarray, 
     thresh_map: np.ndarray, lower_thresh: int, background_tile: np.ndarray) -> Tuple[Grid, np.ndarray, np.ndarray]:
     """
     Reorder the blocks for the salient parts of the dest image. Convert the blocks and tiles to the desired colorspace.
 
-    returns [grid size, blocked image (1), resized & flattened tiles (2)]. (1) shape: (N x 3B^2). (2) shape (M x 3B^2)
-    where N is the number of salient blocks in dest_img, 3 is the number of channels, B is the block size, and M is the number of tiles
+    returns [grid size, blocked image (1), resized & flattened tiles (2)]. (1) shape: (N, Bh x Bw x 3). (2) shape (M, Bh x Bw x 3)
+    where N is the number of blocks in dest_img, 3 is the number of channels, Bw/Bh is the block width/height, and M is the number of tiles
     """
     dest_img = cv2.resize(dest_img, thresh_map.shape[::-1], interpolation=cv2.INTER_AREA)
     dest_img[thresh_map < lower_thresh] = background_tile[0, 0, :]
 
-    img_keys = [cv2.resize(img, (block_size, block_size), interpolation=cv2.INTER_AREA) for img in imgs]
+    img_keys = [cv2.resize(img, (block_width, block_height), interpolation=cv2.INTER_AREA) for img in imgs]
     cvt_colorspace(colorspace, img_keys, dest_img)
-    grid = (thresh_map.shape[1] // block_size, thresh_map.shape[0] // block_size)
-    dest_img.shape = (grid[1], block_size, grid[0], block_size, 3)
+    grid = (thresh_map.shape[1] // block_width, thresh_map.shape[0] // block_height)
+    dest_img.shape = (grid[1], block_height, grid[0], block_width, 3)
     dest_img = dest_img[ridx, :, cidx, :, :]
-    dest_img.shape = (-1, block_size * block_size * 3)
+    dest_img.shape = (-1, block_width * block_height * 3)
     return grid, dest_img, np.array(img_keys).reshape(-1, dest_img.shape[1])
 
 
@@ -403,25 +410,38 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, c
     print("Duplicating {} times".format(dup))
     height, width, _ = dest_img.shape
 
-    # this is just the initial grid size
+    # this is just the initial (minimum) grid size
     total = len(imgs) * dup
-    grid = calc_grid_size(width, height, total)
-    block_size = min(width // grid[0], height // grid[1])
+    grid = calc_grid_size(width, height, total, imgs[0].shape)
     _, orig_thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((dest_img * 255).astype(np.uint8))
-
+    
+    bh_f = height / grid[1]
+    bw_f = width / grid[0]
+    # DDA-like algorithm to decrease block size while preserving aspect ratio
+    if bw_f > bh_f:
+        bw_delta = 1
+        bh_delta = bh_f / bw_f
+    else:
+        bh_delta = 1
+        bw_delta = bh_f / bw_f
+    
     while True:
-        ridx, cidx, thresh_map = compute_block_map(orig_thresh_map, block_size, lower_thresh)
+        block_width = int(bw_f)
+        block_height = int(bh_f)
+        ridx, cidx, thresh_map = compute_block_map(orig_thresh_map, block_width, block_height, lower_thresh)
         if len(ridx) >= total:
             break
-        block_size -= 1
-        assert block_size > 0, "Salient area is too small to put down all tiles. Please try to increase the saliency threshold."
-    
-    print("Block size:", block_size)
+        bw_f -= bw_delta
+        bh_f -= bh_delta
+        assert bw_f > 0 and bh_f > 0, "Salient area is too small to put down all tiles. Please try to increase the saliency threshold."
+
     total = len(ridx)
     imgs = dup_to_meet_total(imgs.copy(), total)
 
     bg_img = get_background_tile(imgs[0].shape, background)
-    grid, dest_img, img_keys = compute_blocks_salient(colorspace, dest_img, imgs, block_size, ridx, cidx, thresh_map, lower_thresh, bg_img)
+    grid, dest_img, img_keys = compute_blocks_salient(colorspace, dest_img, imgs, block_width, block_height, ridx, cidx, thresh_map, lower_thresh, bg_img)
+
+    print("Block size:", (block_width, block_height))
     print("Grid size:", grid)
     print(f"Salient blocks/total blocks = {total}/{np.prod(grid)}")
 
@@ -440,20 +460,23 @@ def compute_blocks(colorspace: str, dest_img: np.ndarray, imgs: List[np.ndarray]
     Compute and reorder the blocks of the dest_img. Block size is inferred from grid size.
     Convert the blocks and tiles to the desired colorspace.
 
-    returns [blocked image, resized tiles] of sizes [(N x 3B^2), (M x 3B^2)]
-    where N is the number of blocks in dest_img, 3 is the number of channels, B is the block size, and M is the number of tiles
+    returns [blocked image, resized tiles] of sizes [(N, Bh x Bw x 3), (M, Bh x Bw x 3)]
+    where N is the number of blocks in dest_img, 3 is the number of channels, Bw/Bh is the block width/height, and M is the number of tiles
 
     N = grid width x grid height
     """
-    block_size = min(dest_img.shape[0] // grid[1], dest_img.shape[1] // grid[0])
-    target_sz = (grid[0] * block_size, grid[1] * block_size)
-    print("Block size:", block_size)
+    block_height = dest_img.shape[0] // grid[1]
+    block_width = dest_img.shape[1] // grid[0]
+    print("Block size:", (block_width, block_height))
+
+    target_sz = (grid[0] * block_width, grid[1] * block_height)
     print(f"Resizing dest image from {dest_img.shape[1]}x{dest_img.shape[0]} to {target_sz[0]}x{target_sz[1]}")
     dest_img = cv2.resize(dest_img, target_sz, interpolation=cv2.INTER_AREA)
-    img_keys = [cv2.resize(img, (block_size, block_size), interpolation=cv2.INTER_AREA) for img in imgs]
+    img_keys = [cv2.resize(img, (block_width, block_height), interpolation=cv2.INTER_AREA) for img in imgs]
+
     cvt_colorspace(colorspace, img_keys, dest_img)
-    flat_block_size = block_size * block_size * 3
-    dest_img.shape = (grid[1], block_size, grid[0], block_size, 3)
+    flat_block_size = block_width * block_height * 3
+    dest_img.shape = (grid[1], block_height, grid[0], block_width, 3)
     return dest_img.transpose((0, 2, 1, 3, 4)).reshape(-1, flat_block_size), \
            np.array(img_keys).reshape(-1, flat_block_size)
 
@@ -472,7 +495,7 @@ def calc_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspac
         dup = np.prod(grid) // len(imgs) + 1
     else:
         # Compute the grid size based on the number images that we have
-        grid = calc_grid_size(dest_img.shape[1],  dest_img.shape[0], len(imgs) * dup)
+        grid = calc_grid_size(dest_img.shape[1],  dest_img.shape[0], len(imgs) * dup, imgs[0].shape)
         print("Calculated grid size based on the aspect ratio of the image provided:", grid)
     total = np.prod(grid)
 
@@ -501,21 +524,22 @@ def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width: int,
     
     # Because we don't have a fixed total amount of images as we can used a single image
     # for arbitrary amount of times, we need user to specify the maximum width in order to determine the grid size.
-    rh, rw, _ = dest_img.shape
-    rh = round(rh * max_width / rw)
-    grid = (max_width, rh)
+    dh, dw, _ = dest_img.shape
+    th, tw, _ = imgs[0].shape
+    grid = (max_width, round(dh * (max_width * tw / dw) / th))
     print("Calculated grid size based on the aspect ratio of the image provided:", grid)
 
     salient = lower_thresh is not None and background is not None
     if salient:
-        block_size = min(dest_img.shape[1] // grid[0], dest_img.shape[0] // grid[1])
+        block_height = dest_img.shape[0] // grid[1]
+        block_width = dest_img.shape[1] // grid[0]
         # we resize dest_img here so that the compute_block* functions can infer correct grid size from block_size
-        dest_img = cv2.resize(dest_img, (grid[0] * block_size, grid[1] * block_size))
+        dest_img = cv2.resize(dest_img, (grid[0] * block_width, grid[1] * block_height))
         _, thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((dest_img * 255).astype(np.uint8))
 
-        ridx, cidx, thresh_map = compute_block_map(thresh_map, block_size, lower_thresh)
+        ridx, cidx, thresh_map = compute_block_map(thresh_map, block_width, block_height, lower_thresh)
         bg_img = get_background_tile(imgs[0].shape, background)
-        _grid, dest_img, img_keys = compute_blocks_salient(colorspace, dest_img, imgs, block_size, ridx, cidx, thresh_map, lower_thresh, bg_img)
+        _grid, dest_img, img_keys = compute_blocks_salient(colorspace, dest_img, imgs, block_width, block_height, ridx, cidx, thresh_map, lower_thresh, bg_img)
         print(f"Salient blocks/total blocks = {len(ridx)}/{np.prod(grid)}")
     else:
         dest_img, img_keys = compute_blocks(colorspace, dest_img, imgs, grid)
@@ -581,7 +605,7 @@ def save_img(img: np.ndarray, path: str, suffix: str) -> None:
         imwrite(path, img)
 
 
-def read_images(pic_path: str, img_size: Tuple[int, int], recursive=False, num_process=1, flag="stretch") -> List[np.ndarray]:
+def read_images(pic_path: str, img_size: Tuple[int, int], recursive=False, num_process=1, flag="stretch", auto_rotate=0) -> List[np.ndarray]:
     assert os.path.isdir(pic_path), "Directory " + pic_path + "is non-existent"
     files = []
     for root, _, file_list in os.walk(pic_path):
@@ -591,11 +615,12 @@ def read_images(pic_path: str, img_size: Tuple[int, int], recursive=False, num_p
             break
 
     with mp.Pool(max(1, num_process)) as pool:
+        print("start reading")
         result = [
             r for r in tqdm(
                 pool.imap_unordered(
                     read_img_center if flag == "center" else read_img_other, 
-                    zip(files, itertools.repeat(img_size, len(files))), 
+                    zip(files, itertools.repeat(img_size, len(files)), itertools.repeat(auto_rotate, len(files))), 
                 chunksize=32), 
                 total=len(files), desc="[Reading files]", unit="file", ncols=pbar_ncols) 
                     if r is not None
@@ -608,39 +633,57 @@ def imread(filename: str) -> np.ndarray:
     """
     like cv2.imread, but can read images whose path contain unicode characters
     """
-    img = cv2.imdecode(np.fromfile(filename, np.uint8), cv2.IMREAD_COLOR).astype(np.float32)
+    img = cv2.imdecode(np.fromfile(filename, np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        return img
+    img = img.astype(np.float32)
     img *= 1 / 255.0
     return img
 
 
-def read_img_center(args: Tuple[str, Tuple[int, int]]):
+def read_img_center(args: Tuple[str, Tuple[int, int], int]):
     # crop the largest square from the center of a non-square image
-    img_file, img_size = args
-    try:
-        img = imread(img_file)
+    img_file, img_size, rot = args
+    img = imread(img_file)
+    if img is None:
+        return None
+    
+    ratio = img_size[0] / img_size[1]
+    # rotate the image if possible to preserve more area
+    h, w, _ = img.shape
+    if rot != 0 and abs(h / w - ratio) < abs(w / h - ratio):
+        img = np.rot90(img, k=rot)
+        w, h = h, w
+    
+    cw = round(h * ratio) # cropped width
+    ch = round(w / ratio) # cropped height
+    assert cw <= w or ch <= h
+    cond = cw > w or (ch <= h and (w - cw) * h > (h - ch) * w)
+    if cond:
+        img = img.transpose((1, 0, 2))
+        w, h = h, w
+        cw = ch
+    
+    margin = (w - cw) // 2
+    add = (w - cw) % 2
+    img = img[:, margin:w - margin + add, :]
+    if cond:
+        img = img.transpose((1, 0, 2))
+    return cv2.resize(img, img_size, interpolation=cv2.INTER_AREA)
+
+
+def read_img_other(args: Tuple[str, Tuple[int, int], int]):
+    img_file, img_size, rot = args
+    img = imread(img_file)
+    if img is None:
+        return img
+    
+    if rot != 0:
+        ratio = img_size[0] / img_size[1]
         h, w, _ = img.shape
-        if w == h:
-            img = cv2.resize(img, img_size, interpolation=cv2.INTER_AREA)
-        elif w > h:
-            margin = (w - h) // 2
-            add = (w - h) % 2
-            img = img[:, margin:w - margin + add, :]
-        else:
-            margin = (h - w) // 2
-            add = (h - w) % 2
-            img = img[margin:h - margin + add, :, :]
-        return cv2.resize(img, img_size, interpolation=cv2.INTER_AREA)
-    except:
-        return None
-
-
-def read_img_other(args: Tuple[str, Tuple[int, int]]):
-    img_file, img_size = args
-    try:
-        img = imread(img_file)
-        return cv2.resize(img, img_size, interpolation=cv2.INTER_AREA)
-    except:
-        return None
+        if abs(h / w - ratio) < abs(w / h - ratio):
+            img = np.rot90(img, k=rot)
+    return cv2.resize(img, img_size, interpolation=cv2.INTER_AREA)
 
 
 def unfair_exp_mat(dest_img, args, imgs):
@@ -734,7 +777,7 @@ def main(args):
         # ext = os.path.splitext(file_name)[-1]
         # assert ext.lower() == ".jpg" or ext.lower() == ".png", "The file extension must be .jpg or .png"
 
-    imgs = read_images(args.path, (args.size, args.size), args.recursive, args.num_process, args.resize_opt)
+    imgs = read_images(args.path, (args.size[0], args.size[1]), args.recursive, args.num_process, args.resize_opt, args.auto_rotate)
     if len(args.dest_img) == 0:
         if args.exp:
             sort_exp(args, imgs)
