@@ -7,12 +7,15 @@ import argparse
 import itertools
 import traceback
 import multiprocessing as mp
+from fractions import Fraction
 import concurrent.futures as con
 from typing import Any, List, Tuple
+from collections import defaultdict
 
 from io_utils import stdout_redirector, JVOutWrapper
 
 import cv2
+import imagesize
 import numpy as np
 from tqdm import tqdm
 from lapjv import lapjv
@@ -41,7 +44,14 @@ class PARAMS:
     recursive = _PARAMETER(type=bool, default=False, help="Whether to read the sub-folders for the specified path")
     num_process = _PARAMETER(type=int, default=mp.cpu_count() // 2, help="Number of processes to use when loading tile")
     out = _PARAMETER(default="result.png", type=str, help="The filename of the output collage/photomosaic")
-    size = _PARAMETER(type=int, nargs=2, default=(50, 50), help="Width and height of each tile in pixels in the resulting collage/photomosaic")
+    size = _PARAMETER(type=int, nargs="+", default=(50,), 
+        help="Width and height of each tile in pixels in the resulting collage/photomosaic. "
+             "If two numbers are specified, they are treated as width and height. "
+             "If one number is specified with the --infer flag, the number is treated as the width"
+             "and the height is inferred from the aspect ratios of the images provided. "
+             "If one number is specified without the --infer flag, both width and height are set to this number. ")
+    infer = _PARAMETER(type=bool, default=False, 
+        help="Infer the height of the tile based on the specified width and the aspect ratios of the images provided. See the --size option for more information.")
     quiet = _PARAMETER(type=bool, default=False, help="Print progress message to console")
     auto_rotate = _PARAMETER(type=int, default=0, choices=[-1, 0, 1],
         help="Options to auto rotate tiles to best match the specified tile size. 0: do not auto rotate. "
@@ -605,7 +615,7 @@ def save_img(img: np.ndarray, path: str, suffix: str) -> None:
         imwrite(path, img)
 
 
-def read_images(pic_path: str, img_size: Tuple[int, int], recursive=False, num_process=1, flag="stretch", auto_rotate=0) -> List[np.ndarray]:
+def read_images(pic_path: str, img_size: List[int], recursive=False, num_process=1, flag="stretch", auto_rotate=0, infer=False) -> List[np.ndarray]:
     assert os.path.isdir(pic_path), "Directory " + pic_path + "is non-existent"
     files = []
     for root, _, file_list in os.walk(pic_path):
@@ -613,9 +623,34 @@ def read_images(pic_path: str, img_size: Tuple[int, int], recursive=False, num_p
             files.append(os.path.join(root, f))
         if not recursive:
             break
+    
+    if infer and len(img_size) == 2:
+        print("Warning: both tile width and height are specified and infer=True. Inference is disabled. ")
+    elif infer:
+        sizes = defaultdict(int)
+        for img in files:
+            try:
+                w, h = imagesize.get(img)
+            except:
+                continue
+            if w == -1 or h == -1:
+                pass
+            sizes[Fraction(w, h)] += 1
+
+        sizes = list(sizes.items())
+        sizes.sort(key=lambda x: x[1])
+        print("Aspect ratio (width / height, sorted by frequency) statistics:")
+        for ratio, freq in sizes:
+            print(f"{ratio.numerator / ratio.denominator:6.4f}: {freq}")
+
+        most_freq_ratio = sizes[-1][0]
+        ratio = most_freq_ratio.denominator / most_freq_ratio.numerator
+        img_size = (img_size[0], round(img_size[0] * ratio))
+        print("Inferred tile size:", img_size)
+    elif len(img_size) == 1:
+        img_size = (img_size[0], img_size[0])
 
     with mp.Pool(max(1, num_process)) as pool:
-        print("start reading")
         result = [
             r for r in tqdm(
                 pool.imap_unordered(
@@ -625,7 +660,7 @@ def read_images(pic_path: str, img_size: Tuple[int, int], recursive=False, num_p
                 total=len(files), desc="[Reading files]", unit="file", ncols=pbar_ncols) 
                     if r is not None
         ]
-    print("Read", len(result), "images")
+    print(f"Read {len(result)} images. {len(files) - len(result)} files cannot be decode as images.")
     return result
 
 
@@ -777,7 +812,7 @@ def main(args):
         # ext = os.path.splitext(file_name)[-1]
         # assert ext.lower() == ".jpg" or ext.lower() == ".png", "The file extension must be .jpg or .png"
 
-    imgs = read_images(args.path, (args.size[0], args.size[1]), args.recursive, args.num_process, args.resize_opt, args.auto_rotate)
+    imgs = read_images(args.path, args.size, args.recursive, args.num_process, args.resize_opt, args.auto_rotate, args.infer)
     if len(args.dest_img) == 0:
         if args.exp:
             sort_exp(args, imgs)
