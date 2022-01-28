@@ -47,11 +47,8 @@ class PARAMS:
     size = _PARAMETER(type=int, nargs="+", default=(50,), 
         help="Width and height of each tile in pixels in the resulting collage/photomosaic. "
              "If two numbers are specified, they are treated as width and height. "
-             "If one number is specified with the --infer flag, the number is treated as the width"
-             "and the height is inferred from the aspect ratios of the images provided. "
-             "If one number is specified without the --infer flag, both width and height are set to this number. ")
-    infer = _PARAMETER(type=bool, default=False, 
-        help="Infer the height of the tile based on the specified width and the aspect ratios of the images provided. See the --size option for more information.")
+             "If one number is specified, the number is treated as the width"
+             "and the height is inferred from the aspect ratios of the images provided. ")
     quiet = _PARAMETER(type=bool, default=False, help="Print progress message to console")
     auto_rotate = _PARAMETER(type=int, default=0, choices=[-1, 0, 1],
         help="Options to auto rotate tiles to best match the specified tile size. 0: do not auto rotate. "
@@ -615,7 +612,7 @@ def save_img(img: np.ndarray, path: str, suffix: str) -> None:
         imwrite(path, img)
 
 
-def read_images(pic_path: str, img_size: List[int], recursive=False, num_process=1, flag="stretch", auto_rotate=0, infer=False) -> List[np.ndarray]:
+def read_images(pic_path: str, img_size: List[int], recursive=False, num_process=1, flag="stretch", auto_rotate=0) -> List[np.ndarray]:
     assert os.path.isdir(pic_path), "Directory " + pic_path + "is non-existent"
     files = []
     for root, _, file_list in os.walk(pic_path):
@@ -624,9 +621,7 @@ def read_images(pic_path: str, img_size: List[int], recursive=False, num_process
         if not recursive:
             break
     
-    if infer and len(img_size) == 2:
-        print("Warning: both tile width and height are specified and infer=True. Inference is disabled. ")
-    elif infer:
+    if len(img_size) == 1:
         sizes = defaultdict(int)
         for img in files:
             try:
@@ -647,7 +642,8 @@ def read_images(pic_path: str, img_size: List[int], recursive=False, num_process
         ratio = most_freq_ratio.denominator / most_freq_ratio.numerator
         img_size = (img_size[0], round(img_size[0] * ratio))
         print("Inferred tile size:", img_size)
-    elif len(img_size) == 1:
+    else:
+        assert len(img_size) == 2
         img_size = (img_size[0], img_size[0])
 
     with mp.Pool(max(1, num_process)) as pool:
@@ -812,7 +808,7 @@ def main(args):
         # ext = os.path.splitext(file_name)[-1]
         # assert ext.lower() == ".jpg" or ext.lower() == ".png", "The file extension must be .jpg or .png"
 
-    imgs = read_images(args.path, args.size, args.recursive, args.num_process, args.resize_opt, args.auto_rotate, args.infer)
+    imgs = read_images(args.path, args.size, args.recursive, args.num_process, args.resize_opt, args.auto_rotate)
     if len(args.dest_img) == 0:
         if args.exp:
             sort_exp(args, imgs)
