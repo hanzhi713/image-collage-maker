@@ -29,6 +29,7 @@ A number of photomosaic makers already exist (like [mosaic](https://github.com/c
 
 - Can trade off between the fairness of the tiles and quality of the constructed photomosaic
   - Can ensure each tile is used exactly N times if desired (N is customizable)
+- Supports non square tile size
 - Supports saliency detection
 - Has a graphical user interface
 

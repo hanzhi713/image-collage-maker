@@ -632,15 +632,14 @@ def read_images(pic_path: str, img_size: List[int], recursive=False, num_process
                 pass
             sizes[Fraction(w, h)] += 1
 
-        sizes = list(sizes.items())
-        sizes.sort(key=lambda x: x[1])
+        sizes = [(args[1], args[0].numerator / args[0].denominator) for args in sizes.items()]
+        sizes.sort()
         print("Aspect ratio (width / height, sorted by frequency) statistics:")
-        for ratio, freq in sizes:
-            print(f"{ratio.numerator / ratio.denominator:6.4f}: {freq}")
+        for freq, ratio in sizes:
+            print(f"{ratio:6.4f}: {freq}")
 
-        most_freq_ratio = sizes[-1][0]
-        ratio = most_freq_ratio.denominator / most_freq_ratio.numerator
-        img_size = (img_size[0], round(img_size[0] * ratio))
+        most_freq_ratio = 1 / sizes[-1][1]
+        img_size = (img_size[0], round(img_size[0] * most_freq_ratio))
         print("Inferred tile size:", img_size)
     else:
         assert len(img_size) == 2
