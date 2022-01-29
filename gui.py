@@ -99,6 +99,22 @@ class LabelWithTooltip(Label):
         self._tp = CreateToolTip(self, _tp)
 
 
+class CheckbuttonWithTooltip(Checkbutton):
+    def __init__(self, *args, **kwargs) -> None:
+        _tp = kwargs["tooltip"]
+        del kwargs["tooltip"]
+        super().__init__(*args, **kwargs)
+        self._tp = CreateToolTip(self, _tp)
+
+
+class RadiobuttonWithTooltip(Radiobutton):
+    def __init__(self, *args, **kwargs) -> None:
+        _tp = kwargs["tooltip"]
+        del kwargs["tooltip"]
+        super().__init__(*args, **kwargs)
+        self._tp = CreateToolTip(self, _tp)
+
+
 if __name__ == "__main__":
     freeze_support()
     pool = ThreadPoolExecutor(1)
@@ -145,9 +161,6 @@ if __name__ == "__main__":
     log_entry.config(yscrollcommand=scroll.set)
     scroll.grid(row=1, column=1, sticky="NSEW")
 
-    out_wrapper = log_entry
-    sys.stdout = out_wrapper
-    sys.stderr = out_wrapper
     result_img = None
     # ------------------ end left panel ------------------------
 
@@ -170,8 +183,8 @@ if __name__ == "__main__":
         # prevent the image from being garbage-collected
         root.preview = PhotoImage(data=data.tobytes())
         canvas.delete("all")
-        canvas.create_image((width - w) // 2, (height - h) // 2,
-                            image=root.preview, anchor=NW)
+        canvas.create_image((width - w) // 2, (height - h) // 2, image=root.preview, anchor=NW)
+        save_button.config(state='enabled')
         if printDone:
             print("Done")
 
@@ -179,27 +192,55 @@ if __name__ == "__main__":
     # right panel ROW 0
     file_path = StringVar()
     file_path.set("N/A")
-    Label(right_panel, text="Path to tiles:").grid(row=0, columnspan=2, sticky="W", pady=(10, 2))
+    Label(right_panel, text="Path to tiles:").grid(row=0, columnspan=2, sticky="W", pady=(8, 2))
 
     # right panel ROW 1
-    Label(right_panel, textvariable=file_path, wraplength=150).grid(
-        row=1, columnspan=2, sticky="W")
+    Label(right_panel, textvariable=file_path, wraplength=150).grid(row=1, columnspan=2, sticky="W")
 
     # right panel ROW 2
     opt = StringVar()
     opt.set("sort")
-    img_size = IntVar()
-    img_size.set(50)
-    LabelWithTooltip(right_panel, text="Tile size: ", tooltip=mkg.PARAMS.size.help).grid(row=2, column=0, sticky="W", pady=(3, 2))
-    Entry(right_panel, width=5, textvariable=img_size).grid(row=2, column=1, sticky="W", pady=(3, 2))
+
+    tile_size_panel = PanedWindow(right_panel)
+    tile_size_panel.grid(row=2, column=0, columnspan=2, sticky="W")
+    
+    tile_width = IntVar()
+    tile_width.set(50)
+    tile_height = IntVar()
+    tile_height.set(0)
+    LabelWithTooltip(tile_size_panel, text="Tile size: ", tooltip=mkg.PARAMS.size.help).grid(row=0, column=0, sticky="W")
+    Entry(tile_size_panel, width=5, textvariable=tile_width).grid(row=0, column=1, sticky="W")
+    Label(tile_size_panel, text="x", wraplength=150).grid(row=0, column=2, sticky="W")
+    tile_height_entry = Entry(tile_size_panel, width=5, textvariable=tile_height)
+    tile_height_entry.grid(row=0, column=3, sticky="W")
+
+    infer_height = BooleanVar()
+    infer_height.set(True)
+    def action_infer_height():
+        if infer_height.get():
+            tile_height_entry.config(state='disabled')
+        else:
+            tile_height_entry.config(state='enabled')
+            if tile_height.get() == 0:
+                tile_height.set(tile_width.get())
+    action_infer_height()
+    CheckbuttonWithTooltip(tile_size_panel, text="Infer height", variable=infer_height, command=action_infer_height, 
+        tooltip="Infer height from width and the aspect ratios of the images provided").grid(row=1, columnspan=4, sticky="W")
+
+    auto_rotate = IntVar()
+    auto_rotate.set(0)
+    LabelWithTooltip(tile_size_panel, text="Auto rotate: ", tooltip=mkg.PARAMS.auto_rotate.help).grid(
+        row=2, column=0, columnspan=2, sticky="W")
+    OptionMenu(tile_size_panel, auto_rotate, "", *mkg.PARAMS.auto_rotate.choices).grid(
+        row=2, column=2, columnspan=2, sticky="W")
 
     # right panel ROW 3
     resize_opt = StringVar()
     resize_opt.set("center")
     LabelWithTooltip(right_panel, text="Resize option: ", tooltip=mkg.PARAMS.resize_opt.help).grid(
-        row=3, column=0, sticky="W", pady=(2, 3))
+        row=3, column=0, sticky="W")
     OptionMenu(right_panel, resize_opt, "", "center", "stretch").grid(
-        row=3, column=1, sticky="W", pady=(2, 3))
+        row=3, column=1, sticky="W")
 
     # right panel ROW 4
     recursive = BooleanVar()
@@ -212,32 +253,54 @@ if __name__ == "__main__":
     def load_img_action():
         global imgs
         fp = file_path.get()
-        size = img_size.get()
         try:
-            imgs = mkg.read_images(fp, (size, size), recursive.get(), cpu_count() // 2, resize_opt.get())
-            grid = mkg.calc_grid_size(16, 10, len(imgs))
+            sizes = [tile_width.get()]
+            if not infer_height.get():
+                sizes.append(tile_height.get())
+            imgs = mkg.read_images(fp, sizes, recursive.get(), cpu_count() // 2, resize_opt.get(), auto_rotate.get())
+            shape = imgs[0].shape
+            if infer_height.get():
+                tile_height.set(shape[0])
+            grid = mkg.calc_grid_size(16, 10, len(imgs), shape)
             return mkg.make_collage(grid, imgs.copy(), False)
         except:
             messagebox.showerror("Error", traceback.format_exc())
 
-    def load_images():
-        size = img_size.get()
-        if size < 1:
-            return messagebox.showerror("Illegal Argument", "Img size must be greater than 1")
-
-        fp = filedialog.askdirectory(initialdir=file_path.get() if os.path.isdir(file_path.get()) else init_dir, 
-            title="Select folder of source images")
-        if len(fp) <= 0 or not os.path.isdir(fp):
-            return
-
-        print("Loading source images from", fp)
-        file_path.set(fp)
+    
+    def reload_images():
         pool.submit(load_img_action).add_done_callback(lambda f: show_img(f.result()))
 
 
+    def load_images():
+        w = tile_width.get()
+        h = tile_height.get()
+        if w < 2:
+            return messagebox.showerror("Illegal Argument", "Tile width must be greater than 2")
+        if not infer_height.get() and h < 2:
+            return messagebox.showerror("Illegal Argument", "Tile height must be greater than 2")
+
+        fp = filedialog.askdirectory(initialdir=file_path.get() if os.path.isdir(file_path.get()) else init_dir, 
+            title="Select folder of tiles")
+        if len(fp) <= 0 or not os.path.isdir(fp):
+            return
+
+        def callback(f):
+            reload_img_button.config(state='enabled')
+            sort_button.config(state='enabled')
+            collage_button.config(state='enabled')
+            show_img(f.result())
+
+        print("Loading tiles from", fp)
+        file_path.set(fp)
+        pool.submit(load_img_action).add_done_callback(callback)
+
+
     # right panel ROW 5
-    Button(right_panel, text=" Load source images ", command=load_images).grid(
-        row=5, columnspan=2, pady=(3, 4))
+    Button(right_panel, text="Load tiles", command=load_images).grid(row=5, column=0, pady=2)
+    reload_img_button = Button(right_panel, text="Reload", command=reload_images)
+    reload_img_button.config(state='disabled')
+    reload_img_button.grid(row=5, column=1, pady=2, padx=(0, 4))
+
 
     def attach_sort():
         right_col_opt_panel.grid_remove()
@@ -255,27 +318,26 @@ if __name__ == "__main__":
 
     # right panel ROW 7
     Separator(right_panel, orient="horizontal").grid(
-        row=7, columnspan=2, pady=(5, 3), sticky="we")
+        row=7, columnspan=2, pady=(6, 3), sticky="we")
 
     # right panel ROW 8: Dynamically attached
     # right sort option panel !!OR!! right collage option panel
     right_sort_opt_panel = PanedWindow(right_panel)
-    right_sort_opt_panel.grid(
-        row=8, column=0, columnspan=2, pady=2, sticky="W")
+    right_sort_opt_panel.grid(row=8, column=0, columnspan=2, sticky="W")
 
     # ------------------------- right sort option panel --------------------------
     # right sort option panel ROW 0:
     sort_method = StringVar()
     sort_method.set("bgr_sum")
     LabelWithTooltip(right_sort_opt_panel, text="Sort methods:", tooltip=mkg.PARAMS.sort.help).grid(
-        row=0, column=0, pady=5, sticky="W")
+        row=0, column=0, sticky="W")
     OptionMenu(right_sort_opt_panel, sort_method, "", *mkg.PARAMS.sort.choices).grid(row=0, column=1)
 
     # right sort option panel ROW 1:
     LabelWithTooltip(right_sort_opt_panel, text="Aspect ratio:", tooltip=mkg.PARAMS.ratio.help).grid(
-        row=1, column=0, sticky="W", pady=(2, 2))
+        row=1, column=0, sticky="W")
     aspect_ratio_panel = PanedWindow(right_sort_opt_panel)
-    aspect_ratio_panel.grid(row=1, column=1, pady=(2, 2))
+    aspect_ratio_panel.grid(row=1, column=1)
     rw = IntVar()
     rw.set(16)
     rh = IntVar()
@@ -297,7 +359,7 @@ if __name__ == "__main__":
 
     def generate_sorted_image():
         if imgs is None:
-            return messagebox.showerror("Empty set", "Please first load source images")
+            return messagebox.showerror("Empty set", "Please first load tiles")
 
         try:
             w, h = rw.get(), rh.get()
@@ -316,8 +378,9 @@ if __name__ == "__main__":
         pool.submit(action).add_done_callback(lambda f: show_img(f.result()))
 
     # right sort option panel ROW 4:
-    Button(right_sort_opt_panel, text="Generate sorted image",
-           command=generate_sorted_image).grid(row=4, columnspan=2, pady=5)
+    sort_button = Button(right_sort_opt_panel, text="Generate sorted image", command=generate_sorted_image)
+    sort_button.config(state='disabled')
+    sort_button.grid(row=4, columnspan=2, pady=5)
     # ------------------------ end right sort option panel -----------------------------
 
     # ------------------------ right collage option panel ------------------------------
@@ -337,7 +400,7 @@ if __name__ == "__main__":
     def load_dest_img():
         global dest_img
         if imgs is None:
-            return messagebox.showerror("Empty set", "Please first load source images")
+            return messagebox.showerror("Empty set", "Please first load tiles")
 
         fp = filedialog.askopenfilename(
             initialdir=os.path.dirname(dest_img_path.get()) if os.path.isdir(os.path.dirname(dest_img_path.get())) else init_dir, 
@@ -372,10 +435,10 @@ if __name__ == "__main__":
     # right collage option panel ROW 4:
     colorization_opt = StringVar()
     colorization_opt.set("brightness")
-    Radiobutton(right_col_opt_panel, text="Brightness", variable=colorization_opt, value="brightness",
-                state=ACTIVE, command=change_alpha).grid(row=4, column=0, sticky="W")
-    Radiobutton(right_col_opt_panel, text="Alpha", variable=colorization_opt, value="alpha",
-                command=change_alpha).grid(row=4, column=1, sticky="W")
+    RadiobuttonWithTooltip(right_col_opt_panel, text="Brightness", variable=colorization_opt, value="brightness", state=ACTIVE, command=change_alpha, 
+        tooltip=mkg.PARAMS.blending.help).grid(row=4, column=0, sticky="W")
+    RadiobuttonWithTooltip(right_col_opt_panel, text="Alpha", variable=colorization_opt, value="alpha", command=change_alpha,
+        tooltip=mkg.PARAMS.blending.help).grid(row=4, column=1, sticky="W")
 
     # right collage option panel ROW 5:
     alpha_scale = Scale(right_col_opt_panel, from_=0.0, to=100.0, orient=HORIZONTAL, length=150, command=change_alpha)
@@ -408,10 +471,10 @@ if __name__ == "__main__":
     # right collage option panel ROW 9:
     even = StringVar()
     even.set("even")
-    Radiobutton(right_col_opt_panel, text="Fair", variable=even, value="even",
-                state=ACTIVE, command=attach_even).grid(row=9, column=0, sticky="W")
-    Radiobutton(right_col_opt_panel, text="Unfair", variable=even, value="uneven",
-                command=attach_uneven).grid(row=9, column=1, sticky="W")
+    RadiobuttonWithTooltip(right_col_opt_panel, text="Fair", variable=even, value="even", state=ACTIVE, command=attach_even, 
+        tooltip="Require all tiles are used the same amount of times (fair tile usage)").grid(row=9, column=0, sticky="W")
+    RadiobuttonWithTooltip(right_col_opt_panel, text="Unfair", variable=even, value="uneven", command=attach_uneven,
+        tooltip=mkg.PARAMS.unfair.help).grid(row=9, column=1, sticky="W")
 
     # right collage option panel ROW 10:
     Separator(right_col_opt_panel, orient="horizontal").grid(row=10, columnspan=2, sticky="we", pady=(5, 5))
@@ -423,11 +486,10 @@ if __name__ == "__main__":
     collage_even_panel.grid(row=11, columnspan=2, sticky="W")
 
     # collage even panel ROW 1
-    LabelWithTooltip(collage_even_panel, text="Duplicates:", tooltip=mkg.PARAMS.dup.help).grid(row=1, column=0, sticky="W", pady=2)
+    LabelWithTooltip(collage_even_panel, text="Duplicates:", tooltip=mkg.PARAMS.dup.help).grid(row=1, column=0, sticky="W")
     dup = IntVar()
     dup.set(1)
-    Entry(collage_even_panel, textvariable=dup,
-          width=5).grid(row=1, column=1, sticky="W", pady=2)
+    Entry(collage_even_panel, textvariable=dup, width=5).grid(row=1, column=1, sticky="W")
     # ----------------------- end collage even panel ------------------------
 
     # ----------------------- start collage uneven panel --------------------
@@ -446,14 +508,13 @@ if __name__ == "__main__":
 
     deterministic = BooleanVar()
     deterministic.set(False)
-    _cb = Checkbutton(collage_uneven_panel, text="Deterministic", variable=deterministic)
-    CreateToolTip(_cb, mkg.PARAMS.deterministic.help)
-    _cb.grid(row=3, columnspan=2, sticky="w")
+    CheckbuttonWithTooltip(collage_uneven_panel, text="Deterministic", variable=deterministic, 
+        tooltip=mkg.PARAMS.deterministic.help).grid(row=3, columnspan=2, sticky="w")
     # ----------------------- end collage uneven panel ----------------------
 
     def generate_collage():
         if imgs is None:
-            return messagebox.showerror("No source images", "Please first load source images")
+            return messagebox.showerror("No tiles", "Please first load tiles")
         if dest_img is None:
             return messagebox.showerror("No destination image", "Please first load the image that you're trying to fit")
     
@@ -553,8 +614,9 @@ if __name__ == "__main__":
     salient_bg_chooser.grid(row=2, columnspan=2, pady=(3, 1))
 
     # right collage option panel ROW 14
-    Button(right_col_opt_panel, text=" Generate Collage ",
-           command=generate_collage).grid(row=14, columnspan=2, pady=(3, 5))
+    collage_button = Button(right_col_opt_panel, text=" Generate Collage ", command=generate_collage)
+    collage_button.config(state='disabled')
+    collage_button.grid(row=14, columnspan=2, pady=(3, 5))
     # ------------------------ end right collage option panel --------------------
 
     # right panel ROW 9:
@@ -562,6 +624,7 @@ if __name__ == "__main__":
         row=9, columnspan=2, sticky="we", pady=(4, 10))
 
     save_img_init_dir = init_dir
+
     def save_img():
         global save_img_init_dir
         if result_img is None:
@@ -582,8 +645,9 @@ if __name__ == "__main__":
                 messagebox.showerror("Error", traceback.format_exc())
 
     # right panel ROW 10:
-    Button(right_panel, text=" Save image ",
-           command=save_img).grid(row=10, columnspan=2)
+    save_button = Button(right_panel, text=" Save image ", command=save_img)
+    save_button.config(state='disabled')
+    save_button.grid(row=10, columnspan=2)
     # -------------------------- end right panel -----------------------------------
 
     # make the window appear at the center
@@ -617,10 +681,12 @@ if __name__ == "__main__":
                 show_img(result_img, False)
 
     root.bind("<Configure>", canvas_resize)
-
+    out_wrapper = log_entry
+    sys.stdout = out_wrapper
+    sys.stderr = out_wrapper
     if cmd_args.D:
         file_path.set(cmd_args.src)
-        print("Loading source images from", cmd_args.src)
+        print("Loading tiles from", cmd_args.src)
         pool.submit(load_img_action).add_done_callback(lambda f: show_img(f.result()))
 
         print("Destination image loaded from", cmd_args.collage)
