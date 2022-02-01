@@ -100,45 +100,55 @@ class PARAMS:
         help="Level of blending, between 0.0 (no blending) and 1.0 (maximum blending). Default is no blending")
 
 
+cupy_available = False
+try:
+    import cupy
+    cupy_available = True
+except ImportError:
+    pass
+
+
+def get_cp():
+    return cupy if cupy_available else np
+
+
+def to_cpu(X: np.ndarray) -> np.ndarray:
+    return X.get() if cupy_available else X
+
+
 def cdist(A: np.ndarray, B: np.ndarray, metric="euclidean") -> np.ndarray:
     """
     Simple implementation of scipy.spatial.distance.cdist
     """
-    assert A.dtype == np.float32
-    assert B.dtype == np.float32
+    cp = get_cp()
+    A = cp.asarray(A)
+    B = cp.asarray(B)
+
+    assert A.dtype == cp.float32
+    assert B.dtype == cp.float32
     if metric == "cosine":
-        A = A / np.linalg.norm(A, axis=1, keepdims=True)
-        B = B / np.linalg.norm(B, axis=1, keepdims=True)
-        return 1 - np.inner(A, B)
+        A = A / cp.linalg.norm(A, axis=1, keepdims=True)
+        B = B / cp.linalg.norm(B, axis=1, keepdims=True)
+        return 1 - cp.inner(A, B)
 
-    # in theory we can do diff = A[:, np.newaxis, :] - B[np.newaxis, :, :]
-    # but this may consume too much memory
-    # so we calculate the distance matrix row by row instead
-    dist_mat = np.empty((A.shape[0], B.shape[0]), dtype=np.float32)
-    diff = np.empty_like(B)
-
-    # unfortunately, there is no Eigen-like expression template in numpy
-    # so we used in-place operations to speed up the computation
     if metric == "euclidean":
-        for i in tqdm(range(A.shape[0]), desc="[Computing costs]", ncols=pbar_ncols):
-            np.subtract(A[i, np.newaxis, :], B, out=diff)
-            np.square(diff, out=diff)
-            np.sum(diff, axis=1, out=dist_mat[i, :])
-        return dist_mat
+        norm_ord = None
     elif metric == "cityblock":
-        for i in tqdm(range(A.shape[0]), desc="[Computing costs]", ncols=pbar_ncols):
-            np.subtract(A[i, np.newaxis, :], B, out=diff)
-            np.abs(diff, out=diff)
-            np.sum(diff, axis=1, out=dist_mat[i, :])
-        return dist_mat
+        norm_ord = 1
     elif metric == "chebyshev":
-        for i in tqdm(range(A.shape[0]), desc="[Computing costs]", ncols=pbar_ncols):
-            np.subtract(A[i, np.newaxis, :], B, out=diff)
-            np.abs(diff, out=diff)
-            np.max(diff, axis=1, out=dist_mat[i, :])
-        return dist_mat
+        norm_ord = cp.inf
     else:
         raise ValueError(f"invalid metric {metric}")
+
+    # in theory we can do diff = A[:, cp.newaxis, :] - B[cp.newaxis, :, :]
+    # but this may consume too much memory
+    # so we calculate the distance matrix row by row instead
+    dist_mat = cp.empty((A.shape[0], B.shape[0]), dtype=cp.float32)
+    diff = cp.empty_like(B)
+    for i in tqdm(range(A.shape[0]), desc="[Computing costs]", ncols=pbar_ncols):
+        cp.subtract(A[i, cp.newaxis, :], B, out=diff)
+        dist_mat[i, :] = cp.linalg.norm(diff, ord=norm_ord, axis=1)
+    return dist_mat
 
 
 def bgr_sum(img: np.ndarray) -> float:
@@ -453,7 +463,7 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, c
     print("Grid size:", grid)
     print(f"Salient blocks/total blocks = {total}/{np.prod(grid)}")
 
-    cols = solve_lap(cdist(img_keys, dest_img, metric=metric), v)
+    cols = solve_lap(to_cpu(cdist(img_keys, dest_img, metric=metric)), v)
 
     imgs.append(bg_img)
     assignment = np.full(grid[::-1], len(imgs) - 1, dtype=np.int32)
@@ -514,10 +524,57 @@ def calc_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspac
         del imgs[total:]
     
     dest_img, img_keys = compute_blocks(colorspace, dest_img, imgs, grid)
-    cols = solve_lap(cdist(img_keys, dest_img, metric=metric), v)
+    cols = solve_lap(to_cpu(cdist(img_keys, dest_img, metric=metric)), v)
 
     print("Time taken: {}s".format((np.round(time.time() - t, 2))))
     return grid, [imgs[i] for i in cols]
+
+
+def col_dup_helper(img_keys: np.ndarray, dest_img: np.ndarray, metric: str, freq_mul: float, randomize: bool):
+    cp = get_cp()
+    img_keys = cp.asarray(img_keys)
+    dest_img = cp.asarray(dest_img)
+    assignment = cp.full(dest_img.shape[0], -1, dtype=cp.int32)
+
+    if metric == "cosine":
+        def dist_func(A, B):
+            A = A / cp.linalg.norm(A, axis=1, keepdims=True)
+            B = B / cp.linalg.norm(B, axis=1, keepdims=True)
+            return 1 - cp.inner(A, B)
+    else:
+        if metric == "euclidean":
+            norm_ord = None
+        elif metric == "cityblock":
+            norm_ord = 1
+        elif metric == "chebyshev":
+            norm_ord = cp.inf
+        else:
+            raise ValueError(f"invalid metric {metric}")
+        diff = cp.empty_like(img_keys)
+        def dist_func(A, B):
+            cp.subtract(A, B, out=diff)
+            return cp.linalg.norm(diff, ord=norm_ord, axis=1)
+
+    # note here we do not precompute the distance matrix as it may consume too much memory
+    if freq_mul > 0:
+        _indices = np.arange(0, dest_img.shape[0], dtype=cp.int32)
+        rg = cp.arange(0, img_keys.shape[0], dtype=cp.float32)
+        if randomize:
+            np.random.shuffle(_indices)
+        indices_freq = cp.zeros(img_keys.shape[0], dtype=cp.float32)
+        for i in tqdm(_indices, desc="[Computing assignments]", ncols=pbar_ncols):
+            row = dist_func(dest_img[cp.newaxis, i], img_keys)
+            row[cp.argsort(row)] = rg # compute the rank
+            row += indices_freq
+            idx = cp.argmin(row)
+            assignment[i] = idx
+            indices_freq[idx] += freq_mul
+    else:
+        for i in tqdm(range(dest_img.shape[0]), desc="[Computing assignments]", ncols=pbar_ncols):
+            row = dist_func(dest_img[cp.newaxis, i], img_keys)
+            idx = cp.argmin(row)
+            assignment[i] = idx
+    return to_cpu(assignment)
 
 
 def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width: int,
@@ -535,6 +592,7 @@ def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width: int,
     th, tw, _ = imgs[0].shape
     grid = (max_width, round(dh * (max_width * tw / dw) / th))
     print("Calculated grid size based on the aspect ratio of the image provided:", grid)
+    print("Collage size:", (grid[0] * tw, grid[1] * th))
 
     salient = lower_thresh is not None and background is not None
     if salient:
@@ -552,32 +610,7 @@ def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width: int,
         dest_img, img_keys = compute_blocks(colorspace, dest_img, imgs, grid)
 
     img_keys = np.asarray(img_keys)
-    assignment = np.full(dest_img.shape[0], -1, dtype=np.int32)
-    dist_mat = cdist(dest_img, img_keys, metric=metric)
-    row_range = np.arange(0, dist_mat.shape[0], dtype=np.int32)
-
-    if freq_mul > 0:
-        print("Computing rank matrix...")
-        rank_mat = np.argsort(dist_mat, axis=1)
-        rank_mat_float = rank_mat.astype(np.float32)
-        rank_mat_float[row_range[:, np.newaxis], rank_mat] = np.arange(0, dist_mat.shape[1], dtype=np.float32)
-
-        print("Computing assignments...")
-        _indices = row_range
-        if randomize:
-            _indices = row_range.copy()
-            np.random.shuffle(_indices)
-        indices_freq = np.zeros(dist_mat.shape[1], dtype=np.float32)
-        for i in _indices:
-            # Find the index of the image which best approximates the current pixel
-            row = rank_mat_float[i, :]
-            row += indices_freq
-            idx = np.argmin(row)
-            assignment[i] = idx
-            indices_freq[idx] += freq_mul
-    else:
-        np.argmin(dist_mat, axis=1, out=assignment)
-    print("Total assignment cost:", dist_mat[row_range, assignment].sum())
+    assignment = col_dup_helper(img_keys, dest_img, metric, freq_mul, randomize)
 
     if salient:
         imgs.append(bg_img)

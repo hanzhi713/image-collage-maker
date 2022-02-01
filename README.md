@@ -19,8 +19,6 @@
 
 # Photomosaic Maker
 
-> Version 3.0 Beta just released. It can create photomosaics with significantly better qualtity! Check it out. 
-
 ![gui demo](./examples/gui.png)
 
 ## Distinguishing Features of this Photomosaic Maker
@@ -30,6 +28,7 @@ A number of photomosaic makers already exist (like [mosaic](https://github.com/c
 - Can trade off between the fairness of the tiles and quality of the constructed photomosaic
   - Can ensure each tile is used exactly N times if desired (N is customizable)
 - Supports non square tile size
+- Optional GPU acceleration
 - Supports saliency detection
 - Has a graphical user interface
 
@@ -39,9 +38,9 @@ You can either use our pre-built binaries from [release](https://github.com/hanz
 
 ### Using the pre-built binary
 
-Binaries can be downloaded from [release](https://github.com/hanzhi713/image-collage-maker/releases).
+Binaries can be downloaded from [release](https://github.com/hanzhi713/image-collage-maker/releases). However, binaries do not support GPU acceleration. If it is desired, please run the python scripts directly (see section below).
 
-On Windows, my program may be blocked by Windows Defender because it is not signed (signing costs money!). Don't worry as there is no security risk. On MacOS or Linux, after downloading the binary, you may need to add executing permission. Open your terminal, go to the file's directory and type
+On Windows and MacOS, my program may be blocked because it is not signed (signing costs money!). Don't worry as there is no security risk. On MacOS or Linux, after downloading the binary, you may need to add executing permission. Open your terminal, go to the file's directory and type
 
 ```bash
 chmod +x ./photomosaic-maker-3.2-macos-x64
@@ -61,6 +60,8 @@ First, you need Python >= 3.6 with pip. You can install dependencies by running
 pip install -r requirements.txt
 ```
 
+If you want GPU acceleration, you need to install cupy. Consult the [cupy documentation](https://docs.cupy.dev/en/stable/install.html). Note that it only works for Nvidia GPUs. 
+
 Then, you can launch the GUI by running
 
 ```bash
@@ -69,7 +70,7 @@ python gui.py
 
 ## Command line usage
 
-> If you do not wish to use the GUI, a command line interface is also available. 
+> If you do not wish to use the GUI, a command line interface is also available. Make sure that you've installed dependencies in the section above. 
 
 ### Option 1: Sorting
 
@@ -174,83 +175,76 @@ python make_img.py --path img/zhou --dest_img examples/dest.jpg --size 25 --dup 
 
 ```
 $ python make_img.py -h
-usage: make_img.py [-h] [--path PATH] [--recursive]
-                   [--num_process NUM_PROCESS] [--out OUT] [--size SIZE]
-                   [--quiet] [--resize_opt {center,stretch}]
-                   [--ratio RATIO RATIO]
-                   [--sort {none,bgr_sum,av_hue,av_sat,av_lum,rand}]
-                   [--rev_row] [--rev_sort] [--dest_img DEST_IMG]
-                   [--colorspace {hsv,hsl,bgr,lab,luv}]
-                   [--metric {euclidean,cityblock,chebyshev,cosine}]
-                   [--unfair] [--max_width MAX_WIDTH] [--freq_mul FREQ_MUL]
-                   [--deterministic] [--dup DUP] [--salient]
-                   [--lower_thresh LOWER_THRESH]
+usage: make_img.py [-h] [--path PATH] [--recursive] [--num_process NUM_PROCESS] [--out OUT]   
+                   [--size SIZE [SIZE ...]] [--quiet] [--auto_rotate {-1,0,1}]
+                   [--resize_opt {center,stretch}] [--ratio RATIO RATIO]
+                   [--sort {none,bgr_sum,av_hue,av_sat,av_lum,rand}] [--rev_row] [--rev_sort] 
+                   [--dest_img DEST_IMG] [--colorspace {hsv,hsl,bgr,lab,luv}]
+                   [--metric {euclidean,cityblock,chebyshev,cosine}] [--unfair]
+                   [--max_width MAX_WIDTH] [--freq_mul FREQ_MUL] [--deterministic] [--dup DUP]
+                   [--salient] [--lower_thresh LOWER_THRESH]
                    [--background BACKGROUND BACKGROUND BACKGROUND]
-                   [--blending {alpha,brightness}]
-                   [--blending_level BLENDING_LEVEL] [--exp]
+                   [--blending {alpha,brightness}] [--blending_level BLENDING_LEVEL] [--exp]  
 
 optional arguments:
   -h, --help            show this help message and exit
-  --path PATH           Path to the tiles (default: img)
-  --recursive           Whether to read the sub-folders for the specified path
-                        (default: False)
+  --path PATH           Path to the tiles (default: C:\Users\kaiying\Desktop\Code\image-collage-   
+                        maker\img)
+  --recursive           Whether to read the sub-folders for the specified path (default: False)    
   --num_process NUM_PROCESS
-                        Number of processes to use when loading tile (default:
-                        8)
-  --out OUT             The filename of the output collage/photomosaic
-                        (default: result.png)
-  --size SIZE           Size (side length) of each tile in pixels in the
-                        resulting collage/photomosaic (default: 50)
+                        Number of processes to use when loading tile (default: 8)
+  --out OUT             The filename of the output collage/photomosaic (default: result.png)       
+  --size SIZE [SIZE ...]
+                        Width and height of each tile in pixels in the resulting
+                        collage/photomosaic. If two numbers are specified, they are treated as     
+                        width and height. If one number is specified, the number is treated as     
+                        the widthand the height is inferred from the aspect ratios of the images   
+                        provided. (default: (50,))
   --quiet               Print progress message to console (default: False)
+  --auto_rotate {-1,0,1}
+                        Options to auto rotate tiles to best match the specified tile size. 0: do  
+                        not auto rotate. 1: attempt to rotate counterclockwise by 90 degrees. -1:  
+                        attempt to rotate clockwise by 90 degrees (default: 0)
   --resize_opt {center,stretch}
-                        How to resize each tile so they become square images.
-                        Center: crop a square in the center. Stretch: stretch
-                        the tile (default: center)
+                        How to resize each tile so they become square images. Center: crop a       
+                        square in the center. Stretch: stretch the tile (default: center)
   --ratio RATIO RATIO   Aspect ratio of the output image (default: (16, 9))
   --sort {none,bgr_sum,av_hue,av_sat,av_lum,rand}
                         Sort method to use (default: bgr_sum)
-  --rev_row             Whether to use the S-shaped alignment. (default:
-                        False)
+  --rev_row             Whether to use the S-shaped alignment. (default: False)
   --rev_sort            Sort in the reverse direction. (default: False)
-  --dest_img DEST_IMG   The path to the destination image that you want to
-                        build a photomosaic for (default: )
+  --dest_img DEST_IMG   The path to the destination image that you want to build a photomosaic     
+                        for (default: )
   --colorspace {hsv,hsl,bgr,lab,luv}
-                        The colorspace used to calculate the metric (default:
-                        lab)
+                        The colorspace used to calculate the metric (default: lab)
   --metric {euclidean,cityblock,chebyshev,cosine}
-                        Distance metric used when evaluating the distance
-                        between two color vectors (default: euclidean)
-  --unfair              Whether to allow each tile to be used different amount
-                        of times (unfair tile usage). (default: False)
+                        Distance metric used when evaluating the distance between two color        
+                        vectors (default: euclidean)
+  --unfair              Whether to allow each tile to be used different amount of times (unfair    
+                        tile usage). (default: False)
   --max_width MAX_WIDTH
-                        Maximum width of the collage. This option is only
-                        valid if unfair option is enabled (default: 80)
-  --freq_mul FREQ_MUL   Frequency multiplier to balance tile fairless and
-                        mosaic quality. Minimum: 0. More weight will be put on
-                        tile fairness when this number increases. (default:
-                        0.0)
-  --deterministic       Do not randomize the tiles. This option is only valid
-                        if unfair option is enabled (default: False)
-  --dup DUP             Duplicate the set of tiles by how many times (default:
-                        1)
-  --salient             Make photomosaic for salient objects only (default:
-                        False)
+                        Maximum width of the collage. This option is only valid if unfair option   
+                        is enabled (default: 80)
+  --freq_mul FREQ_MUL   Frequency multiplier to balance tile fairless and mosaic quality.
+                        Minimum: 0. More weight will be put on tile fairness when this number      
+                        increases. (default: 0.0)
+  --deterministic       Do not randomize the tiles. This option is only valid if unfair option is  
+                        enabled (default: False)
+  --dup DUP             Duplicate the set of tiles by how many times (default: 1)
+  --salient             Make photomosaic for salient objects only (default: False)
   --lower_thresh LOWER_THRESH
-                        The threshold for saliency detection, between 0.0 (no
-                        object area = blank) and 1.0 (maximum object area =
-                        original image) (default: 0.5)
+                        The threshold for saliency detection, between 0.0 (no object area =        
+                        blank) and 1.0 (maximum object area = original image) (default: 0.5)       
   --background BACKGROUND BACKGROUND BACKGROUND
-                        Background color in RGB for non salient part of the
-                        image (default: (255, 255, 255))
+                        Background color in RGB for non salient part of the image (default: (255,  
+                        255, 255))
   --blending {alpha,brightness}
-                        The types of blending used. alpha: alpha
-                        (transparency) blending. Brightness: blending of
-                        brightness (lightness) channel in the HSL colorspace
-                        (default: alpha)
+                        The types of blending used. alpha: alpha (transparency) blending.
+                        Brightness: blending of brightness (lightness) channel in the HSL
+                        colorspace (default: alpha)
   --blending_level BLENDING_LEVEL
-                        Level of blending, between 0.0 (no blending) and 1.0
-                        (maximum blending). Default is no blending (default:
-                        0.0)
+                        Level of blending, between 0.0 (no blending) and 1.0 (maximum blending).   
+                        Default is no blending (default: 0.0)
   --exp                 Do experiments (for testing only) (default: False)
 ```
 
