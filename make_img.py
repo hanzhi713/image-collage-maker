@@ -197,7 +197,10 @@ def calc_grid_size(rw: int, rh: int, num_imgs: int, shape: Tuple[int, int, int])
         height = math.ceil(num_imgs / width)
         possible_wh.append((width * tw / (th * height), width, height))
     dest_ratio = rw / rh
-    return min(possible_wh, key=lambda x: (x[0] - dest_ratio) ** 2)[1:]
+    grid = min(possible_wh, key=lambda x: (x[0] - dest_ratio) ** 2)[1:]
+    print("Calculated grid size based on the aspect ratio of the destination image:", grid)
+    print(f"Collage size will be {grid[0] * tw}x{grid[1] * th}. ")
+    return grid
 
 
 def make_collage(grid: Grid, sorted_imgs: List[np.ndarray], rev=False) -> np.ndarray:
@@ -258,8 +261,6 @@ def sort_collage(imgs: List[np.ndarray], ratio: Grid, sort_method="pca_lab", rev
     """
     t = time.time()
     grid = calc_grid_size(ratio[0], ratio[1], len(imgs), imgs[0].shape)
-
-    print("Calculated grid size based on your aspect ratio:", grid)
     total = np.prod(grid)
     if len(imgs) < total:
         diff = total - len(imgs)
@@ -472,13 +473,13 @@ def compute_blocks(colorspace: str, dest_img: np.ndarray, imgs: List[np.ndarray]
 
     N = grid width x grid height
     """
-    block_height = dest_img.shape[0] // grid[1]
-    block_width = dest_img.shape[1] // grid[0]
+    block_height = round(dest_img.shape[0] / grid[1])
+    block_width = round(dest_img.shape[1] // grid[0])
     print("Block size:", (block_width, block_height))
 
     target_sz = (grid[0] * block_width, grid[1] * block_height)
     print(f"Resizing dest image from {dest_img.shape[1]}x{dest_img.shape[0]} to {target_sz[0]}x{target_sz[1]}")
-    dest_img = cv2.resize(dest_img, target_sz, interpolation=cv2.INTER_AREA)
+    dest_img = cv2.resize(dest_img, target_sz, interpolation=cv2.INTER_LINEAR)
     img_keys = [cv2.resize(img, (block_width, block_height), interpolation=cv2.INTER_AREA) for img in imgs]
 
     cvt_colorspace(colorspace, img_keys, dest_img)
@@ -503,7 +504,6 @@ def calc_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspac
     else:
         # Compute the grid size based on the number images that we have
         grid = calc_grid_size(dest_img.shape[1],  dest_img.shape[0], len(imgs) * dup, imgs[0].shape)
-        print("Calculated grid size based on the aspect ratio of the image provided:", grid)
     total = np.prod(grid)
 
     imgs = imgs.copy()
@@ -538,10 +538,10 @@ def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width: int,
 
     salient = lower_thresh is not None and background is not None
     if salient:
-        block_height = dest_img.shape[0] // grid[1]
-        block_width = dest_img.shape[1] // grid[0]
+        block_height = round(dest_img.shape[0] / grid[1])
+        block_width = round(dest_img.shape[1] / grid[0])
         # we resize dest_img here so that the compute_block* functions can infer correct grid size from block_size
-        dest_img = cv2.resize(dest_img, (grid[0] * block_width, grid[1] * block_height))
+        dest_img = cv2.resize(dest_img, (grid[0] * block_width, grid[1] * block_height), interpolation=cv2.INTER_LINEAR)
         _, thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((dest_img * 255).astype(np.uint8))
 
         ridx, cidx, thresh_map = compute_block_map(thresh_map, block_width, block_height, lower_thresh)
@@ -612,31 +612,38 @@ def save_img(img: np.ndarray, path: str, suffix: str) -> None:
         imwrite(path, img)
 
 
+def get_size(img):
+    try:
+        return imagesize.get(img)
+    except:
+        return -1, -1
+
+
 def read_images(pic_path: str, img_size: List[int], recursive=False, num_process=1, flag="stretch", auto_rotate=0) -> List[np.ndarray]:
     assert os.path.isdir(pic_path), "Directory " + pic_path + "is non-existent"
     files = []
+    print("Scanning files...")
     for root, _, file_list in os.walk(pic_path):
         for f in file_list:
             files.append(os.path.join(root, f))
         if not recursive:
             break
     
+    pool = mp.Pool(max(1, num_process))
+
     if len(img_size) == 1:
         sizes = defaultdict(int)
-        for img in files:
-            try:
-                w, h = imagesize.get(img)
-            except:
-                continue
-            if w == -1 or h == -1:
-                pass
+        for w, h in tqdm(pool.imap_unordered(get_size, files, chunksize=64), 
+            total=len(files), desc="[Inferring size]", ncols=pbar_ncols):
             sizes[Fraction(w, h)] += 1
-
+        if Fraction(-1, -1) in sizes:
+            del sizes[Fraction(-1, -1)]
         sizes = [(args[1], args[0].numerator / args[0].denominator) for args in sizes.items()]
         sizes.sort()
-        print("Aspect ratio (width / height, sorted by frequency) statistics:")
-        for freq, ratio in sizes:
-            print(f"{ratio:6.4f}: {freq}")
+
+        # print("Aspect ratio (width / height, sorted by frequency) statistics:")
+        # for freq, ratio in sizes:
+        #     print(f"{ratio:6.4f}: {freq}")
 
         most_freq_ratio = 1 / sizes[-1][1]
         img_size = (img_size[0], round(img_size[0] * most_freq_ratio))
@@ -645,16 +652,16 @@ def read_images(pic_path: str, img_size: List[int], recursive=False, num_process
         assert len(img_size) == 2
         img_size = (img_size[0], img_size[0])
 
-    with mp.Pool(max(1, num_process)) as pool:
-        result = [
-            r for r in tqdm(
-                pool.imap_unordered(
-                    read_img_center if flag == "center" else read_img_other, 
-                    zip(files, itertools.repeat(img_size, len(files)), itertools.repeat(auto_rotate, len(files))), 
-                chunksize=32), 
-                total=len(files), desc="[Reading files]", unit="file", ncols=pbar_ncols) 
-                    if r is not None
-        ]
+    result = [
+        r for r in tqdm(
+            pool.imap_unordered(
+                read_img_center if flag == "center" else read_img_other, 
+                zip(files, itertools.repeat(img_size, len(files)), itertools.repeat(auto_rotate, len(files))), 
+            chunksize=32), 
+            total=len(files), desc="[Reading files]", unit="file", ncols=pbar_ncols) 
+                if r is not None
+    ]
+    pool.close()
     print(f"Read {len(result)} images. {len(files) - len(result)} files cannot be decode as images.")
     return result
 
