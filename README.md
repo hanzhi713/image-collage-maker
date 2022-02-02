@@ -54,7 +54,7 @@ Then you can run from terminal as
 
 ### Running Python script directly
 
-First, you need Python >= 3.6 with pip. You can install dependencies by running
+First, you need Python >= 3.7 with pip. You can install dependencies by running
 
 ```bash
 pip install -r requirements.txt
