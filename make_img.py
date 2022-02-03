@@ -127,6 +127,7 @@ def cdist(A: np.ndarray, B: np.ndarray, metric="euclidean") -> np.ndarray:
     assert A.dtype == cp.float32
     assert B.dtype == cp.float32
     if metric == "cosine":
+        print("Computing costs...")
         A = A / cp.linalg.norm(A, axis=1, keepdims=True)
         B = B / cp.linalg.norm(B, axis=1, keepdims=True)
         return 1 - cp.inner(A, B)
