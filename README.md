@@ -21,6 +21,26 @@
 
 ![gui demo](./examples/gui.png)
 
+- [Distinguishing Features of this Photomosaic Maker](#distinguishing-features-of-this-photomosaic-maker)
+- [Getting Started](#getting-started)
+  - [Using the pre-built binary](#using-the-pre-built-binary)
+  - [Running Python script directly](#running-python-script-directly)
+- [Command line usage](#command-line-usage)
+  - [Option 1: Sorting](#option-1-sorting)
+  - [Option 2: Make a photomosaic](#option-2-make-a-photomosaic)
+    - [Option 2.1: Give a fair chance to each tile](#option-21-give-a-fair-chance-to-each-tile)
+    - [Option 2.2: Best fit (unfair tile usage)](#option-22-best-fit-unfair-tile-usage)
+    - [Option 2.3 Display salient object only](#option-23-display-salient-object-only)
+    - [Blending Options](#blending-options)
+    - [Note on performance and GPU acceleration](#note-on-performance-and-gpu-acceleration)
+  - [All command line options](#all-command-line-options)
+- [Utility Script: download profile pictures of your WeChat friends](#utility-script-download-profile-pictures-of-your-wechat-friends)
+  - [Groupchat Members](#groupchat-members)
+  - [All available profile pictures](#all-available-profile-pictures)
+  - [Notes](#notes)
+- [Credits (Names in alphabetical order)](#credits-names-in-alphabetical-order)
+
+
 ## Distinguishing Features of this Photomosaic Maker
 
 A number of photomosaic makers already exist (like [mosaic](https://github.com/codebox/mosaic) and [Photomosaic-generator](https://github.com/uvipen/Photomosaic-generator)), but this photomosaic maker has the following unique features
@@ -77,6 +97,8 @@ python gui.py
 ```bash
 python make_img.py --path img/zhou --sort bgr_sum --size 50 --out examples/sort-bgr.png
 ```
+
+`--size` takes one or two arguments. If only one is specified, it is interpreted as the tile width and tile height will be inferred from the aspect ratios of the tiles provided (this corresponds to the `infer height` option in the GUI). If two are specified, they are interpreted as width and height. 
 
 Use `--ratio w h` to change the aspect ratio, whose default is 16:9. E.g. `--ratio 21 9` specifies the aspect ratio to be 21:9. 
 
@@ -164,12 +186,30 @@ python make_img.py --path img/zhou --dest_img examples/dest.jpg --size 25 --dup 
 python make_img.py --path img/zhou --dest_img examples/dest.jpg --size 25 --dup 8 --blending brightness --blending_level 0.25 --out examples/blend-brightness-0.25.png
 ```
 
-| Fair tile usage, no blending                       | Alpha blending (25%)                               | Brightness blending (25%)                               |
-| -------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------- |
+| Fair tile usage, no blending                       | Alpha blending (25%)                                    | Brightness blending (25%)                                    |
+| -------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------ |
 | <img src="examples/fair-dup-10.png" width="350px"> | <img src="examples/blend-alpha-0.25.png" width="350px"> | <img src="examples/blend-brightness-0.25.png" width="350px"> |
 
 
-#### Other options
+#### Note on performance and GPU acceleration
+
+Different photomosaic making options have different computational complexity. The following table shows the computational complexity of different cases. Here, `n` is the number of tiles (after duplication in fair mode), `m` is the number of pixels in the destination image, and `k` is the number of tiles used in the unfair mode (this is equal to your specified `max_width` multiplied by the aspect ratio of your destination image).  
+
+| Type of photomosaic  | Computational complexity | GPU acceleration                                |
+| -------------------- | ------------------------ | ----------------------------------------------- |
+| Fair                 | `O(nm + n^3)`            | partial (~100x speed up for the `nm` part only) |
+| Unfair, freq_mul > 0 | `O(nm + nk log n)`       | full (~100x speed boost)                        |
+| Unfair, freq_mul = 0 | `O(nm + nk)`             | full (~200x speed boost)                        |
+
+Takeaway 1:
+
+The high (cubic) computational complexity of the fair mode means that the computation time grows much faster with respect to the number of tiles. It typically takes 30 seconds for 5000 tiles and 5 minutes for 10000 tiles. For large tile count, unless you need fair tile usage, you should go for the unfair mode and set freq_mul appropriately. 
+
+Takeaway 2:
+
+Notice the role of `m` in the complexity. If you have a high-definition destination image (e.g. 4000x3000) and notice the computation time is long, you can first downsample it so the number of pixels (`m`) will be lower. Do note that over downsampling will reduce the quality of the photomosaic. 
+
+### All command line options
 
 ```python make_img.py -h``` will give you all the available command line options.
 
@@ -248,7 +288,7 @@ optional arguments:
   --exp                 Do experiments (for testing only) (default: False)
 ```
 
-### Downloading profile pictures of your WeChat friends
+## Utility Script: download profile pictures of your WeChat friends
 
 If you have a WeChat account, an utility script `extract_img.py` is provided to download your friends' profile pictures so you can make a photomosaic using them. To use this script, you need to have itchat-uos installed
 
@@ -262,7 +302,7 @@ Then, use `--dir` to specify the directory to store the profile pictures of your
 python extract_img.py --dir img
 ```
 
-#### Groupchat Members
+### Groupchat Members
 
 You can also download the group members' profiles images from a group chat
 
@@ -276,7 +316,7 @@ You can download members' profile pictures from all your groupchats if you omit 
 python extract_img.py --dir img --type groupchat
 ```
 
-#### All available profile pictures
+### All available profile pictures
 
 You can download profile pictures from both your friends and members from all your groupchats by specifying `--type all`. 
 
@@ -284,7 +324,7 @@ You can download profile pictures from both your friends and members from all yo
 python extract_img.py --dir img --type all
 ```
 
-#### Notes
+### Notes
 
 1. Due to unknown issues, sometimes some profile pictures are not available, so they will be blank and unusable. The photomosaic maker will automatically ignore them when loading images. 
 2. When you download a large amount of profile pictures at once, WeChat may block you from downloading more. This will appear as `timeout downloading pics, retrying.... attempt x` in terminal. When this happens, you can terminate the program and run it again a day after. Already downloaded profile pictures will not be downloaded again. 

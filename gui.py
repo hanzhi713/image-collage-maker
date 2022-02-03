@@ -694,4 +694,8 @@ if __name__ == "__main__":
         show_img(dest_img, False)
         dest_img_path.set(cmd_args.collage)
 
+        reload_img_button.config(state='enabled')
+        sort_button.config(state='enabled')
+        collage_button.config(state='enabled')
+
     root.mainloop()
