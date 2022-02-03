@@ -104,6 +104,10 @@ cupy_available = False
 try:
     import cupy
     cupy_available = True
+
+    @cupy.fuse
+    def fast_sq_euclidean(Asq, Bsq, AB):
+        return Asq + Bsq - 2*AB
 except ImportError:
     pass
 
@@ -124,17 +128,17 @@ def cdist(A: np.ndarray, B: np.ndarray, metric="euclidean") -> np.ndarray:
     A = cp.asarray(A)
     B = cp.asarray(B)
 
-    assert A.dtype == cp.float32
-    assert B.dtype == cp.float32
     if metric == "cosine":
-        print("Computing costs...")
         A = A / cp.linalg.norm(A, axis=1, keepdims=True)
         B = B / cp.linalg.norm(B, axis=1, keepdims=True)
         return 1 - cp.inner(A, B)
 
     if metric == "euclidean":
-        norm_ord = None
-    elif metric == "cityblock":
+        Asq = cp.sum(A**2, axis=1, keepdims=1)
+        Bsq = cp.sum(B**2, axis=1, keepdims=1)
+        return fast_sq_euclidean(Asq, Bsq.T, A.dot(B.T))
+
+    if metric == "cityblock":
         norm_ord = 1
     elif metric == "chebyshev":
         norm_ord = cp.inf
@@ -537,39 +541,52 @@ def col_dup_helper(img_keys: np.ndarray, dest_img: np.ndarray, metric: str, freq
     dest_img = cp.asarray(dest_img)
     assignment = cp.full(dest_img.shape[0], -1, dtype=cp.int32)
 
-    if metric == "cosine":
-        def dist_func(A, B):
-            A = A / cp.linalg.norm(A, axis=1, keepdims=True)
-            B = B / cp.linalg.norm(B, axis=1, keepdims=True)
-            return 1 - cp.inner(A, B)
-    else:
-        if metric == "euclidean":
-            norm_ord = None
-        elif metric == "cityblock":
-            norm_ord = 1
-        elif metric == "chebyshev":
-            norm_ord = cp.inf
-        else:
-            raise ValueError(f"invalid metric {metric}")
-        diff = cp.empty_like(img_keys)
-        def dist_func(A, B):
-            cp.subtract(A, B, out=diff)
-            return cp.linalg.norm(diff, ord=norm_ord, axis=1)
-
     # note here we do not precompute the distance matrix as it may consume too much memory
     if freq_mul > 0:
         _indices = np.arange(0, dest_img.shape[0], dtype=cp.int32)
-        rg = cp.arange(0, img_keys.shape[0], dtype=cp.float32)
         if randomize:
             np.random.shuffle(_indices)
+            dest_img[:] = dest_img[_indices]
         indices_freq = cp.zeros(img_keys.shape[0], dtype=cp.float32)
-        for i in tqdm(_indices, desc="[Computing assignments]", ncols=pbar_ncols):
-            row = dist_func(dest_img[cp.newaxis, i], img_keys)
-            row[cp.argsort(row)] = rg # compute the rank
-            row += indices_freq
-            idx = cp.argmin(row)
-            assignment[i] = idx
-            indices_freq[idx] += freq_mul
+
+        row_stride = 2**30 // (img_keys.size * 4)
+        total = len(_indices)
+        i = 0
+        row_range = cp.arange(0, row_stride, dtype=cp.int32)[:, cp.newaxis]
+        temp = cp.arange(0, img_keys.shape[0], dtype=cp.float32)
+        pbar = tqdm(desc="[Computing assignments]", total=total, ncols=pbar_ncols)
+        while i < total - row_stride:
+            dist_mat = cdist(dest_img[i:i+row_stride], img_keys, metric)
+            rank_mat = cp.argsort(dist_mat, axis=1)
+            rank_mat_float = rank_mat.astype(cp.float32)
+            rank_mat_float[row_range, rank_mat] = temp
+            # rank_mat_float =
+            j = 0
+            while j < row_stride:
+                row = rank_mat_float[j, :]
+                row += indices_freq
+                idx = cp.argmin(row)
+                assignment[_indices[i]] = idx
+                indices_freq[idx] += freq_mul
+                i += 1
+                j += 1
+                pbar.update()
+        if i < total:
+            dist_mat = cdist(dest_img[i:], img_keys, metric)
+            rank_mat = cp.argsort(dist_mat, axis=1)
+            rank_mat_float = rank_mat.astype(cp.float32)
+            rank_mat_float[row_range[:total - i], rank_mat] = temp
+            j = 0
+            while i < total:
+                row = rank_mat_float[j, :]
+                row += indices_freq
+                idx = cp.argmin(row)
+                assignment[_indices[i]] = idx
+                indices_freq[idx] += freq_mul
+                i += 1
+                j += 1
+                pbar.update()
+        pbar.close()
     else:
         for i in tqdm(range(dest_img.shape[0]), desc="[Computing assignments]", ncols=pbar_ncols):
             row = dist_func(dest_img[cp.newaxis, i], img_keys)
