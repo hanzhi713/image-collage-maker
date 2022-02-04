@@ -108,8 +108,43 @@ try:
     @cupy.fuse
     def fast_sq_euclidean(Asq, Bsq, AB):
         return Asq + Bsq - 2*AB
+
+    fast_cityblock = cupy.ReductionKernel(
+        'T x, T y',  # input params
+        'T z',  # output params
+        'abs(x - y)',  # map
+        'a + b',  # reduce
+        'z = a',  # post-reduction map
+        '0',  # identity value
+        'fast_cityblock'  # kernel name
+    )
+
+    fast_chebyshev = cupy.ReductionKernel(
+        'T x, T y',  # input params
+        'T z',  # output params
+        'abs(x - y)',  # map
+        'max(a, b)',  # reduce
+        'z = a',  # post-reduction map
+        '0',  # identity value
+        'fast_chebyshev'  # kernel name
+    )
+
 except ImportError:
-    pass
+    def fast_sq_euclidean(Asq, Bsq, AB):
+        AB *= -2
+        AB += Asq
+        AB += Bsq
+        return AB
+
+    def fast_cityblock(A, B):
+        Z = A - B
+        np.abs(Z, out=Z)
+        return np.sum(Z, axis=2)
+
+    def fast_chebyshev(A, B):
+        Z = A - B
+        np.abs(Z, out=Z)
+        return np.max(Z, axis=2)
 
 
 def get_cp():
@@ -120,13 +155,20 @@ def to_cpu(X: np.ndarray) -> np.ndarray:
     return X.get() if cupy_available else X
 
 
-def cdist(A: np.ndarray, B: np.ndarray, metric="euclidean") -> np.ndarray:
+def get_item(X: np.ndarray) -> np.ndarray:
+    return X.item() if cupy_available else X
+
+
+def cdist(A: np.ndarray, B: np.ndarray, metric="euclidean", show_progress=True) -> np.ndarray:
     """
     Simple implementation of scipy.spatial.distance.cdist
     """
     cp = get_cp()
     A = cp.asarray(A)
     B = cp.asarray(B)
+
+    if show_progress:
+        print("Computing costs...")
 
     if metric == "cosine":
         A = A / cp.linalg.norm(A, axis=1, keepdims=True)
@@ -139,20 +181,26 @@ def cdist(A: np.ndarray, B: np.ndarray, metric="euclidean") -> np.ndarray:
         return fast_sq_euclidean(Asq, Bsq.T, A.dot(B.T))
 
     if metric == "cityblock":
-        norm_ord = 1
+        func = fast_cityblock
     elif metric == "chebyshev":
-        norm_ord = cp.inf
+        func = fast_chebyshev
     else:
         raise ValueError(f"invalid metric {metric}")
 
     # in theory we can do diff = A[:, cp.newaxis, :] - B[cp.newaxis, :, :]
     # but this may consume too much memory
     # so we calculate the distance matrix row by row instead
-    dist_mat = cp.empty((A.shape[0], B.shape[0]), dtype=cp.float32)
-    diff = cp.empty_like(B)
-    for i in tqdm(range(A.shape[0]), desc="[Computing costs]", ncols=pbar_ncols):
-        cp.subtract(A[i, cp.newaxis, :], B, out=diff)
-        dist_mat[i, :] = cp.linalg.norm(diff, ord=norm_ord, axis=1)
+    total = A.shape[0]
+    row_stride = 2**30 // (B.size * 4)
+    dist_mat = cp.empty((total, B.shape[0]), dtype=cp.float32)
+
+    i = 0
+    while i < total - row_stride:
+        next_i = i + row_stride
+        func(A[i:next_i, cp.newaxis, :], B[cp.newaxis], out=dist_mat[i:next_i], axis=2)
+        i = next_i
+    if i < total:
+        func(A[i:, cp.newaxis, :], B[cp.newaxis], out=dist_mat[i:], axis=2)
     return dist_mat
 
 
@@ -528,6 +576,9 @@ def calc_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspac
         print(f"{len(imgs) - total} tiles will be used 1 less time than others.")
         del imgs[total:]
     
+    if total > 10000:
+        print("Warning: this may take longer than 5 minutes to compute")
+        
     dest_img, img_keys = compute_blocks(colorspace, dest_img, imgs, grid)
     cols = solve_lap(to_cpu(cdist(img_keys, dest_img, metric=metric)), v)
 
@@ -541,26 +592,29 @@ def col_dup_helper(img_keys: np.ndarray, dest_img: np.ndarray, metric: str, freq
     dest_img = cp.asarray(dest_img)
     assignment = cp.full(dest_img.shape[0], -1, dtype=cp.int32)
 
-    # note here we do not precompute the distance matrix as it may consume too much memory
+    total = dest_img.shape[0]
+    # number of rows in the cost matrix
+    # note here we compute the cost matrix chunk by chunk to limit memory usage
+    # a bit like sklearn.metrics.pairwise_distances_chunked
+    row_stride = (2**30 - (img_keys.size + dest_img.size + assignment.size) * 4) // (img_keys.shape[0] * 4)
+    i = 0
+    pbar = tqdm(desc="[Computing assignments]", total=total, ncols=pbar_ncols)
+    
     if freq_mul > 0:
-        _indices = np.arange(0, dest_img.shape[0], dtype=cp.int32)
+        row_stride = row_stride // 16
+        _indices = np.arange(0, total, dtype=cp.int32)
         if randomize:
             np.random.shuffle(_indices)
             dest_img[:] = dest_img[_indices]
         indices_freq = cp.zeros(img_keys.shape[0], dtype=cp.float32)
-
-        row_stride = 2**30 // (img_keys.size * 4)
-        total = len(_indices)
-        i = 0
         row_range = cp.arange(0, row_stride, dtype=cp.int32)[:, cp.newaxis]
         temp = cp.arange(0, img_keys.shape[0], dtype=cp.float32)
-        pbar = tqdm(desc="[Computing assignments]", total=total, ncols=pbar_ncols)
+
         while i < total - row_stride:
-            dist_mat = cdist(dest_img[i:i+row_stride], img_keys, metric)
+            dist_mat = cdist(dest_img[i:i+row_stride], img_keys, metric, False)
             rank_mat = cp.argsort(dist_mat, axis=1)
-            rank_mat_float = rank_mat.astype(cp.float32)
+            rank_mat_float = cp.empty_like(rank_mat, dtype=cp.float32)
             rank_mat_float[row_range, rank_mat] = temp
-            # rank_mat_float =
             j = 0
             while j < row_stride:
                 row = rank_mat_float[j, :]
@@ -572,9 +626,9 @@ def col_dup_helper(img_keys: np.ndarray, dest_img: np.ndarray, metric: str, freq
                 j += 1
                 pbar.update()
         if i < total:
-            dist_mat = cdist(dest_img[i:], img_keys, metric)
+            dist_mat = cdist(dest_img[i:], img_keys, metric, False)
             rank_mat = cp.argsort(dist_mat, axis=1)
-            rank_mat_float = rank_mat.astype(cp.float32)
+            rank_mat_float = cp.empty_like(rank_mat, dtype=cp.float32)
             rank_mat_float[row_range[:total - i], rank_mat] = temp
             j = 0
             while i < total:
@@ -586,12 +640,19 @@ def col_dup_helper(img_keys: np.ndarray, dest_img: np.ndarray, metric: str, freq
                 i += 1
                 j += 1
                 pbar.update()
-        pbar.close()
     else:
-        for i in tqdm(range(dest_img.shape[0]), desc="[Computing assignments]", ncols=pbar_ncols):
-            row = dist_func(dest_img[cp.newaxis, i], img_keys)
-            idx = cp.argmin(row)
-            assignment[i] = idx
+        row_stride = row_stride // 4
+        while i < total - row_stride:
+            next_i = i + row_stride
+            dist_mat = cdist(dest_img[i:next_i], img_keys, metric, False)
+            cp.argmin(dist_mat, axis=1, out=assignment[i:next_i])
+            pbar.update(row_stride)
+            i = next_i
+        if i < total:
+            dist_mat = cdist(dest_img[i:], img_keys, metric, False)
+            cp.argmin(dist_mat, axis=1, out=assignment[i:])
+            pbar.update(total - i)
+    pbar.close()
     return to_cpu(assignment)
 
 

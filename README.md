@@ -195,11 +195,11 @@ python make_img.py --path img/zhou --dest_img examples/dest.jpg --size 25 --dup 
 
 Different photomosaic making options have different computational complexity. The following table shows the computational complexity of different cases. Here, `n` is the number of tiles (after duplication in fair mode), `m` is the number of pixels in the destination image, and `k` is the number of tiles used in the unfair mode (this is equal to your specified `max_width` multiplied by the aspect ratio of your destination image).  
 
-| Type of photomosaic  | Computational complexity | GPU acceleration                                |
-| -------------------- | ------------------------ | ----------------------------------------------- |
-| Fair                 | `O(nm + n^3)`            | partial (~100x speed up for the `nm` part only) |
-| Unfair, freq_mul > 0 | `O(nm + nk log n)`       | full (~100x speed boost)                        |
-| Unfair, freq_mul = 0 | `O(nm + nk)`             | full (~200x speed boost)                        |
+| Type of photomosaic  | Computational complexity | GPU acceleration                               |
+| -------------------- | ------------------------ | ---------------------------------------------- |
+| Fair                 | `O(nm + n^3)`            | partial (~10x speed up for the `nm` part only) |
+| Unfair, freq_mul > 0 | `O(nm + nk log n)`       | full (~5x speed boost)                         |
+| Unfair, freq_mul = 0 | `O(nm + nk)`             | full (~10x speed boost)                        |
 
 Takeaway 1:
 
@@ -207,7 +207,7 @@ The high (cubic) computational complexity of the fair mode means that the comput
 
 Takeaway 2:
 
-Notice the role of `m` in the complexity. If you have a high-definition destination image (e.g. 4000x3000) and notice the computation time is long, you can first downsample it so the number of pixels (`m`) will be lower. Do note that over downsampling will reduce the quality of the photomosaic. 
+Notice the role of `m` in the complexity. If you have a high-definition destination image (e.g. 8000x6000) and notice the computation time is long, you can first downsample it so the number of pixels (`m`) will be lower. Do note that over downsampling will reduce the quality of the photomosaic. 
 
 ### All command line options
 
