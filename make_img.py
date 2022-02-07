@@ -27,6 +27,7 @@ if mp.current_process().name != "MainProcess":
     sys.stderr = sys.stdout
 
 pbar_ncols = None
+LIMIT = 2**32
 
 
 class _PARAMETER:
@@ -98,10 +99,13 @@ class PARAMS:
     blending_level = _PARAMETER(type=float, default=0.0, 
         help="Level of blending, between 0.0 (no blending) and 1.0 (maximum blending). Default is no blending")
 
+    video = _PARAMETER(type=bool, default=False, help="Make a photomosaic video from dest_img which is assumed to be a video")
+    skip_frame = _PARAMETER(type=int, default=1, help="Make a photomosaic every this number of frames")
+
 
 cupy_available = False
 try:
-    raise ImportError()
+    # raise ImportError()
     import cupy as cp
     cupy_available = True
 
@@ -218,14 +222,14 @@ def calc_grid_size(rw: int, rh: int, num_imgs: int, shape: Tuple[int, int, int])
     return grid
 
 
-def make_collage(grid: Grid, sorted_imgs: List[np.ndarray], rev=False) -> np.ndarray:
+def make_collage(grid: Grid, sorted_imgs: List[np.ndarray], rev=False, file=None) -> np.ndarray:
     """
     :param grid: grid size
     :param sorted_imgs: list of images sorted in correct position
     :param rev: whether to have opposite alignment for consecutive rows
     :return: a collage
     """
-    print("Aligning images on the grid...")
+    print("Aligning images on the grid...", file=file)
     total = np.prod(grid)
     if len(sorted_imgs) < total:
         diff = total - len(sorted_imgs)
@@ -252,7 +256,7 @@ def alpha_blend(combined_img: np.ndarray, dest_img: np.ndarray, alpha=0.9):
     return combined_img
 
 
-def lightness_blend(combined_img: np.ndarray, dest_img: np.ndarray, alpha=0.9):
+def brightness_blend(combined_img: np.ndarray, dest_img: np.ndarray, alpha=0.9):
     """
     blend the 2 imgs in the lightness channel (L in HSL)
     """
@@ -398,7 +402,7 @@ def cached_cdist(metric: str, B: np.ndarray) -> Callable[[np.ndarray], np.ndarra
     # in theory we can do diff = A[:, cp.newaxis, :] - B[cp.newaxis, :, :]
     # but this may consume too much memory
     # so we calculate the distance matrix row by row instead
-    row_stride = 2**30 // (B.size * 4)
+    row_stride = LIMIT // (B.size * 4)
     B = B[cp.newaxis]
 
     def func(A):
@@ -433,6 +437,14 @@ class MosaicCommon:
             self.flag = cv2.COLOR_BGR2LUV
         else:
             raise ValueError("Unknown colorspace " + colorspace)
+
+    def combine_imgs(self):
+        self.combined_img = np.asarray(self.imgs)
+
+    def make_photomosaic(self, assignment: np.ndarray):
+        assignment.shape = self.grid[::-1]
+        combined_img = self.combined_img[assignment, :, : , :].transpose((0, 2, 1, 3, 4))
+        return combined_img.reshape(np.prod(combined_img.shape[:2]), -1, 3)
         
     def convert_colorspace(self, img: np.ndarray):
         if self.flag is None:
@@ -447,6 +459,12 @@ class MosaicCommon:
         self.grid = grid
         self.block_height = round(dest_shape[0] / grid[1])
         self.block_width = round(dest_shape[1] / grid[0])
+        th, tw, _ = self.imgs[0].shape
+
+        if self.block_width > tw or self.block_height > th:
+            m = max(tw / self.block_width, th / self.block_height)
+            self.block_width = math.floor(self.block_width * m)
+            self.block_height = math.floor(self.block_height * m)
         self.flat_block_size = self.block_width * self.block_height * 3
         print("Block size:", (self.block_width, self.block_height))
 
@@ -467,8 +485,9 @@ class MosaicCommon:
     def dest_to_flat_blocks(self, dest_img: np.ndarray):
         dest_img = cv2.resize(dest_img, self.target_sz, interpolation=cv2.INTER_LINEAR)
         self.convert_colorspace(dest_img)
+        dest_img = cp.asarray(dest_img)
         dest_img.shape = (self.grid[1], self.block_height, self.grid[0], self.block_width, 3)
-        return cp.asarray(dest_img.transpose((0, 2, 1, 3, 4)).reshape(-1, self.flat_block_size))
+        return dest_img.transpose((0, 2, 1, 3, 4)).reshape(-1, self.flat_block_size)
 
     def dest_to_flat_blocks_mask(self, dest_img: np.ndarray, lower_thresh: int, ridx: np.ndarray, cidx: np.ndarray, thresh_map: np.ndarray):
         dest_img[thresh_map < lower_thresh] = self.imgs[-1][0, 0, :]
@@ -530,15 +549,15 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, c
 
     mos.imgs_to_flat_blocks(metric)
     mos.imgs.append(get_background_tile(imgs[0].shape, background))
+    mos.combine_imgs()
     dest_img = cv2.resize(dest_img, thresh_map.shape[::-1], interpolation=cv2.INTER_AREA)
     dest_img = mos.dest_to_flat_blocks_mask(dest_img, lower_thresh, ridx, cidx, thresh_map)
     
     cols = solve_lap(to_cpu(mos.cdist(dest_img).T), v)
     assignment = np.full(mos.grid[::-1], len(mos.imgs) - 1, dtype=np.int32)
     assignment[ridx, cidx] = cols
-    assignment = assignment.flatten()
     print("Time taken: {}s".format((np.round(time.time() - t, 2))))
-    return make_collage(mos.grid, [mos.imgs[i] for i in assignment])
+    return mos.make_photomosaic(assignment)
 
 
 class MosaicFairSalient:
@@ -577,11 +596,12 @@ class MosaicFair(MosaicCommon):
         super().__init__(imgs, colorspace)
         self.compute_block_size(dest_shape, grid)
         self.imgs_to_flat_blocks(metric)
+        self.combine_imgs()
 
-    def process_dest_img(self, dest_img: np.ndarray):
+    def process_dest_img(self, dest_img: np.ndarray, file=None):
         dest_img = self.dest_to_flat_blocks(dest_img)
         cols = solve_lap(to_cpu(self.cdist(dest_img).T), None)
-        return make_collage(self.grid, [self.imgs[i] for i in cols])
+        return self.make_photomosaic(cols)
 
 
 class MosaicUnfair(MosaicCommon):
@@ -601,14 +621,20 @@ class MosaicUnfair(MosaicCommon):
         # number of rows in the cost matrix
         # note here we compute the cost matrix chunk by chunk to limit memory usage
         # a bit like sklearn.metrics.pairwise_distances_chunked
-        self.row_stride = (2**30 - (img_keys.size + np.prod(grid) * (1 + self.flat_block_size)) * 4) // (img_keys.shape[0] * 4)
-        print(f"chunk size: {self.row_stride * (img_keys.shape[0] * 4) / 2**20}MB")
+        num_rows = np.prod(grid)
+        num_cols = img_keys.shape[0]
+        print(f"Distance matrix size: {(num_rows, num_cols)} = {num_rows * num_cols * 4 / 2**20}MB")
+        self.row_stride = (LIMIT - (img_keys.size + num_rows * (1 + self.flat_block_size)) * 4) // (num_cols * 4)
+        if self.row_stride >= num_rows:
+            print("No chunking will be performed on the distance matrix calculation")
+        else:
+            print(f"Chunk size: {self.row_stride*num_cols* 4 / 2**20}MB | {self.row_stride}/{num_rows}")
 
         if freq_mul > 0:
             self.row_stride //= 16
-            self.indices_freq = cp.zeros(img_keys.shape[0], dtype=cp.float32)
+            self.indices_freq = cp.zeros(num_cols, dtype=cp.float32)
             self.row_range = cp.arange(0, self.row_stride, dtype=cp.int32)[:, cp.newaxis]
-            self.temp = cp.arange(0, img_keys.shape[0], dtype=cp.float32)
+            self.temp = cp.arange(0, num_cols, dtype=cp.float32)
         else:
             self.row_stride //= 4
 
@@ -620,8 +646,9 @@ class MosaicUnfair(MosaicCommon):
         if self.salient:
             self.imgs = self.imgs.copy()
             self.imgs.append(get_background_tile(imgs[0].shape, background))
+        self.combine_imgs()
 
-    def process_dest_img(self, dest_img: np.ndarray):
+    def process_dest_img(self, dest_img: np.ndarray, file=None):
         if self.salient:
             dest_img = cv2.resize(dest_img, self.target_sz, interpolation=cv2.INTER_LINEAR)
             _, thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((dest_img * 255).astype(np.uint8))
@@ -632,7 +659,7 @@ class MosaicUnfair(MosaicCommon):
 
         total = dest_img.shape[0]
         assignment = cp.empty(total, dtype=cp.int32)
-        pbar = tqdm(desc="[Computing assignments]", total=total, ncols=pbar_ncols)
+        pbar = tqdm(desc="[Computing assignments]", total=total, ncols=pbar_ncols, file=file)
         i = 0
         if self.freq_mul > 0:
             _indices = np.arange(0, total, dtype=cp.int32)
@@ -648,7 +675,7 @@ class MosaicUnfair(MosaicCommon):
                     row = dist_mat[j, :]
                     row += self.indices_freq
                     idx = cp.argmin(row)
-                    assignment[_indices[i]] = idx
+                    assignment[i] = idx
                     self.indices_freq[idx] += self.freq_mul
                     i += 1
                     j += 1
@@ -661,11 +688,12 @@ class MosaicUnfair(MosaicCommon):
                     row = dist_mat[j, :]
                     row += self.indices_freq
                     idx = cp.argmin(row)
-                    assignment[_indices[i]] = idx
+                    assignment[i] = idx
                     self.indices_freq[idx] += self.freq_mul
                     i += 1
                     j += 1
                     pbar.update()
+            assignment[_indices] = assignment
         else:
             while i < total - self.row_stride:
                 next_i = i + self.row_stride
@@ -678,15 +706,13 @@ class MosaicUnfair(MosaicCommon):
                 cp.argmin(dist_mat, axis=1, out=assignment[i:])
                 pbar.update(total - i)
         pbar.close()
-        assignment = to_cpu(assignment)
 
+        assignment = to_cpu(assignment)
         if self.salient:
             full_assignment = np.full(self.grid[::-1], len(self.imgs) - 1, dtype=np.int32)
             full_assignment[ridx, cidx] = assignment
-            assignment = full_assignment.flatten()
-        
-        return make_collage(self.grid, [self.imgs[i] for i in assignment])
-
+            assignment = full_assignment
+        return self.make_photomosaic(assignment)
 
 def imwrite(filename: str, img: np.ndarray) -> None:
     ext = os.path.splitext(filename)[1]
@@ -901,7 +927,17 @@ def main(args):
         return
 
     assert os.path.isfile(args.dest_img)
-    dest_img = imread(args.dest_img)
+    if args.video:
+        assert not (args.salient and not args.unfair), "Sorry, making photomosaic video is unsupported with fair and salient option. "
+        dest_video = cv2.VideoCapture(args.dest_img)
+        ret, frame = dest_video.read()
+
+        assert ret, f"unable to open video {args.dest_img}"
+        assert args.skip_frame >= 1, "skip frame must be at least 1"
+        dest_shape = frame.shape
+    else:
+        dest_img = imread(args.dest_img)
+        dest_shape = dest_img.shape
 
     if args.exp:
         assert not args.salient
@@ -912,7 +948,7 @@ def main(args):
     if args.salient:
         if args.unfair:
             mos = MosaicUnfair(
-                dest_img.shape, imgs, args.max_width, args.colorspace, args.metric,
+                dest_shape, imgs, args.max_width, args.colorspace, args.metric,
                 args.lower_thresh, args.background, args.freq_mul, not args.deterministic)
         else:
             mos = MosaicFairSalient(
@@ -921,17 +957,41 @@ def main(args):
     else:
         if args.unfair:
             mos = MosaicUnfair(
-                dest_img.shape, imgs, args.max_width, args.colorspace, args.metric, 
+                dest_shape, imgs, args.max_width, args.colorspace, args.metric, 
                 None, None, args.freq_mul, not args.deterministic)
         else:
-            mos = MosaicFair(dest_img.shape, imgs, args.dup, args.colorspace, args.metric)
+            mos = MosaicFair(dest_shape, imgs, args.dup, args.colorspace, args.metric)
     
-    collage = mos.process_dest_img(dest_img)
     if args.blending == "alpha":
-        collage = alpha_blend(collage, dest_img, 1.0 - args.blending_level)
+        blend_func = alpha_blend
     else:
-        collage = lightness_blend(collage, dest_img, 1.0 - args.blending_level)
-    save_img(collage, args.out, "")
+        blend_func = brightness_blend
+
+    if args.video:
+        th, tw, _ = mos.imgs[0].shape
+        res = (tw * mos.grid[0], th * mos.grid[1])
+        print("Photomosaic video resolution:", res)
+        video_writer = cv2.VideoWriter(args.out, cv2.VideoWriter_fourcc(*"mp4v"), round(dest_video.get(cv2.CAP_PROP_FPS) / args.skip_frame), res)
+        i = 0
+        null = open(os.devnull, "w")
+        pbar = tqdm(desc="[Computing frames]")
+        while ret:
+            if i % args.skip_frame == 0:
+                frame = frame * np.float32(1/255.0)
+                collage = mos.process_dest_img(frame, null)
+                collage = blend_func(collage, frame, 1.0 - args.blending_level)
+                collage *= 255.0
+                video_writer.write(collage.astype(np.uint8))
+                pbar.update()
+            ret, frame = dest_video.read()
+            i += 1
+        pbar.close()
+        null.close()
+        video_writer.release()
+    else:
+        collage = mos.process_dest_img(dest_img)
+        collage = blend_func(collage, dest_img, 1.0 - args.blending_level)
+        save_img(collage, args.out, "")
 
 
 if __name__ == "__main__":

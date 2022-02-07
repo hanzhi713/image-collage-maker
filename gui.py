@@ -424,7 +424,7 @@ if __name__ == "__main__":
     def change_alpha(_=None):
         if result_collage is not None and dest_img is not None:
             if colorization_opt.get() == "brightness":
-                show_img(mkg.lightness_blend(result_collage, dest_img, 1 - alpha_scale.get() / 100), False)
+                show_img(mkg.brightness_blend(result_collage, dest_img, 1 - alpha_scale.get() / 100), False)
             else:
                 show_img(mkg.alpha_blend(result_collage, dest_img, 1 - alpha_scale.get() / 100), False)
     
