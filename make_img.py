@@ -6,9 +6,8 @@ import random
 import argparse
 import itertools
 import traceback
-import multiprocessing as mp
+import multiprocess as mp
 from fractions import Fraction
-import concurrent.futures as con
 from typing import Any, Callable, List, Tuple
 from collections import defaultdict
 
@@ -102,6 +101,7 @@ class PARAMS:
 
 cupy_available = False
 try:
+    raise ImportError()
     import cupy as cp
     cupy_available = True
 
@@ -294,32 +294,6 @@ def sort_collage(imgs: List[np.ndarray], ratio: Grid, sort_method="pca_lab", rev
     return grid, [imgs[i] for i in indices]
 
 
-def convert_colorspace_func(colorspace: str) -> Callable[[np.ndarray], None]:
-    normalize_first = False
-    if colorspace == "bgr":
-        return lambda img : None
-    elif colorspace == "hsv":
-        flag = cv2.COLOR_BGR2HSV
-        normalize_first = True
-    elif colorspace == "hsl":
-        flag = cv2.COLOR_BGR2HLS
-        normalize_first = True
-    elif colorspace == "lab":
-        flag = cv2.COLOR_BGR2LAB
-    elif colorspace == "luv":
-        flag = cv2.COLOR_BGR2LUV
-    else:
-        raise ValueError("Unknown colorspace " + colorspace)
-
-    def func(img: np.ndarray):
-        cv2.cvtColor(img, flag, dst=img)
-        if normalize_first:
-            # for hsv/hsl, h is in range 0~360 while other channels are in range 0~1
-            # need to normalize
-            img[:, :, 0] *= 1 / 360.0
-    return func
-
-
 def solve_lap(cost_matrix: np.ndarray, v=None):
     if v is None:
         v = sys.__stderr__
@@ -444,7 +418,30 @@ def cached_cdist(metric: str, B: np.ndarray) -> Callable[[np.ndarray], np.ndarra
 class MosaicCommon:
     def __init__(self, imgs: List[np.ndarray], colorspace="lab") -> None:
         self.imgs = imgs
-        self.convert_colorspace = convert_colorspace_func(colorspace)
+        self.normalize_first = False
+        if colorspace == "bgr":
+            self.flag = None
+        elif colorspace == "hsv":
+            self.flag = cv2.COLOR_BGR2HSV
+            self.normalize_first = True
+        elif colorspace == "hsl":
+            self.flag = cv2.COLOR_BGR2HLS
+            self.normalize_first = True
+        elif colorspace == "lab":
+            self.flag = cv2.COLOR_BGR2LAB
+        elif colorspace == "luv":
+            self.flag = cv2.COLOR_BGR2LUV
+        else:
+            raise ValueError("Unknown colorspace " + colorspace)
+        
+    def convert_colorspace(self, img: np.ndarray):
+        if self.flag is None:
+            return
+        cv2.cvtColor(img, self.flag, dst=img)
+        if self.normalize_first:
+            # for hsv/hsl, h is in range 0~360 while other channels are in range 0~1
+            # need to normalize
+            img[:, :, 0] *= 1 / 360.0
         
     def compute_block_size(self, dest_shape: Tuple[int, int, int], grid: Grid):
         self.grid = grid
@@ -570,6 +567,7 @@ class MosaicFair(MosaicCommon):
         if total > len(imgs) * dup:
             dup_to_meet_total(imgs, total)
         elif total < len(imgs) * dup: # should only happen when grid is explicitly specified
+            imgs *= dup
             print(f"{len(imgs) - total} tiles will be used 1 less time than others.")
             del imgs[total:]
         
@@ -824,37 +822,6 @@ def read_img_other(args: Tuple[str, Tuple[int, int], int]):
     return cv2.resize(img, img_size, interpolation=cv2.INTER_AREA)
 
 
-def unfair_exp_mat(dest_img, args, imgs):
-    import matplotlib.pyplot as plt
-    all_colorspaces = PARAMS.colorspace.choices
-    all_freqs = np.zeros(6, dtype=np.float64)
-    all_freqs[1:] = np.logspace(-2, 2, 5)
-
-    def helper(colorspace, freq_mul):
-        mos = MosaicUnfair(dest_img, imgs, args.max_width, colorspace, args.metric, freq_mul)
-        return mos.process_dest_img(dest_img)
-
-    img_shape = helper(all_colorspaces[0], freq_mul=all_freqs[0]).process_dest_img(dest_img).shape
-    grid_img = np.zeros((img_shape[0] * len(all_colorspaces), img_shape[1] * len(all_freqs), 3), dtype=np.uint8)
-    pbar = tqdm(desc="[Experimenting]", total=len(all_freqs) * len(all_colorspaces), unit="exps")
-    with con.ProcessPoolExecutor(4) as pool:
-        futures = [
-            [pool.submit(helper, colorspace, freq) 
-                for freq in all_freqs] 
-                    for colorspace in all_colorspaces
-        ]
-        for i in range(len(all_colorspaces)):
-            for j in range(len(all_freqs)):
-                grid_img[i * img_shape[0]:(i+1)*img_shape[0], j*img_shape[1]:(j+1)*img_shape[1], :] = futures[i][j].result()
-                pbar.update()
-        pbar.refresh()
-        plt.figure()
-        plt.imshow(cv2.cvtColor(grid_img, cv2.COLOR_BGR2RGB))
-        plt.yticks(np.arange(0, grid_img.shape[0], img_shape[0]) + img_shape[0] / 2, all_colorspaces)
-        plt.xticks(np.arange(0, grid_img.shape[1], img_shape[1]) + img_shape[1] / 2, all_freqs)
-        plt.show()
-
-
 def unfair_exp(dest_img: np.ndarray, args, imgs):
     import matplotlib.pyplot as plt
     all_colorspaces = PARAMS.colorspace.choices
@@ -864,27 +831,26 @@ def unfair_exp(dest_img: np.ndarray, args, imgs):
     pbar = tqdm(desc="[Experimenting]", total=len(all_freqs) + len(all_colorspaces) + 1, unit="exps")
     mos_bgr = MosaicUnfair(dest_img.shape, imgs, args.max_width, "bgr", args.metric, None, None, 1.0, not args.deterministic)
 
-    def helper_change_freq(freq):
+    def _helper_change_freq(freq):
         mos_bgr.freq_mul = freq
         return mos_bgr.process_dest_img(dest_img)
 
-    def helper_change_colorspace(colorspace):
-        mos = MosaicUnfair(dest_img.shape, imgs, args.max_width, colorspace, args.metric, None, None, 1.0, not args.determinstic)
+    def _helper_change_colorspace(colorspace):
+        mos = MosaicUnfair(dest_img.shape, imgs, args.max_width, colorspace, args.metric, None, None, 1.0, not args.deterministic)
         return mos.process_dest_img(dest_img)
 
-    def helper_even(grid):
-        return MosaicFair(dest_img.shape, imgs, colorspace="bgr", grid=grid).process_dest_img(dest_img)
+    def _helper_even():
+        return MosaicFair(dest_img.shape, imgs, colorspace="bgr", grid=mos_bgr.grid).process_dest_img(dest_img)
 
-    with con.ProcessPoolExecutor(4) as pool:
-        futures1 = [pool.submit(helper_change_colorspace, colorspace) for colorspace in all_colorspaces]
-        futures2 = [pool.submit(helper_change_freq, freq) for freq in all_freqs]
-        futures2.append(pool.submit(helper_even, futures2[-1].result()[0]))
+    with mp.Pool(4) as pool:
+        futures1 = [pool.apply_async(_helper_change_colorspace, (colorspace,)) for colorspace in all_colorspaces]
+        futures2 = [pool.apply_async(_helper_change_freq, (freq,)) for freq in all_freqs]
+        futures2.append(pool.apply_async(_helper_even))
         
         def collect_imgs(fname, params, futures, fs):
             result_imgs = []
             for i in range(len(params)):
-                grid, sorted_imgs = futures[i].result()
-                result_imgs.append(make_collage(grid, sorted_imgs, args.rev_row))
+                result_imgs.append(futures[i].get())
                 pbar.update()
             
             plt.figure(figsize=(len(params) * 10, 12))
@@ -903,17 +869,15 @@ def unfair_exp(dest_img: np.ndarray, args, imgs):
 
 
 def sort_exp(args, imgs):
-    pool = con.ProcessPoolExecutor(4)
-    futures = {}
-
-    for sort_method in PARAMS.sort.choices:
-        futures[pool.submit(sort_collage, imgs, args.ratio, sort_method, args.rev_sort)] = sort_method
-
-    for future in tqdm(con.as_completed(futures.keys()), total=len(PARAMS.sort.choices),
-                        desc="[Experimenting]", unit="exps"):
-        grid, sorted_imgs = future.result()
-        combined_img = make_collage(grid, sorted_imgs, args.rev_row)
-        save_img(combined_img, args.out, futures[future])
+    with mp.Pool(4) as pool:
+        n = len(PARAMS.sort.choices)
+        for sort_method, (grid, sorted_imgs) in zip(PARAMS.sort.choices, pool.starmap(sort_collage, 
+            zip(itertools.repeat(imgs, n), 
+            itertools.repeat(args.ratio, n), 
+            PARAMS.sort.choices, 
+            itertools.repeat(args.rev_sort, n))
+            )):
+            save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, sort_method)
 
 
 def main(args):
