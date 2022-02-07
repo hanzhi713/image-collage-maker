@@ -9,7 +9,7 @@ import traceback
 import multiprocessing as mp
 from fractions import Fraction
 import concurrent.futures as con
-from typing import Any, List, Tuple
+from typing import Any, Callable, List, Tuple
 from collections import defaultdict
 
 from io_utils import stdout_redirector, JVOutWrapper
@@ -102,14 +102,14 @@ class PARAMS:
 
 cupy_available = False
 try:
-    import cupy
+    import cupy as cp
     cupy_available = True
 
-    @cupy.fuse
+    @cp.fuse
     def fast_sq_euclidean(Asq, Bsq, AB):
         return Asq + Bsq - 2*AB
 
-    fast_cityblock = cupy.ReductionKernel(
+    fast_cityblock = cp.ReductionKernel(
         'T x, T y',  # input params
         'T z',  # output params
         'abs(x - y)',  # map
@@ -119,7 +119,7 @@ try:
         'fast_cityblock'  # kernel name
     )
 
-    fast_chebyshev = cupy.ReductionKernel(
+    fast_chebyshev = cp.ReductionKernel(
         'T x, T y',  # input params
         'T z',  # output params
         'abs(x - y)',  # map
@@ -130,25 +130,22 @@ try:
     )
 
 except ImportError:
+    cp = np
     def fast_sq_euclidean(Asq, Bsq, AB):
         AB *= -2
         AB += Asq
         AB += Bsq
         return AB
 
-    def fast_cityblock(A, B):
+    def fast_cityblock(A, B, axis, out):
         Z = A - B
         np.abs(Z, out=Z)
-        return np.sum(Z, axis=2)
+        return np.sum(Z, axis=axis, out=out)
 
-    def fast_chebyshev(A, B):
+    def fast_chebyshev(A, B, axis, out):
         Z = A - B
         np.abs(Z, out=Z)
-        return np.max(Z, axis=2)
-
-
-def get_cp():
-    return cupy if cupy_available else np
+        return np.max(Z, axis=axis, out=out)
 
 
 def to_cpu(X: np.ndarray) -> np.ndarray:
@@ -157,51 +154,6 @@ def to_cpu(X: np.ndarray) -> np.ndarray:
 
 def get_item(X: np.ndarray) -> np.ndarray:
     return X.item() if cupy_available else X
-
-
-def cdist(A: np.ndarray, B: np.ndarray, metric="euclidean", show_progress=True) -> np.ndarray:
-    """
-    Simple implementation of scipy.spatial.distance.cdist
-    """
-    cp = get_cp()
-    A = cp.asarray(A)
-    B = cp.asarray(B)
-
-    if show_progress:
-        print("Computing costs...")
-
-    if metric == "cosine":
-        A = A / cp.linalg.norm(A, axis=1, keepdims=True)
-        B = B / cp.linalg.norm(B, axis=1, keepdims=True)
-        return 1 - cp.inner(A, B)
-
-    if metric == "euclidean":
-        Asq = cp.sum(A**2, axis=1, keepdims=1)
-        Bsq = cp.sum(B**2, axis=1, keepdims=1)
-        return fast_sq_euclidean(Asq, Bsq.T, A.dot(B.T))
-
-    if metric == "cityblock":
-        func = fast_cityblock
-    elif metric == "chebyshev":
-        func = fast_chebyshev
-    else:
-        raise ValueError(f"invalid metric {metric}")
-
-    # in theory we can do diff = A[:, cp.newaxis, :] - B[cp.newaxis, :, :]
-    # but this may consume too much memory
-    # so we calculate the distance matrix row by row instead
-    total = A.shape[0]
-    row_stride = 2**30 // (B.size * 4)
-    dist_mat = cp.empty((total, B.shape[0]), dtype=cp.float32)
-
-    i = 0
-    while i < total - row_stride:
-        next_i = i + row_stride
-        func(A[i:next_i, cp.newaxis, :], B[cp.newaxis], out=dist_mat[i:next_i], axis=2)
-        i = next_i
-    if i < total:
-        func(A[i:, cp.newaxis, :], B[cp.newaxis], out=dist_mat[i:], axis=2)
-    return dist_mat
 
 
 def bgr_sum(img: np.ndarray) -> float:
@@ -342,10 +294,10 @@ def sort_collage(imgs: List[np.ndarray], ratio: Grid, sort_method="pca_lab", rev
     return grid, [imgs[i] for i in indices]
 
 
-def cvt_colorspace(colorspace: str, imgs: List[np.ndarray], dest_img: np.ndarray):
+def convert_colorspace_func(colorspace: str) -> Callable[[np.ndarray], None]:
     normalize_first = False
     if colorspace == "bgr":
-        return
+        return lambda img : None
     elif colorspace == "hsv":
         flag = cv2.COLOR_BGR2HSV
         normalize_first = True
@@ -358,15 +310,14 @@ def cvt_colorspace(colorspace: str, imgs: List[np.ndarray], dest_img: np.ndarray
         flag = cv2.COLOR_BGR2LUV
     else:
         raise ValueError("Unknown colorspace " + colorspace)
-    for img in imgs:
+
+    def func(img: np.ndarray):
         cv2.cvtColor(img, flag, dst=img)
-    cv2.cvtColor(dest_img, flag, dst=dest_img)
-    if normalize_first:
-        # for hsv/hsl, h is in range 0~360 while other channels are in range 0~1
-        # need to normalize
-        for img in imgs:
+        if normalize_first:
+            # for hsv/hsl, h is in range 0~360 while other channels are in range 0~1
+            # need to normalize
             img[:, :, 0] *= 1 / 360.0
-        dest_img[:, :, 0] *= 1 / 360.0
+    return func
 
 
 def solve_lap(cost_matrix: np.ndarray, v=None):
@@ -430,28 +381,6 @@ def get_background_tile(shape: Tuple[int], background: BackgroundRGB) -> np.ndar
     return np.full(shape, bg, dtype=np.float32)
 
 
-def compute_blocks_salient(
-    colorspace: str, dest_img: np.ndarray, imgs: List[np.ndarray], 
-    block_width: int, block_height: int, ridx: np.ndarray, cidx: np.ndarray, 
-    thresh_map: np.ndarray, lower_thresh: int, background_tile: np.ndarray) -> Tuple[Grid, np.ndarray, np.ndarray]:
-    """
-    Reorder the blocks for the salient parts of the dest image. Convert the blocks and tiles to the desired colorspace.
-
-    returns [grid size, blocked image (1), resized & flattened tiles (2)]. (1) shape: (N, Bh x Bw x 3). (2) shape (M, Bh x Bw x 3)
-    where N is the number of blocks in dest_img, 3 is the number of channels, Bw/Bh is the block width/height, and M is the number of tiles
-    """
-    dest_img = cv2.resize(dest_img, thresh_map.shape[::-1], interpolation=cv2.INTER_AREA)
-    dest_img[thresh_map < lower_thresh] = background_tile[0, 0, :]
-
-    img_keys = [cv2.resize(img, (block_width, block_height), interpolation=cv2.INTER_AREA) for img in imgs]
-    cvt_colorspace(colorspace, img_keys, dest_img)
-    grid = (thresh_map.shape[1] // block_width, thresh_map.shape[0] // block_height)
-    dest_img.shape = (grid[1], block_height, grid[0], block_width, 3)
-    dest_img = dest_img[ridx, :, cidx, :, :]
-    dest_img.shape = (-1, block_width * block_height * 3)
-    return grid, dest_img, np.array(img_keys).reshape(-1, dest_img.shape[1])
-
-
 def dup_to_meet_total(imgs: List[np.ndarray], total: int):
     """
     note that this function modifies imgs in place
@@ -467,7 +396,92 @@ def dup_to_meet_total(imgs: List[np.ndarray], total: int):
     else:
         print(f"Total tiles: {orig_len}. All of them will be used {full_count} times.")
     return imgs
+
+
+def cached_cdist(metric: str, B: np.ndarray) -> Callable[[np.ndarray], np.ndarray]:
+    """
+    Simple implementation of scipy.spatial.distance.cdist
+    """
+
+    if metric == "cosine":
+        B = B / cp.linalg.norm(B, axis=1, keepdims=True)
+        return lambda A: 1 - cp.inner(A / cp.linalg.norm(A, axis=1, keepdims=True), B)
+    
+    if metric == "euclidean":
+        BsqT = cp.sum(B**2, axis=1, keepdims=1).T
+        def func(A: np.ndarray):
+            Asq = cp.sum(A**2, axis=1, keepdims=1)
+            return fast_sq_euclidean(Asq, BsqT, A.dot(B.T))
+        return func
+
+    if metric == "cityblock":
+        dist_func = fast_cityblock
+    elif metric == "chebyshev":
+        dist_func = fast_chebyshev
+    else:
+        raise ValueError(f"invalid metric {metric}")
+
+    # in theory we can do diff = A[:, cp.newaxis, :] - B[cp.newaxis, :, :]
+    # but this may consume too much memory
+    # so we calculate the distance matrix row by row instead
+    row_stride = 2**30 // (B.size * 4)
+    B = B[cp.newaxis]
+
+    def func(A):
+        total = A.shape[0]
+        dist_mat = cp.empty((total, B.shape[1]), dtype=cp.float32)
+        i = 0
+        while i < total - row_stride:
+            next_i = i + row_stride
+            dist_func(A[i:next_i, cp.newaxis, :], B, out=dist_mat[i:next_i], axis=2)
+            i = next_i
+        if i < total:
+            dist_func(A[i:, cp.newaxis, :], B, out=dist_mat[i:], axis=2)
+        return dist_mat
+    return func
+
+
+class MosaicCommon:
+    def __init__(self, imgs: List[np.ndarray], colorspace="lab") -> None:
+        self.imgs = imgs
+        self.convert_colorspace = convert_colorspace_func(colorspace)
         
+    def compute_block_size(self, dest_shape: Tuple[int, int, int], grid: Grid):
+        self.grid = grid
+        self.block_height = round(dest_shape[0] / grid[1])
+        self.block_width = round(dest_shape[1] / grid[0])
+        self.flat_block_size = self.block_width * self.block_height * 3
+        print("Block size:", (self.block_width, self.block_height))
+
+        self.target_sz = (grid[0] * self.block_width, grid[1] * self.block_height)
+        print(f"Resizing dest image from {dest_shape[1]}x{dest_shape[0]} to {self.target_sz[0]}x{self.target_sz[1]}")
+
+    def imgs_to_flat_blocks(self, metric: str):
+        img_keys = np.zeros((len(self.imgs), self.block_height, self.block_width, 3), dtype=np.float32)
+        for i in range(len(self.imgs)):
+            cv2.resize(self.imgs[i], (self.block_width, self.block_height), dst=img_keys[i], interpolation=cv2.INTER_AREA)
+        img_keys.shape = (-1, self.block_width, 3)
+        self.convert_colorspace(img_keys)
+        img_keys.shape = (-1, self.flat_block_size)
+        img_keys = cp.asarray(img_keys)
+        self.cdist = cached_cdist(metric, img_keys)
+        return img_keys
+
+    def dest_to_flat_blocks(self, dest_img: np.ndarray):
+        dest_img = cv2.resize(dest_img, self.target_sz, interpolation=cv2.INTER_LINEAR)
+        self.convert_colorspace(dest_img)
+        dest_img.shape = (self.grid[1], self.block_height, self.grid[0], self.block_width, 3)
+        return cp.asarray(dest_img.transpose((0, 2, 1, 3, 4)).reshape(-1, self.flat_block_size))
+
+    def dest_to_flat_blocks_mask(self, dest_img: np.ndarray, lower_thresh: int, ridx: np.ndarray, cidx: np.ndarray, thresh_map: np.ndarray):
+        dest_img[thresh_map < lower_thresh] = self.imgs[-1][0, 0, :]
+        self.convert_colorspace(dest_img)
+        dest_img.shape = (self.grid[1], self.block_height, self.grid[0], self.block_width, 3)
+        dest_img = dest_img[ridx, :, cidx, :, :]
+        dest_img.shape = (-1, self.flat_block_size)
+        print(f"Salient blocks/total blocks = {len(ridx)}/{np.prod(self.grid)}")
+        return cp.asarray(dest_img)
+
 
 def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspace="lab", 
                           metric="euclidean", lower_thresh=0.5, background=(255, 255, 255), v=None) -> Tuple[Grid, List[np.ndarray]]:
@@ -506,199 +520,168 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, c
         bh_f -= bh_delta
         assert bw_f > 0 and bh_f > 0, "Salient area is too small to put down all tiles. Please try to increase the saliency threshold."
 
-    total = len(ridx)
-    imgs = dup_to_meet_total(imgs.copy(), total)
+    imgs = dup_to_meet_total(imgs.copy(), len(ridx))
 
-    bg_img = get_background_tile(imgs[0].shape, background)
-    grid, dest_img, img_keys = compute_blocks_salient(colorspace, dest_img, imgs, block_width, block_height, ridx, cidx, thresh_map, lower_thresh, bg_img)
+    mos = MosaicCommon(imgs, colorspace)
+    mos.block_width = block_width
+    mos.block_height = block_height
+    mos.flat_block_size = block_width * block_height * 3
+    mos.grid = (thresh_map.shape[1] // block_width, thresh_map.shape[0] // block_height)
 
     print("Block size:", (block_width, block_height))
-    print("Grid size:", grid)
-    print(f"Salient blocks/total blocks = {total}/{np.prod(grid)}")
+    print("Grid size:", mos.grid)
 
-    cols = solve_lap(to_cpu(cdist(img_keys, dest_img, metric=metric)), v)
-
-    imgs.append(bg_img)
-    assignment = np.full(grid[::-1], len(imgs) - 1, dtype=np.int32)
+    mos.imgs_to_flat_blocks(metric)
+    mos.imgs.append(get_background_tile(imgs[0].shape, background))
+    dest_img = cv2.resize(dest_img, thresh_map.shape[::-1], interpolation=cv2.INTER_AREA)
+    dest_img = mos.dest_to_flat_blocks_mask(dest_img, lower_thresh, ridx, cidx, thresh_map)
+    
+    cols = solve_lap(to_cpu(mos.cdist(dest_img).T), v)
+    assignment = np.full(mos.grid[::-1], len(mos.imgs) - 1, dtype=np.int32)
     assignment[ridx, cidx] = cols
     assignment = assignment.flatten()
     print("Time taken: {}s".format((np.round(time.time() - t, 2))))
-    return grid, [imgs[i] for i in assignment]
+    return mos.grid, [mos.imgs[i] for i in assignment]
 
 
-def compute_blocks(colorspace: str, dest_img: np.ndarray, imgs: List[np.ndarray], grid: Grid) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Compute and reorder the blocks of the dest_img. Block size is inferred from grid size.
-    Convert the blocks and tiles to the desired colorspace.
+class MosaicFair(MosaicCommon):
+    def __init__(self, dest_shape: Tuple[int, int, int], imgs: List[np.ndarray], dup=1, colorspace="lab", 
+            metric="euclidean", grid=None, v=None) -> None:
+        """
+        Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
+        with the restriction that every image should be used the same amount of times
+        """
+        if grid is not None:
+            print("Use the provided grid size:", grid)
+            dup = np.prod(grid) // len(imgs) + 1
+        else:
+            # Compute the grid size based on the number images that we have
+            grid = calc_grid_size(dest_shape[1],  dest_shape[0], len(imgs) * dup, imgs[0].shape)
+        total = np.prod(grid)
 
-    returns [blocked image, resized tiles] of sizes [(N, Bh x Bw x 3), (M, Bh x Bw x 3)]
-    where N is the number of blocks in dest_img, 3 is the number of channels, Bw/Bh is the block width/height, and M is the number of tiles
-
-    N = grid width x grid height
-    """
-    block_height = round(dest_img.shape[0] / grid[1])
-    block_width = round(dest_img.shape[1] // grid[0])
-    print("Block size:", (block_width, block_height))
-
-    target_sz = (grid[0] * block_width, grid[1] * block_height)
-    print(f"Resizing dest image from {dest_img.shape[1]}x{dest_img.shape[0]} to {target_sz[0]}x{target_sz[1]}")
-    dest_img = cv2.resize(dest_img, target_sz, interpolation=cv2.INTER_LINEAR)
-    img_keys = [cv2.resize(img, (block_width, block_height), interpolation=cv2.INTER_AREA) for img in imgs]
-
-    cvt_colorspace(colorspace, img_keys, dest_img)
-    flat_block_size = block_width * block_height * 3
-    dest_img.shape = (grid[1], block_height, grid[0], block_width, 3)
-    return dest_img.transpose((0, 2, 1, 3, 4)).reshape(-1, flat_block_size), \
-           np.array(img_keys).reshape(-1, flat_block_size)
-
-
-def calc_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspace="lab", 
-                  metric="euclidean", v=None, grid=None) -> Tuple[Grid, List[np.ndarray]]:
-    """
-    Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
-    with the restriction that every image should be used the same amount of times
-    """
-
-    t = time.time()
-
-    if grid is not None:
-        print("Use the provided grid size:", grid)
-        dup = np.prod(grid) // len(imgs) + 1
-    else:
-        # Compute the grid size based on the number images that we have
-        grid = calc_grid_size(dest_img.shape[1],  dest_img.shape[0], len(imgs) * dup, imgs[0].shape)
-    total = np.prod(grid)
-
-    imgs = imgs.copy()
-    if total > len(imgs) * dup:
-        dup_to_meet_total(imgs, total)
-    elif total < len(imgs) * dup: # should only happen when grid is explicitly specified
-        print(f"{len(imgs) - total} tiles will be used 1 less time than others.")
-        del imgs[total:]
-    
-    if total > 10000:
-        print("Warning: this may take longer than 5 minutes to compute")
+        imgs = imgs.copy()
+        if total > len(imgs) * dup:
+            dup_to_meet_total(imgs, total)
+        elif total < len(imgs) * dup: # should only happen when grid is explicitly specified
+            print(f"{len(imgs) - total} tiles will be used 1 less time than others.")
+            del imgs[total:]
         
-    dest_img, img_keys = compute_blocks(colorspace, dest_img, imgs, grid)
-    cols = solve_lap(to_cpu(cdist(img_keys, dest_img, metric=metric)), v)
-
-    print("Time taken: {}s".format((np.round(time.time() - t, 2))))
-    return grid, [imgs[i] for i in cols]
-
-
-def col_dup_helper(img_keys: np.ndarray, dest_img: np.ndarray, metric: str, freq_mul: float, randomize: bool):
-    cp = get_cp()
-    img_keys = cp.asarray(img_keys)
-    dest_img = cp.asarray(dest_img)
-    assignment = cp.full(dest_img.shape[0], -1, dtype=cp.int32)
-
-    total = dest_img.shape[0]
-    # number of rows in the cost matrix
-    # note here we compute the cost matrix chunk by chunk to limit memory usage
-    # a bit like sklearn.metrics.pairwise_distances_chunked
-    row_stride = (2**30 - (img_keys.size + dest_img.size + assignment.size) * 4) // (img_keys.shape[0] * 4)
-    i = 0
-    pbar = tqdm(desc="[Computing assignments]", total=total, ncols=pbar_ncols)
+        if total > 10000:
+            print("Warning: this may take longer than 5 minutes to compute")
     
-    if freq_mul > 0:
-        row_stride = row_stride // 16
-        _indices = np.arange(0, total, dtype=cp.int32)
-        if randomize:
-            np.random.shuffle(_indices)
-            dest_img[:] = dest_img[_indices]
-        indices_freq = cp.zeros(img_keys.shape[0], dtype=cp.float32)
-        row_range = cp.arange(0, row_stride, dtype=cp.int32)[:, cp.newaxis]
-        temp = cp.arange(0, img_keys.shape[0], dtype=cp.float32)
+        super().__init__(imgs, colorspace)
+        self.compute_block_size(dest_shape, grid)
+        self.imgs_to_flat_blocks(metric)
 
-        while i < total - row_stride:
-            dist_mat = cdist(dest_img[i:i+row_stride], img_keys, metric, False)
-            rank_mat = cp.argsort(dist_mat, axis=1)
-            rank_mat_float = cp.empty_like(rank_mat, dtype=cp.float32)
-            rank_mat_float[row_range, rank_mat] = temp
-            j = 0
-            while j < row_stride:
-                row = rank_mat_float[j, :]
-                row += indices_freq
-                idx = cp.argmin(row)
-                assignment[_indices[i]] = idx
-                indices_freq[idx] += freq_mul
-                i += 1
-                j += 1
-                pbar.update()
-        if i < total:
-            dist_mat = cdist(dest_img[i:], img_keys, metric, False)
-            rank_mat = cp.argsort(dist_mat, axis=1)
-            rank_mat_float = cp.empty_like(rank_mat, dtype=cp.float32)
-            rank_mat_float[row_range[:total - i], rank_mat] = temp
-            j = 0
-            while i < total:
-                row = rank_mat_float[j, :]
-                row += indices_freq
-                idx = cp.argmin(row)
-                assignment[_indices[i]] = idx
-                indices_freq[idx] += freq_mul
-                i += 1
-                j += 1
-                pbar.update()
-    else:
-        row_stride = row_stride // 4
-        while i < total - row_stride:
-            next_i = i + row_stride
-            dist_mat = cdist(dest_img[i:next_i], img_keys, metric, False)
-            cp.argmin(dist_mat, axis=1, out=assignment[i:next_i])
-            pbar.update(row_stride)
-            i = next_i
-        if i < total:
-            dist_mat = cdist(dest_img[i:], img_keys, metric, False)
-            cp.argmin(dist_mat, axis=1, out=assignment[i:])
-            pbar.update(total - i)
-    pbar.close()
-    return to_cpu(assignment)
+    def process_dest_img(self, dest_img: np.ndarray):
+        dest_img = self.dest_to_flat_blocks(dest_img)
+        cols = solve_lap(to_cpu(self.cdist(dest_img).T), None)
+
+        return self.grid, [self.imgs[i] for i in cols]
 
 
-def calc_col_dup(dest_img: np.ndarray, imgs: List[np.ndarray], max_width: int,
-                 colorspace: str, metric: str, lower_thresh=None,
-                 background=None, freq_mul=1, randomize=True) -> Tuple[Grid, List[np.ndarray]]:
-    """
-    Compute the optimal assignment between the set of images provided and the set of pixels that constitute 
-    of the salient objects of the target image, given that every image could be used arbitrary amount of times
-    """
-    t = time.time()
-    
-    # Because we don't have a fixed total amount of images as we can used a single image
-    # for arbitrary amount of times, we need user to specify the maximum width in order to determine the grid size.
-    dh, dw, _ = dest_img.shape
-    th, tw, _ = imgs[0].shape
-    grid = (max_width, round(dh * (max_width * tw / dw) / th))
-    print("Calculated grid size based on the aspect ratio of the image provided:", grid)
-    print("Collage size:", (grid[0] * tw, grid[1] * th))
+class MosaicDup(MosaicCommon):
+    def __init__(self, dest_shape: Tuple[int, int, int], imgs: List[np.ndarray], max_width, colorspace, metric, lower_thresh, background, freq_mul, randomize) -> None:
+        # Because we don't have a fixed total amount of images as we can used a single image
+        # for arbitrary amount of times, we need user to specify the maximum width in order to determine the grid size.
+        dh, dw, _ = dest_shape
+        th, tw, _ = imgs[0].shape
+        grid = (max_width, round(dh * (max_width * tw / dw) / th))
+        print("Calculated grid size based on the aspect ratio of the image provided:", grid)
+        print("Collage size:", (grid[0] * tw, grid[1] * th))
 
-    salient = lower_thresh is not None and background is not None
-    if salient:
-        block_height = round(dest_img.shape[0] / grid[1])
-        block_width = round(dest_img.shape[1] / grid[0])
-        # we resize dest_img here so that the compute_block* functions can infer correct grid size from block_size
-        dest_img = cv2.resize(dest_img, (grid[0] * block_width, grid[1] * block_height), interpolation=cv2.INTER_LINEAR)
-        _, thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((dest_img * 255).astype(np.uint8))
+        super().__init__(imgs, colorspace)
+        self.compute_block_size(dest_shape, grid)
+        img_keys = self.imgs_to_flat_blocks(metric)
 
-        ridx, cidx, thresh_map = compute_block_map(thresh_map, block_width, block_height, lower_thresh)
-        bg_img = get_background_tile(imgs[0].shape, background)
-        _grid, dest_img, img_keys = compute_blocks_salient(colorspace, dest_img, imgs, block_width, block_height, ridx, cidx, thresh_map, lower_thresh, bg_img)
-        print(f"Salient blocks/total blocks = {len(ridx)}/{np.prod(grid)}")
-    else:
-        dest_img, img_keys = compute_blocks(colorspace, dest_img, imgs, grid)
+        # number of rows in the cost matrix
+        # note here we compute the cost matrix chunk by chunk to limit memory usage
+        # a bit like sklearn.metrics.pairwise_distances_chunked
+        self.row_stride = (2**30 - (img_keys.size + np.prod(grid) * (1 + self.flat_block_size)) * 4) // (img_keys.shape[0] * 4)
+        print(f"chunk size: {self.row_stride * (img_keys.shape[0] * 4) / 2**20}MB")
 
-    img_keys = np.asarray(img_keys)
-    assignment = col_dup_helper(img_keys, dest_img, metric, freq_mul, randomize)
+        if freq_mul > 0:
+            self.row_stride //= 16
+            self.indices_freq = cp.zeros(img_keys.shape[0], dtype=cp.float32)
+            self.row_range = cp.arange(0, self.row_stride, dtype=cp.int32)[:, cp.newaxis]
+            self.temp = cp.arange(0, img_keys.shape[0], dtype=cp.float32)
+        else:
+            self.row_stride //= 4
 
-    if salient:
-        imgs.append(bg_img)
-        full_assignment = np.full(grid[::-1], len(imgs) - 1, dtype=np.int32)
-        full_assignment[ridx, cidx] = assignment
-        assignment = full_assignment.flatten()
-    
-    print("Time taken: {}s".format(np.round(time.time() - t, 2)))
-    return grid, [imgs[i] for i in assignment]
+        self.freq_mul = freq_mul
+        self.lower_thresh = lower_thresh
+        self.randomize = randomize
+
+        self.salient = lower_thresh is not None and background is not None
+        if self.salient:
+            self.imgs = self.imgs.copy()
+            self.imgs.append(get_background_tile(imgs[0].shape, background))
+
+    def process_dest_img(self, dest_img: np.ndarray):
+        if self.salient:
+            dest_img = cv2.resize(dest_img, self.target_sz, interpolation=cv2.INTER_LINEAR)
+            _, thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((dest_img * 255).astype(np.uint8))
+            ridx, cidx, thresh_map = compute_block_map(thresh_map, self.block_width, self.block_height, self.lower_thresh)
+            dest_img = self.dest_to_flat_blocks_mask(dest_img, self.lower_thresh, ridx, cidx, thresh_map)
+        else:
+            dest_img = self.dest_to_flat_blocks(dest_img)
+
+        total = dest_img.shape[0]
+        assignment = cp.empty(total, dtype=cp.int32)
+        pbar = tqdm(desc="[Computing assignments]", total=total, ncols=pbar_ncols)
+        i = 0
+        if self.freq_mul > 0:
+            _indices = np.arange(0, total, dtype=cp.int32)
+            if self.randomize:
+                np.random.shuffle(_indices)
+            dest_img = dest_img[_indices] # reorder the rows of dest img
+
+            while i < total - self.row_stride:
+                dist_mat = self.cdist(dest_img[i:i+self.row_stride])
+                dist_mat[self.row_range, cp.argsort(dist_mat, axis=1)] = self.temp
+                j = 0
+                while j < self.row_stride:
+                    row = dist_mat[j, :]
+                    row += self.indices_freq
+                    idx = cp.argmin(row)
+                    assignment[_indices[i]] = idx
+                    self.indices_freq[idx] += self.freq_mul
+                    i += 1
+                    j += 1
+                    pbar.update()
+            if i < total:
+                dist_mat = self.cdist(dest_img[i:])
+                dist_mat[self.row_range[:total - i], cp.argsort(dist_mat, axis=1)] = self.temp
+                j = 0
+                while i < total:
+                    row = dist_mat[j, :]
+                    row += self.indices_freq
+                    idx = cp.argmin(row)
+                    assignment[_indices[i]] = idx
+                    self.indices_freq[idx] += self.freq_mul
+                    i += 1
+                    j += 1
+                    pbar.update()
+        else:
+            while i < total - self.row_stride:
+                next_i = i + self.row_stride
+                dist_mat = self.cdist(dest_img[i:next_i])
+                cp.argmin(dist_mat, axis=1, out=assignment[i:next_i])
+                pbar.update(self.row_stride)
+                i = next_i
+            if i < total:
+                dist_mat = self.cdist(dest_img[i:])
+                cp.argmin(dist_mat, axis=1, out=assignment[i:])
+                pbar.update(total - i)
+        pbar.close()
+        assignment = to_cpu(assignment)
+
+        if self.salient:
+            full_assignment = np.full(self.grid[::-1], len(self.imgs) - 1, dtype=np.int32)
+            full_assignment[ridx, cidx] = assignment
+            assignment = full_assignment.flatten()
+        
+        return self.grid, [self.imgs[i] for i in assignment]
 
 
 def imwrite(filename: str, img: np.ndarray) -> None:

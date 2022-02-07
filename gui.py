@@ -539,16 +539,18 @@ if __name__ == "__main__":
 
                 else:               
                     def action():
-                        return mkg.calc_col_even(
-                            dest_img, imgs, dup.get(), colorspace.get(), dist_metric.get(), v=out_wrapper)
+                        return mkg.MosaicFair(dest_img.shape, imgs, dup.get(), 
+                            colorspace.get(), dist_metric.get(), v=out_wrapper).process_dest_img(dest_img)
             else:
                 assert max_width.get() > 0, "Max width must be a positive number"
                 assert freq_mul.get() >= 0, "Max width must be a nonnegative real number"
 
                 def action():
-                    return mkg.calc_col_dup(
-                            dest_img, imgs, max_width.get(), colorspace.get(), dist_metric.get(), 
-                            lower_thresh, salient_bg_color, freq_mul.get(), not deterministic.get())
+                    return mkg.MosaicDup(dest_img.shape, imgs, max_width.get(), colorspace.get(), dist_metric.get(), 
+                            lower_thresh, salient_bg_color, freq_mul.get(), not deterministic.get()).process_dest_img(dest_img)
+                    # return mkg.calc_col_dup(
+                    #         dest_img, imgs, max_width.get(), colorspace.get(), dist_metric.get(), 
+                    #         lower_thresh, salient_bg_color, freq_mul.get(), not deterministic.get())
 
             def wrapper():
                 global result_collage
@@ -585,7 +587,15 @@ if __name__ == "__main__":
     # right collage option panel ROW 13
     salient_opt_panel = PanedWindow(right_col_opt_panel)
 
-    def change_thresh(_):
+    change_thresh_queue = []
+
+    def init_change_thresh(_):
+        for f in change_thresh_queue:
+            f.cancel()
+        fut = pool.submit(change_thresh)
+        change_thresh_queue.append(fut)
+    
+    def change_thresh():
         if dest_img is not None:
             lower_thresh = saliency_thresh_scale.get() / 100
             assert 0.0 <= lower_thresh <= 1.0
@@ -595,7 +605,7 @@ if __name__ == "__main__":
             show_img(tmp_dest_img, False)
             
     Label(salient_opt_panel, text="Saliency threshold: ").grid(row=0, column=0, sticky="w")
-    saliency_thresh_scale = Scale(salient_opt_panel, from_=1.0, to=99.0, orient=HORIZONTAL, length=150, command=change_thresh)
+    saliency_thresh_scale = Scale(salient_opt_panel, from_=1.0, to=99.0, orient=HORIZONTAL, length=150, command=init_change_thresh)
     saliency_thresh_scale.set(50.0)
     saliency_thresh_scale.grid(row=1, columnspan=2, sticky="W")
     salient_bg_color = (255, 255, 255)
