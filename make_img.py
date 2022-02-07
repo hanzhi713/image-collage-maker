@@ -541,8 +541,15 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, c
     assignment[ridx, cidx] = cols
     assignment = assignment.flatten()
     print("Time taken: {}s".format((np.round(time.time() - t, 2))))
-    return mos.grid, [mos.imgs[i] for i in assignment]
+    return make_collage(mos.grid, [mos.imgs[i] for i in assignment])
 
+
+class MosaicFairSalient:
+    def __init__(self, *args, **kwargs) -> None:
+        self.collage = calc_salient_col_even(*args, **kwargs)
+    
+    def process_dest_img(self, dest_img):
+        return self.collage
 
 class MosaicFair(MosaicCommon):
     def __init__(self, dest_shape: Tuple[int, int, int], imgs: List[np.ndarray], dup=1, colorspace="lab", 
@@ -576,11 +583,10 @@ class MosaicFair(MosaicCommon):
     def process_dest_img(self, dest_img: np.ndarray):
         dest_img = self.dest_to_flat_blocks(dest_img)
         cols = solve_lap(to_cpu(self.cdist(dest_img).T), None)
+        return make_collage(self.grid, [self.imgs[i] for i in cols])
 
-        return self.grid, [self.imgs[i] for i in cols]
 
-
-class MosaicDup(MosaicCommon):
+class MosaicUnfair(MosaicCommon):
     def __init__(self, dest_shape: Tuple[int, int, int], imgs: List[np.ndarray], max_width, colorspace, metric, lower_thresh, background, freq_mul, randomize) -> None:
         # Because we don't have a fixed total amount of images as we can used a single image
         # for arbitrary amount of times, we need user to specify the maximum width in order to determine the grid size.
@@ -681,7 +687,7 @@ class MosaicDup(MosaicCommon):
             full_assignment[ridx, cidx] = assignment
             assignment = full_assignment.flatten()
         
-        return self.grid, [self.imgs[i] for i in assignment]
+        return make_collage(self.grid, [self.imgs[i] for i in assignment])
 
 
 def imwrite(filename: str, img: np.ndarray) -> None:
@@ -823,21 +829,23 @@ def unfair_exp_mat(dest_img, args, imgs):
     all_colorspaces = PARAMS.colorspace.choices
     all_freqs = np.zeros(6, dtype=np.float64)
     all_freqs[1:] = np.logspace(-2, 2, 5)
-    grid, sorted_imgs, _ = calc_col_dup(dest_img, imgs, max_width=args.max_width, colorspace=all_colorspaces[0], freq_mul=all_freqs[0])
-    img_shape = make_collage(grid, sorted_imgs, args.rev_row).shape
-    grid_img = np.zeros((img_shape[0] * len(all_colorspaces), img_shape[1] * len(all_freqs), 3), dtype=np.uint8)
 
+    def helper(colorspace, freq_mul):
+        mos = MosaicUnfair(dest_img, imgs, args.max_width, colorspace, args.metric, freq_mul)
+        return mos.process_dest_img(dest_img)
+
+    img_shape = helper(all_colorspaces[0], freq_mul=all_freqs[0]).process_dest_img(dest_img).shape
+    grid_img = np.zeros((img_shape[0] * len(all_colorspaces), img_shape[1] * len(all_freqs), 3), dtype=np.uint8)
     pbar = tqdm(desc="[Experimenting]", total=len(all_freqs) * len(all_colorspaces), unit="exps")
     with con.ProcessPoolExecutor(4) as pool:
         futures = [
-            [pool.submit(calc_col_dup, dest_img, imgs, max_width=args.max_width, colorspace=colorspace, metric=args.metric, freq_mul=freq) 
+            [pool.submit(helper, colorspace, freq) 
                 for freq in all_freqs] 
                     for colorspace in all_colorspaces
         ]
         for i in range(len(all_colorspaces)):
             for j in range(len(all_freqs)):
-                grid, sorted_imgs = futures[i][j].result()
-                grid_img[i * img_shape[0]:(i+1)*img_shape[0], j*img_shape[1]:(j+1)*img_shape[1], :] = make_collage(grid, sorted_imgs, args.rev_row)
+                grid_img[i * img_shape[0]:(i+1)*img_shape[0], j*img_shape[1]:(j+1)*img_shape[1], :] = futures[i][j].result()
                 pbar.update()
         pbar.refresh()
         plt.figure()
@@ -847,20 +855,30 @@ def unfair_exp_mat(dest_img, args, imgs):
         plt.show()
 
 
-def unfair_exp(dest_img, args, imgs):
+def unfair_exp(dest_img: np.ndarray, args, imgs):
     import matplotlib.pyplot as plt
     all_colorspaces = PARAMS.colorspace.choices
     all_freqs = np.zeros(6, dtype=np.float64)
     all_freqs[1:] = np.logspace(-2, 2, 5)
 
     pbar = tqdm(desc="[Experimenting]", total=len(all_freqs) + len(all_colorspaces) + 1, unit="exps")
+    mos_bgr = MosaicUnfair(dest_img.shape, imgs, args.max_width, "bgr", args.metric, None, None, 1.0, not args.deterministic)
+
+    def helper_change_freq(freq):
+        mos_bgr.freq_mul = freq
+        return mos_bgr.process_dest_img(dest_img)
+
+    def helper_change_colorspace(colorspace):
+        mos = MosaicUnfair(dest_img.shape, imgs, args.max_width, colorspace, args.metric, None, None, 1.0, not args.determinstic)
+        return mos.process_dest_img(dest_img)
+
+    def helper_even(grid):
+        return MosaicFair(dest_img.shape, imgs, colorspace="bgr", grid=grid).process_dest_img(dest_img)
 
     with con.ProcessPoolExecutor(4) as pool:
-        futures1 = [pool.submit(calc_col_dup, dest_img, imgs, max_width=args.max_width, colorspace=colorspace, metric=args.metric, freq_mul=1.0) 
-                        for colorspace in all_colorspaces]
-        futures2 = [pool.submit(calc_col_dup, dest_img, imgs, max_width=args.max_width, colorspace="bgr", metric=args.metric, freq_mul=freq) 
-                        for freq in all_freqs]
-        futures2.append(pool.submit(calc_col_even, dest_img, imgs, grid=futures2[-1].result()[0]))
+        futures1 = [pool.submit(helper_change_colorspace, colorspace) for colorspace in all_colorspaces]
+        futures2 = [pool.submit(helper_change_freq, freq) for freq in all_freqs]
+        futures2.append(pool.submit(helper_even, futures2[-1].result()[0]))
         
         def collect_imgs(fname, params, futures, fs):
             result_imgs = []
@@ -929,22 +947,22 @@ def main(args):
     
     if args.salient:
         if args.unfair:
-            grid, sorted_imgs = calc_col_dup(
-                dest_img, imgs, args.max_width, args.colorspace, args.metric,
+            mos = MosaicUnfair(
+                dest_img.shape, imgs, args.max_width, args.colorspace, args.metric,
                 args.lower_thresh, args.background, args.freq_mul, not args.deterministic)
         else:
-            grid, sorted_imgs = calc_salient_col_even(
+            mos = MosaicFairSalient(
                 dest_img, imgs, args.dup, args.colorspace,
                 args.metric, args.lower_thresh, args.background)
     else:
         if args.unfair:
-            grid, sorted_imgs = calc_col_dup(
-                dest_img, imgs, args.max_width, args.colorspace, args.metric, 
-                    None, None, args.freq_mul, not args.deterministic)
+            mos = MosaicUnfair(
+                dest_img.shape, imgs, args.max_width, args.colorspace, args.metric, 
+                None, None, args.freq_mul, not args.deterministic)
         else:
-            grid, sorted_imgs = calc_col_even(dest_img, imgs, args.dup, args.colorspace, args.metric)
+            mos = MosaicFair(dest_img.shape, imgs, args.dup, args.colorspace, args.metric)
     
-    collage = make_collage(grid, sorted_imgs, args.rev_row)
+    collage = mos.process_dest_img(dest_img)
     if args.blending == "alpha":
         collage = alpha_blend(collage, dest_img, 1.0 - args.blending_level)
     else:

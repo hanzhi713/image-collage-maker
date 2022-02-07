@@ -546,17 +546,13 @@ if __name__ == "__main__":
                 assert freq_mul.get() >= 0, "Max width must be a nonnegative real number"
 
                 def action():
-                    return mkg.MosaicDup(dest_img.shape, imgs, max_width.get(), colorspace.get(), dist_metric.get(), 
-                            lower_thresh, salient_bg_color, freq_mul.get(), not deterministic.get()).process_dest_img(dest_img)
-                    # return mkg.calc_col_dup(
-                    #         dest_img, imgs, max_width.get(), colorspace.get(), dist_metric.get(), 
-                    #         lower_thresh, salient_bg_color, freq_mul.get(), not deterministic.get())
+                    return mkg.MosaicUnfair(dest_img.shape, imgs, max_width.get(), colorspace.get(), dist_metric.get(), 
+                        lower_thresh, salient_bg_color, freq_mul.get(), not deterministic.get()).process_dest_img(dest_img)
 
             def wrapper():
                 global result_collage
                 try:
-                    grid, sorted_imgs = action()
-                    result_collage = mkg.make_collage(grid, sorted_imgs, False)
+                    result_collage = action()
                     return mkg.alpha_blend(result_collage, dest_img, alpha) 
                 except AssertionError as e:
                     return messagebox.showerror("Error", e)
