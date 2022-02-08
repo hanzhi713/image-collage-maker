@@ -58,7 +58,7 @@ class PARAMS:
         help="How to resize each tile so they become square images. "
              "Center: crop a square in the center. Stretch: stretch the tile")
     gpu = _PARAMETER(type=bool, default=False, 
-        help="Use GPU acceleration. Requires cupy to be installed and a capable GPU. Note that USUALLY this is only useful when you: "
+        help="Use GPU acceleration. Requires cupy to be installed and a capable GPU. Note that USUALLY this is useful when you: "
              "1. only have few cpu cores, and "
              "2. have a lot of tiles (typically > 10000) "
              "3. and are using the unfair mode. "
@@ -278,8 +278,8 @@ def sort_collage(imgs: List[np.ndarray], ratio: Grid, sort_method="pca_lab", rev
     return grid, [imgs[i] for i in indices]
 
 
-def solve_lap(cost_matrix: np.ndarray, v=None):
-    if v is None:
+def solve_lap(cost_matrix: np.ndarray, v=-1):
+    if v == -1:
         v = sys.__stderr__
     """
     solve the linear sum assignment (LAP) problem with progress info
@@ -554,7 +554,7 @@ class MosaicFairSalient:
 
 class MosaicFair(MosaicCommon):
     def __init__(self, dest_shape: Tuple[int, int, int], imgs: List[np.ndarray], dup=1, colorspace="lab", 
-            metric="euclidean", grid=None, v=None) -> None:
+            metric="euclidean", grid=None) -> None:
         """
         Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
         with the restriction that every image should be used the same amount of times
@@ -585,7 +585,7 @@ class MosaicFair(MosaicCommon):
 
     def process_dest_img(self, dest_img: np.ndarray, file=None):
         dest_img = self.dest_to_flat_blocks(dest_img)
-        cols = solve_lap(to_cpu(self.cdist(dest_img).T), None)
+        cols = solve_lap(to_cpu(self.cdist(dest_img).T), file)
         return self.make_photomosaic(cols)
 
 
@@ -648,15 +648,15 @@ class MosaicUnfair(MosaicCommon):
         i = 0
         row_stride = self.row_stride
         if self.freq_mul > 0:
-            _indices = np.arange(0, total, dtype=cp.int32)
+            _indices = np.arange(0, total, dtype=np.int32)
             if self.randomize:
                 np.random.shuffle(_indices)
             dest_img = dest_img[_indices] # reorder the rows of dest img
             indices_freq = self.indices_freq
-            indices_freq[:] = 0
+            indices_freq.fill(0.0)
             freq_mul = self.freq_mul
-            while i < total - self.row_stride:
-                dist_mat = self.cdist(dest_img[i:i+self.row_stride])
+            while i < total - row_stride:
+                dist_mat = self.cdist(dest_img[i:i+row_stride])
                 dist_mat[self.row_range, cp.argsort(dist_mat, axis=1)] = self.temp
                 j = 0
                 while j < row_stride:
@@ -681,13 +681,13 @@ class MosaicUnfair(MosaicCommon):
                     i += 1
                     j += 1
                     pbar.update()
-            assignment[_indices] = assignment
+            assignment[_indices] = assignment.copy()
         else:
-            while i < total - self.row_stride:
-                next_i = i + self.row_stride
+            while i < total - row_stride:
+                next_i = i + row_stride
                 dist_mat = self.cdist(dest_img[i:next_i])
                 cp.argmin(dist_mat, axis=1, out=assignment[i:next_i])
-                pbar.update(self.row_stride)
+                pbar.update(row_stride)
                 i = next_i
             if i < total:
                 dist_mat = self.cdist(dest_img[i:])
@@ -904,9 +904,9 @@ def frame_generator(ret, frame, dest_video, skip_frame):
 BlendFunc = Callable[[np.ndarray, np.ndarray, int], np.ndarray]
 
 
-def process_frame(frame: np.ndarray, mos: MosaicUnfair, blend_func: BlendFunc, blending_level: float):
+def process_frame(frame: np.ndarray, mos: MosaicUnfair, blend_func: BlendFunc, blending_level: float, file=None):
     frame = frame * np.float32(1/255.0)
-    collage = mos.process_dest_img(frame, None)
+    collage = mos.process_dest_img(frame, file=file)
     collage = blend_func(collage, frame, 1.0 - blending_level)
     collage *= 255.0
     return collage.astype(np.uint8)
@@ -1032,7 +1032,7 @@ def main(args):
         if args.gpu:
             null = open(os.devnull, "w")
             for frame in tqdm(frames_gen, desc="[Computing frames]", unit="frame"):
-                video_writer.write(process_frame(frame, mos, blend_func, args.blending_level))
+                video_writer.write(process_frame(frame, mos, blend_func, args.blending_level, null))
             null.close()
         else:
             in_q = mp.Queue(1)

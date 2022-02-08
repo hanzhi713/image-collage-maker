@@ -80,8 +80,11 @@ class JVOutWrapper:
         self.ncols = ncols
 
     def write(self, lines: str):
+        if self.io_wrapper is None:
+            return
         for line in lines.split("\n"):
             if not line.startswith("lapjv: "):
+                # self.io_wrapper.write(line + "\n")
                 continue
             if line.startswith("lapjv: AUGMENT SOLUTION row "):
                 line = line.replace(" ", "")
@@ -93,8 +96,7 @@ class JVOutWrapper:
                         self.tqdm.n = int(line[s_idx + 1:slash_idx])
                         self.tqdm.update(0)
                     else:
-                        wrapper = self.io_wrapper if self.io_wrapper is not sys.__stderr__ else None
-                        self.tqdm = tqdm(file=wrapper, ncols=self.ncols, total=int(line[slash_idx + 1:e_idx]), desc="lapjv: ")
+                        self.tqdm = tqdm(file=self.io_wrapper, ncols=self.ncols, total=int(line[slash_idx + 1:e_idx]), desc="lapjv: ")
                 continue
             if not self.tqdm:
                 self.io_wrapper.write(line + "\n")
@@ -105,7 +107,7 @@ class JVOutWrapper:
     def finish(self):
         if self.tqdm:
             self.tqdm.n = self.tqdm.total
-            self.tqdm.update(0)
+            self.tqdm.refresh()
             self.tqdm.close()
 
 

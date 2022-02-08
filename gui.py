@@ -541,7 +541,7 @@ if __name__ == "__main__":
                 else:               
                     def action():
                         return mkg.MosaicFair(dest_img.shape, imgs, dup.get(), 
-                            colorspace.get(), dist_metric.get(), v=out_wrapper).process_dest_img(dest_img)
+                            colorspace.get(), dist_metric.get()).process_dest_img(dest_img, out_wrapper)
             else:
                 assert max_width.get() > 0, "Max width must be a positive number"
                 assert freq_mul.get() >= 0, "Max width must be a nonnegative real number"
