@@ -191,8 +191,20 @@ python make_img.py --path img/zhou --dest_img examples/dest.jpg --size 25 --dup 
 | -------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------ |
 | <img src="examples/fair-dup-10.png" width="350px"> | <img src="examples/blend-alpha-0.25.png" width="350px"> | <img src="examples/blend-brightness-0.25.png" width="350px"> |
 
+### Option 3: Photomosaic Video
 
-#### Note on performance and GPU acceleration
+It is possible to make a photomosaic video simply by repeating the methods listed in Option 2 to every certain frame of the video. You can pass the path of the video with `--dest_img` and add the `--video` flag to tell the program it is a video. This is much faster than processing the video manually frame by frame (e.g. pass different `dest_img` each time), because a lot of information is cached and can be reused between frames. 
+
+Do note that some options are not supported, and some options are slower than other. Generally, saliency is not recommended to use on videos due to its long computational time and difficulty to tune. Each frame might need its own threshold. 
+
+| Saliency/Fairness | Fair | Unfair |
+| --- | --- | --- |
+| saliency enabled |  Unsupported | Slow |
+| saliency disabled | Very slow | Fast |
+
+### Performance, multiprocessing and GPU acceleration
+
+#### Computational complexity
 
 Different photomosaic making options have different computational complexity. The following table shows the computational complexity of different cases. Here, `n` is the number of tiles (after duplication in fair mode), `m` is the number of pixels in the destination image, and `k` is the number of tiles used in the unfair mode (this is equal to your specified `max_width` multiplied by the aspect ratio of your destination image).  
 
@@ -204,19 +216,19 @@ Different photomosaic making options have different computational complexity. Th
 
 Takeaway 1:
 
-The high (cubic) computational complexity of the fair mode means that the computation time grows much faster with respect to the number of tiles. It typically takes 30 seconds for 5000 tiles and 5 minutes for 10000 tiles. For large tile count, unless you need fair tile usage, you should go for the unfair mode and set freq_mul appropriately. 
+The high (cubic) computational complexity of the fair mode means that the computation time grows much faster with respect to the number of tiles. It typically takes 30 seconds for 5000 tiles and 5 minutes for 10000 tiles. For large tile count, unless you need strict fair tile usage, you should go for the unfair mode and set freq_mul appropriately. 
 
 Takeaway 2:
 
 Notice the role of `m` in the complexity. If you have a high-definition destination image (e.g. 8000x6000) and notice the computation time is long, you can first downsample it so the number of pixels (`m`) will be lower. Do note that over downsampling will reduce the quality of the photomosaic. 
 
-**Note on GPU:**
+#### Multiprocessing
+
+The `--num_process` option specifies the number of processes (cpu cores) to use. This defaults to half of you available logical CPUs. However, this only applies to the reading tiles phase and photomosaic video processing. For photomosaic video, if you have a small number of tiles or a large number of available CPU cores, using multiprocessing may be faster than enabling GPU acceleration. 
+
+#### GPU acceleration
 
 GPU acceleration can be enabled with the `--gpu` flag. However, note it can only provide the listed speedup if `nm` **is large**, typically **>= 10^10**. Another way to judge whether GPU acceleration could be useful is observe the `Distance matrix size` message from the log. Typically, `Distance matrix size` **>= 100MB** work great on GPU. 
-
-### Option 3: Photomosaic Video
-
-
 
 ### All command line options
 
