@@ -33,6 +33,7 @@
     - [Option 2.3 Display salient object only](#option-23-display-salient-object-only)
     - [Blending Options](#blending-options)
     - [Note on performance and GPU acceleration](#note-on-performance-and-gpu-acceleration)
+  - [Option 3: Photomosaic Video](#option-3-photomosaic-video)
   - [All command line options](#all-command-line-options)
 - [Utility Script: download profile pictures of your WeChat friends](#utility-script-download-profile-pictures-of-your-wechat-friends)
   - [Groupchat Members](#groupchat-members)
@@ -198,8 +199,8 @@ Different photomosaic making options have different computational complexity. Th
 | Type of photomosaic  | Computational complexity | GPU acceleration                               |
 | -------------------- | ------------------------ | ---------------------------------------------- |
 | Fair                 | `O(nm + n^3)`            | partial (~10x speed up for the `nm` part only) |
-| Unfair, freq_mul > 0 | `O(nm + nk log n)`       | full (~5x speed boost)                         |
-| Unfair, freq_mul = 0 | `O(nm + nk)`             | full (~10x speed boost)                        |
+| Unfair, freq_mul > 0 | `O(nm + nk log n)`       | full (~5-10x speed up)                         |
+| Unfair, freq_mul = 0 | `O(nm + nk)`             | full (~5-10x speed up)                         |
 
 Takeaway 1:
 
@@ -208,6 +209,14 @@ The high (cubic) computational complexity of the fair mode means that the comput
 Takeaway 2:
 
 Notice the role of `m` in the complexity. If you have a high-definition destination image (e.g. 8000x6000) and notice the computation time is long, you can first downsample it so the number of pixels (`m`) will be lower. Do note that over downsampling will reduce the quality of the photomosaic. 
+
+**Note on GPU:**
+
+GPU acceleration can be enabled with the `--gpu` flag. However, note it can only provide the listed speedup if `nm` **is large**, typically **>= 10^10**. Another way to judge whether GPU acceleration could be useful is observe the `Distance matrix size` message from the log. Typically, `Distance matrix size` **>= 100MB** work great on GPU. 
+
+### Option 3: Photomosaic Video
+
+
 
 ### All command line options
 
