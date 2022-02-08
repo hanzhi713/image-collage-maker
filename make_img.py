@@ -701,10 +701,6 @@ class MosaicUnfair(MosaicCommon):
             full_assignment[ridx, cidx] = assignment
             assignment = full_assignment
         return self.make_photomosaic(assignment)
-    
-    def __getstate__(self):
-        print("im being pickled")
-        return self.__dict__
 
 
 def imwrite(filename: str, img: np.ndarray) -> None:
@@ -905,32 +901,32 @@ def frame_generator(ret, frame, dest_video, skip_frame):
         i += 1
 
 
-def count_frames(vpath, skip_frame):
-    video = cv2.VideoCapture(vpath)
-    ret, frame = video.read()
-    i = 0
-    for _ in frame_generator(ret, frame, video, skip_frame):
-        i += 1
-    return i
+BlendFunc = Callable[[np.ndarray, np.ndarray, int], np.ndarray]
 
 
-class FrameProcessor:
-    def __init__(self, mos: MosaicUnfair, blend_func: Callable[[np.ndarray, np.ndarray, int], np.ndarray], blending_level: float):
-        self.mos = mos
-        self.blend_func = blend_func
-        self.blending_level = blending_level
-        
-    def process_frame(self, frame: np.ndarray) -> np.ndarray:
-        frame = frame * np.float32(1/255.0)
-        collage = self.mos.process_dest_img(frame, None)
-        collage = self.blend_func(collage, frame, 1.0 - self.blending_level)
-        collage *= 255.0
-        return collage.astype(np.uint8)
+def process_frame(frame: np.ndarray, mos: MosaicUnfair, blend_func: BlendFunc, blending_level: float):
+    frame = frame * np.float32(1/255.0)
+    collage = mos.process_dest_img(frame, None)
+    collage = blend_func(collage, frame, 1.0 - blending_level)
+    collage *= 255.0
+    return collage.astype(np.uint8)
+
+
+def frame_process(mos: MosaicUnfair, blend_func: BlendFunc, blending_level: float, in_q: mp.Queue, out_q: mp.Queue):
+    while True:
+        i, frame = in_q.get()
+        if i is None:
+            break
+        out_q.put((i, process_frame(frame, mos, blend_func, blending_level)))
 
 
 def main(args):
     global LIMIT
-    LIMIT = args.mem_limit * 2**20
+    num_process = max(1, args.num_process)
+    if args.video and not args.gpu:
+        LIMIT = (args.mem_limit // num_process) * 2**20
+    else:
+        LIMIT = args.mem_limit * 2**20
     if args.quiet:
         sys.stdout = open(os.devnull, "w")
 
@@ -941,8 +937,9 @@ def main(args):
         # ext = os.path.splitext(file_name)[-1]
         # assert ext.lower() == ".jpg" or ext.lower() == ".png", "The file extension must be .jpg or .png"
 
-    pool = mp.Pool(max(1, args.num_process))
+    pool = mp.Pool(max(1, num_process))
     imgs = read_images(args.path, args.size, args.recursive, pool, args.resize_opt, args.auto_rotate)
+    pool.close()
     if len(args.dest_img) == 0:
         if args.exp:
             sort_exp(args, imgs)
@@ -1031,18 +1028,48 @@ def main(args):
         res = (tw * mos.grid[0], th * mos.grid[1])
         print("Photomosaic video resolution:", res)
         video_writer = cv2.VideoWriter(args.out, cv2.VideoWriter_fourcc(*"mp4v"), round(dest_video.get(cv2.CAP_PROP_FPS) / args.skip_frame), res)
-        fp = FrameProcessor(mos, blend_func, args.blending_level)
         frames_gen = frame_generator(ret, frame, dest_video, args.skip_frame)
         if args.gpu:
             null = open(os.devnull, "w")
             for frame in tqdm(frames_gen, desc="[Computing frames]", unit="frame"):
-                video_writer.write(fp.process_frame(frame))
+                video_writer.write(process_frame(frame, mos, blend_func, args.blending_level))
             null.close()
         else:
-            null = None
-            print(f"Using {args.num_process} CPUs...")
-            for collage in tqdm(pool.imap(fp.process_frame, frames_gen, chunksize=8), desc="[Computing frames]", unit="frame"):
-                video_writer.write(collage)
+            in_q = mp.Queue(1)
+            out_q = mp.Queue()
+            processes = []
+            for i in range(num_process):
+                p = mp.Process(target=frame_process, args=(mos, blend_func, args.blending_level, in_q, out_q)) 
+                p.start()
+                processes.append(p)
+
+            last_frame = 0
+            buffer = dict()
+            pbar = tqdm(desc="[Computing frames]", unit="frame")
+
+            def check_queue():
+                nonlocal last_frame
+                while not out_q.empty():
+                    fid, collage = out_q.get()
+                    buffer[fid] = collage
+                while last_frame in buffer:
+                    collage = buffer[last_frame]
+                    del buffer[last_frame]
+                    last_frame += 1
+                    video_writer.write(collage)
+                    pbar.update()
+
+            for i, frame in enumerate(frames_gen):
+                in_q.put((i, frame))
+                check_queue()
+            while last_frame <= i:
+                check_queue()
+                
+            for p in processes:
+                in_q.put((None, None))
+            for p in processes:
+                p.join()
+        
         frames_gen.close()
         video_writer.release()
     else:
