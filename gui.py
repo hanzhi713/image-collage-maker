@@ -3,6 +3,7 @@ from tkinter import *
 from tkinter import filedialog, messagebox, colorchooser
 from tkinter.ttk import *
 from concurrent.futures import ThreadPoolExecutor
+import multiprocessing as mp
 from multiprocessing import freeze_support, cpu_count
 import argparse
 import traceback
@@ -257,7 +258,7 @@ if __name__ == "__main__":
             sizes = [tile_width.get()]
             if not infer_height.get():
                 sizes.append(tile_height.get())
-            imgs = mkg.read_images(fp, sizes, recursive.get(), cpu_count() // 2, resize_opt.get(), auto_rotate.get())
+            imgs = mkg.read_images(fp, sizes, recursive.get(), mp.Pool(cpu_count() // 2), resize_opt.get(), auto_rotate.get())
             shape = imgs[0].shape
             if infer_height.get():
                 tile_height.set(shape[0])

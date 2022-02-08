@@ -6,7 +6,7 @@ import random
 import argparse
 import itertools
 import traceback
-import multiprocess as mp
+import multiprocessing as mp
 from fractions import Fraction
 from typing import Any, Callable, List, Tuple
 from collections import defaultdict
@@ -16,6 +16,7 @@ from io_utils import stdout_redirector, JVOutWrapper
 import cv2
 import imagesize
 import numpy as np
+cp = np
 from tqdm import tqdm
 from lapjv import lapjv
 
@@ -42,7 +43,7 @@ class _PARAMETER:
 class PARAMS:
     path = _PARAMETER(help="Path to the tiles", default=os.path.join(os.path.dirname(__file__), "img"), type=str)
     recursive = _PARAMETER(type=bool, default=False, help="Whether to read the sub-folders for the specified path")
-    num_process = _PARAMETER(type=int, default=mp.cpu_count() // 2, help="Number of processes to use when loading tile")
+    num_process = _PARAMETER(type=int, default=mp.cpu_count() // 2, help="Number of processes to use for parallelizable operations")
     out = _PARAMETER(default="result.png", type=str, help="The filename of the output collage/photomosaic")
     size = _PARAMETER(type=int, nargs="+", default=(50,), 
         help="Width and height of each tile in pixels in the resulting collage/photomosaic. "
@@ -56,6 +57,16 @@ class PARAMS:
     resize_opt = _PARAMETER(type=str, default="center", choices=["center", "stretch"], 
         help="How to resize each tile so they become square images. "
              "Center: crop a square in the center. Stretch: stretch the tile")
+    gpu = _PARAMETER(type=bool, default=False, 
+        help="Use GPU acceleration. Requires cupy to be installed and a capable GPU. Note that USUALLY this is only useful when you: "
+             "1. only have few cpu cores, and "
+             "2. have a lot of tiles (typically > 10000) "
+             "3. and are using the unfair mode. "
+             "Also note: enabling GPU acceleration will disable multiprocessing on CPU for videos"
+    )
+    mem_limit = _PARAMETER(type=int, default=4096, 
+        help="The APPROXIMATE memory limit in MB when computing a photomosaic. Applicable to both CPU and GPU computing. "
+             "If you run into memory issues when using GPU, try reduce this memory limit")
 
     # ---------------- sort collage options ------------------
     ratio = _PARAMETER(type=int, default=(16, 9), help="Aspect ratio of the output image", nargs=2)
@@ -104,60 +115,29 @@ class PARAMS:
 
 
 cupy_available = False
-try:
-    # raise ImportError()
-    import cupy as cp
-    cupy_available = True
 
-    @cp.fuse
-    def fast_sq_euclidean(Asq, Bsq, AB):
-        return Asq + Bsq - 2*AB
 
-    fast_cityblock = cp.ReductionKernel(
-        'T x, T y',  # input params
-        'T z',  # output params
-        'abs(x - y)',  # map
-        'a + b',  # reduce
-        'z = a',  # post-reduction map
-        '0',  # identity value
-        'fast_cityblock'  # kernel name
-    )
+def fast_sq_euclidean(Asq, Bsq, AB):
+    AB *= -2
+    AB += Asq
+    AB += Bsq
+    return AB
 
-    fast_chebyshev = cp.ReductionKernel(
-        'T x, T y',  # input params
-        'T z',  # output params
-        'abs(x - y)',  # map
-        'max(a, b)',  # reduce
-        'z = a',  # post-reduction map
-        '0',  # identity value
-        'fast_chebyshev'  # kernel name
-    )
 
-except ImportError:
-    cp = np
-    def fast_sq_euclidean(Asq, Bsq, AB):
-        AB *= -2
-        AB += Asq
-        AB += Bsq
-        return AB
+def fast_cityblock(A, B, axis, out):
+    Z = A - B
+    np.abs(Z, out=Z)
+    return np.sum(Z, axis=axis, out=out)
 
-    def fast_cityblock(A, B, axis, out):
-        Z = A - B
-        np.abs(Z, out=Z)
-        return np.sum(Z, axis=axis, out=out)
 
-    def fast_chebyshev(A, B, axis, out):
-        Z = A - B
-        np.abs(Z, out=Z)
-        return np.max(Z, axis=axis, out=out)
+def fast_chebyshev(A, B, axis, out):
+    Z = A - B
+    np.abs(Z, out=Z)
+    return np.max(Z, axis=axis, out=out)
 
 
 def to_cpu(X: np.ndarray) -> np.ndarray:
     return X.get() if cupy_available else X
-
-
-def get_item(X: np.ndarray) -> np.ndarray:
-    return X.item() if cupy_available else X
 
 
 def bgr_sum(img: np.ndarray) -> float:
@@ -376,47 +356,52 @@ def dup_to_meet_total(imgs: List[np.ndarray], total: int):
     return imgs
 
 
-def cached_cdist(metric: str, B: np.ndarray) -> Callable[[np.ndarray], np.ndarray]:
-    """
-    Simple implementation of scipy.spatial.distance.cdist
-    """
+def _cosine(A, B):
+    return 1 - cp.inner(A / cp.linalg.norm(A, axis=1, keepdims=True), B)
 
-    if metric == "cosine":
-        B = B / cp.linalg.norm(B, axis=1, keepdims=True)
-        return lambda A: 1 - cp.inner(A / cp.linalg.norm(A, axis=1, keepdims=True), B)
-    
-    if metric == "euclidean":
-        BsqT = cp.sum(B**2, axis=1, keepdims=1).T
-        def func(A: np.ndarray):
-            Asq = cp.sum(A**2, axis=1, keepdims=1)
-            return fast_sq_euclidean(Asq, BsqT, A.dot(B.T))
-        return func
 
-    if metric == "cityblock":
-        dist_func = fast_cityblock
-    elif metric == "chebyshev":
-        dist_func = fast_chebyshev
-    else:
-        raise ValueError(f"invalid metric {metric}")
+def _euclidean(A, B, BsqT):
+    Asq = cp.sum(A**2, axis=1, keepdims=True)
+    return fast_sq_euclidean(Asq, BsqT, A.dot(B.T))
 
-    # in theory we can do diff = A[:, cp.newaxis, :] - B[cp.newaxis, :, :]
-    # but this may consume too much memory
-    # so we calculate the distance matrix row by row instead
-    row_stride = LIMIT // (B.size * 4)
-    B = B[cp.newaxis]
 
-    def func(A):
-        total = A.shape[0]
-        dist_mat = cp.empty((total, B.shape[1]), dtype=cp.float32)
-        i = 0
-        while i < total - row_stride:
-            next_i = i + row_stride
-            dist_func(A[i:next_i, cp.newaxis, :], B, out=dist_mat[i:next_i], axis=2)
-            i = next_i
-        if i < total:
-            dist_func(A[i:, cp.newaxis, :], B, out=dist_mat[i:], axis=2)
-        return dist_mat
-    return func
+def _other(A, B, dist_func, row_stride):
+    total = A.shape[0]
+    dist_mat = cp.empty((total, B.shape[1]), dtype=cp.float32)
+    i = 0
+    while i < total - row_stride:
+        next_i = i + row_stride
+        dist_func(A[i:next_i, cp.newaxis, :], B, out=dist_mat[i:next_i], axis=2)
+        i = next_i
+    if i < total:
+        dist_func(A[i:, cp.newaxis, :], B, out=dist_mat[i:], axis=2)
+    return dist_mat
+
+
+class CachedCDist:
+    def __init__(self, metric: str, B: np.ndarray):
+        """
+        Simple implementation of scipy.spatial.distance.cdist
+        """
+        if metric == "cosine":
+            self.args = [B / cp.linalg.norm(B, axis=1, keepdims=True)]
+            self.func = _cosine
+        elif metric == "euclidean":
+            self.args = [B, cp.sum(B**2, axis=1, keepdims=True).T]
+            self.func = _euclidean
+        else:
+            row_stride = LIMIT // (B.size * 4)
+            B = B[cp.newaxis]
+            if metric == "cityblock":
+                self.args = [B, fast_cityblock, row_stride]
+            elif metric == "chebyshev":
+                self.args = [B, fast_chebyshev, row_stride]
+            else:
+                raise ValueError(f"invalid metric {metric}")
+            self.func = _other
+
+    def __call__(self, A: np.ndarray) -> np.ndarray:
+        return self.func(A, *self.args)
 
 
 class MosaicCommon:
@@ -479,7 +464,7 @@ class MosaicCommon:
         self.convert_colorspace(img_keys)
         img_keys.shape = (-1, self.flat_block_size)
         img_keys = cp.asarray(img_keys)
-        self.cdist = cached_cdist(metric, img_keys)
+        self.cdist = CachedCDist(metric, img_keys)
         return img_keys
 
     def dest_to_flat_blocks(self, dest_img: np.ndarray):
@@ -632,7 +617,7 @@ class MosaicUnfair(MosaicCommon):
 
         if freq_mul > 0:
             self.row_stride //= 16
-            self.indices_freq = cp.zeros(num_cols, dtype=cp.float32)
+            self.indices_freq = cp.empty(num_cols, dtype=cp.float32)
             self.row_range = cp.arange(0, self.row_stride, dtype=cp.int32)[:, cp.newaxis]
             self.temp = cp.arange(0, num_cols, dtype=cp.float32)
         else:
@@ -661,22 +646,25 @@ class MosaicUnfair(MosaicCommon):
         assignment = cp.empty(total, dtype=cp.int32)
         pbar = tqdm(desc="[Computing assignments]", total=total, ncols=pbar_ncols, file=file)
         i = 0
+        row_stride = self.row_stride
         if self.freq_mul > 0:
             _indices = np.arange(0, total, dtype=cp.int32)
             if self.randomize:
                 np.random.shuffle(_indices)
             dest_img = dest_img[_indices] # reorder the rows of dest img
-
+            indices_freq = self.indices_freq
+            indices_freq[:] = 0
+            freq_mul = self.freq_mul
             while i < total - self.row_stride:
                 dist_mat = self.cdist(dest_img[i:i+self.row_stride])
                 dist_mat[self.row_range, cp.argsort(dist_mat, axis=1)] = self.temp
                 j = 0
-                while j < self.row_stride:
+                while j < row_stride:
                     row = dist_mat[j, :]
-                    row += self.indices_freq
+                    row += indices_freq
                     idx = cp.argmin(row)
                     assignment[i] = idx
-                    self.indices_freq[idx] += self.freq_mul
+                    indices_freq[idx] += freq_mul
                     i += 1
                     j += 1
                     pbar.update()
@@ -686,10 +674,10 @@ class MosaicUnfair(MosaicCommon):
                 j = 0
                 while i < total:
                     row = dist_mat[j, :]
-                    row += self.indices_freq
+                    row += indices_freq
                     idx = cp.argmin(row)
                     assignment[i] = idx
-                    self.indices_freq[idx] += self.freq_mul
+                    indices_freq[idx] += freq_mul
                     i += 1
                     j += 1
                     pbar.update()
@@ -713,6 +701,11 @@ class MosaicUnfair(MosaicCommon):
             full_assignment[ridx, cidx] = assignment
             assignment = full_assignment
         return self.make_photomosaic(assignment)
+    
+    def __getstate__(self):
+        print("im being pickled")
+        return self.__dict__
+
 
 def imwrite(filename: str, img: np.ndarray) -> None:
     ext = os.path.splitext(filename)[1]
@@ -744,7 +737,7 @@ def get_size(img):
         return -1, -1
 
 
-def read_images(pic_path: str, img_size: List[int], recursive=False, num_process=1, flag="stretch", auto_rotate=0) -> List[np.ndarray]:
+def read_images(pic_path: str, img_size: List[int], recursive, pool: mp.Pool, flag="stretch", auto_rotate=0) -> List[np.ndarray]:
     assert os.path.isdir(pic_path), "Directory " + pic_path + "is non-existent"
     files = []
     print("Scanning files...")
@@ -753,8 +746,6 @@ def read_images(pic_path: str, img_size: List[int], recursive=False, num_process
             files.append(os.path.join(root, f))
         if not recursive:
             break
-    
-    pool = mp.Pool(max(1, num_process))
 
     if len(img_size) == 1:
         sizes = defaultdict(int)
@@ -786,7 +777,6 @@ def read_images(pic_path: str, img_size: List[int], recursive=False, num_process
             total=len(files), desc="[Reading files]", unit="file", ncols=pbar_ncols) 
                 if r is not None
     ]
-    pool.close()
     print(f"Read {len(result)} images. {len(files) - len(result)} files cannot be decode as images.")
     return result
 
@@ -906,7 +896,41 @@ def sort_exp(args, imgs):
             save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, sort_method)
 
 
+def frame_generator(ret, frame, dest_video, skip_frame):
+    i = 0
+    while ret:
+        if i % skip_frame == 0:
+            yield frame
+        ret, frame = dest_video.read()
+        i += 1
+
+
+def count_frames(vpath, skip_frame):
+    video = cv2.VideoCapture(vpath)
+    ret, frame = video.read()
+    i = 0
+    for _ in frame_generator(ret, frame, video, skip_frame):
+        i += 1
+    return i
+
+
+class FrameProcessor:
+    def __init__(self, mos: MosaicUnfair, blend_func: Callable[[np.ndarray, np.ndarray, int], np.ndarray], blending_level: float):
+        self.mos = mos
+        self.blend_func = blend_func
+        self.blending_level = blending_level
+        
+    def process_frame(self, frame: np.ndarray) -> np.ndarray:
+        frame = frame * np.float32(1/255.0)
+        collage = self.mos.process_dest_img(frame, None)
+        collage = self.blend_func(collage, frame, 1.0 - self.blending_level)
+        collage *= 255.0
+        return collage.astype(np.uint8)
+
+
 def main(args):
+    global LIMIT
+    LIMIT = args.mem_limit * 2**20
     if args.quiet:
         sys.stdout = open(os.devnull, "w")
 
@@ -917,7 +941,8 @@ def main(args):
         # ext = os.path.splitext(file_name)[-1]
         # assert ext.lower() == ".jpg" or ext.lower() == ".png", "The file extension must be .jpg or .png"
 
-    imgs = read_images(args.path, args.size, args.recursive, args.num_process, args.resize_opt, args.auto_rotate)
+    pool = mp.Pool(max(1, args.num_process))
+    imgs = read_images(args.path, args.size, args.recursive, pool, args.resize_opt, args.auto_rotate)
     if len(args.dest_img) == 0:
         if args.exp:
             sort_exp(args, imgs)
@@ -929,15 +954,49 @@ def main(args):
     assert os.path.isfile(args.dest_img)
     if args.video:
         assert not (args.salient and not args.unfair), "Sorry, making photomosaic video is unsupported with fair and salient option. "
+        assert args.skip_frame >= 1, "skip frame must be at least 1"
+
+        # total_frames = count_frames(args.dest_img, args.skip_frame)
         dest_video = cv2.VideoCapture(args.dest_img)
         ret, frame = dest_video.read()
-
         assert ret, f"unable to open video {args.dest_img}"
-        assert args.skip_frame >= 1, "skip frame must be at least 1"
         dest_shape = frame.shape
     else:
         dest_img = imread(args.dest_img)
         dest_shape = dest_img.shape
+
+    if args.gpu:
+        global cupy_available, cp, fast_sq_euclidean, fast_cityblock, fast_chebyshev
+        try:
+            import cupy as cp
+            cupy_available = True
+
+            @cp.fuse
+            def fast_sq_euclidean(Asq, Bsq, AB):
+                return Asq + Bsq - 2*AB
+
+            fast_cityblock = cp.ReductionKernel(
+                'T x, T y',  # input params
+                'T z',  # output params
+                'abs(x - y)',  # map
+                'a + b',  # reduce
+                'z = a',  # post-reduction map
+                '0',  # identity value
+                'fast_cityblock'  # kernel name
+            )
+
+            fast_chebyshev = cp.ReductionKernel(
+                'T x, T y',  # input params
+                'T z',  # output params
+                'abs(x - y)',  # map
+                'max(a, b)',  # reduce
+                'z = a',  # post-reduction map
+                '0',  # identity value
+                'fast_chebyshev'  # kernel name
+            )
+
+        except ImportError:
+            print("Warning: GPU acceleration enabled with --gpu but cupy cannot be imported. Make sure that you have cupy properly installed. ")
 
     if args.exp:
         assert not args.salient
@@ -972,27 +1031,26 @@ def main(args):
         res = (tw * mos.grid[0], th * mos.grid[1])
         print("Photomosaic video resolution:", res)
         video_writer = cv2.VideoWriter(args.out, cv2.VideoWriter_fourcc(*"mp4v"), round(dest_video.get(cv2.CAP_PROP_FPS) / args.skip_frame), res)
-        i = 0
-        null = open(os.devnull, "w")
-        pbar = tqdm(desc="[Computing frames]")
-        while ret:
-            if i % args.skip_frame == 0:
-                frame = frame * np.float32(1/255.0)
-                collage = mos.process_dest_img(frame, null)
-                collage = blend_func(collage, frame, 1.0 - args.blending_level)
-                collage *= 255.0
-                video_writer.write(collage.astype(np.uint8))
-                pbar.update()
-            ret, frame = dest_video.read()
-            i += 1
-        pbar.close()
-        null.close()
+        fp = FrameProcessor(mos, blend_func, args.blending_level)
+        frames_gen = frame_generator(ret, frame, dest_video, args.skip_frame)
+        if args.gpu:
+            null = open(os.devnull, "w")
+            for frame in tqdm(frames_gen, desc="[Computing frames]", unit="frame"):
+                video_writer.write(fp.process_frame(frame))
+            null.close()
+        else:
+            null = None
+            print(f"Using {args.num_process} CPUs...")
+            for collage in tqdm(pool.imap(fp.process_frame, frames_gen, chunksize=8), desc="[Computing frames]", unit="frame"):
+                video_writer.write(collage)
+        frames_gen.close()
         video_writer.release()
     else:
         collage = mos.process_dest_img(dest_img)
         collage = blend_func(collage, dest_img, 1.0 - args.blending_level)
         save_img(collage, args.out, "")
-
+    
+    pool.close()
 
 if __name__ == "__main__":
     mp.freeze_support()
