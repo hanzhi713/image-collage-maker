@@ -691,6 +691,8 @@ if __name__ == "__main__":
     out_wrapper = log_entry
     sys.stdout = out_wrapper
     sys.stderr = out_wrapper
+    mkg.enable_gpu()
+
     if cmd_args.D:
         file_path.set(cmd_args.src)
         print("Loading tiles from", cmd_args.src)

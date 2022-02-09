@@ -52,6 +52,7 @@ A number of photomosaic makers already exist (like [mosaic](https://github.com/c
 - Can trade off between the fairness of the tiles and quality of the constructed photomosaic
   - Can ensure each tile is used exactly N times if desired (N is customizable)
 - Supports non square tile size
+- Supports photomosaic videos
 - Optional GPU acceleration
 - Supports saliency detection
 - Has a graphical user interface
@@ -62,18 +63,20 @@ You can either use our pre-built binaries from [release](https://github.com/hanz
 
 ### Using the pre-built binary
 
-Binaries can be downloaded from [release](https://github.com/hanzhi713/image-collage-maker/releases). However, binaries do not support GPU acceleration. If it is desired, please run the python scripts directly (see section below).
+**If you need GPU acceleration or need to make [photomosaic videos](#option-3-photomosaic-video), please refer to the [Command line usage](#command-line-usage)**
+
+Binaries can be downloaded from [release](https://github.com/hanzhi713/image-collage-maker/releases). If it is desired, please run the python scripts directly (see section below).
 
 On Windows and MacOS, my program may be blocked because it is not signed (signing costs money!). Don't worry as there is no security risk. On MacOS or Linux, after downloading the binary, you may need to add executing permission. Open your terminal, go to the file's directory and type
 
 ```bash
-chmod +x ./photomosaic-maker-3.2-macos-x64
+chmod +x ./photomosaic-maker-4.0-macos-x64
 ```
 
 Then you can run from terminal as
 
 ```bash
-./photomosaic-maker-3.2-macos-x64
+./photomosaic-maker-4.0-macos-x64
 ```
 
 ### Running Python script directly
@@ -84,13 +87,15 @@ First, you need Python >= 3.7 with pip. You can install dependencies by running
 pip install -r requirements.txt
 ```
 
-If you want GPU acceleration, you need to install cupy. Consult the [cupy documentation](https://docs.cupy.dev/en/stable/install.html). Note that it only works for Nvidia GPUs. 
+If you want GPU acceleration, you need to install cupy. Consult the [cupy documentation](https://docs.cupy.dev/en/stable/install.html).
 
-Then, you can launch the GUI by running
+Then, you can either use GUI by running
 
 ```bash
 python gui.py
 ```
+
+or you can refer to the command line usage below.  
 
 ## Command line usage
 

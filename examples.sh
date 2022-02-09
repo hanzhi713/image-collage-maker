@@ -14,4 +14,5 @@ $CMD --dest_img examples/messi.jpg --size 25 --salient --lower_thresh 0.15 --unf
 $CMD --dest_img examples/dest.jpg --size 25 --dup 8 --blending alpha --blending_level 0.25 --out $OUT/blend-alpha-0.25.png
 $CMD --dest_img examples/dest.jpg --size 25 --dup 8 --blending brightness --blending_level 0.25 --out $OUT/blend-brightness-0.25.png
 
+$CMD --sort none --exp --size 50 --out $OUT/sort-exp.png
 $CMD --dest_img examples/dest.jpg --size 25 --exp --unfair --max_width 56

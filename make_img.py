@@ -833,6 +833,25 @@ def read_img_other(args: Tuple[str, Tuple[int, int], int]):
             img = np.rot90(img, k=rot)
     return cv2.resize(img, img_size, interpolation=cv2.INTER_AREA)
 
+# pickable helper classes for unfair exp
+class _HelperChangeFreq:
+    def __init__(self, dest_img: np.ndarray, mos: MosaicUnfair) -> None:
+        self.mos = mos
+        self.dest_img = dest_img
+
+    def __call__(self, freq) -> Any:
+        self.mos.freq_mul = freq
+        return self.mos.process_dest_img(self.dest_img)
+
+class _HelperChangeColorspace:
+    def __init__(self, dest_img, *args) -> None:
+        self.dest_img = dest_img
+        self.args = list(args)
+
+    def __call__(self, colorspace) -> Any:
+        self.args[3] = colorspace
+        return MosaicUnfair(*self.args).process_dest_img(self.dest_img)
+
 
 def unfair_exp(dest_img: np.ndarray, args, imgs):
     import matplotlib.pyplot as plt
@@ -842,22 +861,14 @@ def unfair_exp(dest_img: np.ndarray, args, imgs):
 
     pbar = tqdm(desc="[Experimenting]", total=len(all_freqs) + len(all_colorspaces) + 1, unit="exps")
     mos_bgr = MosaicUnfair(dest_img.shape, imgs, args.max_width, "bgr", args.metric, None, None, 1.0, not args.deterministic)
-
-    def _helper_change_freq(freq):
-        mos_bgr.freq_mul = freq
-        return mos_bgr.process_dest_img(dest_img)
-
-    def _helper_change_colorspace(colorspace):
-        mos = MosaicUnfair(dest_img.shape, imgs, args.max_width, colorspace, args.metric, None, None, 1.0, not args.deterministic)
-        return mos.process_dest_img(dest_img)
-
-    def _helper_even():
-        return MosaicFair(dest_img.shape, imgs, colorspace="bgr", grid=mos_bgr.grid).process_dest_img(dest_img)
+    mos_fair = MosaicFair(dest_img.shape, imgs, colorspace="bgr", grid=mos_bgr.grid)
+    change_cp = _HelperChangeColorspace(dest_img, dest_img.shape, imgs, args.max_width, None, args.metric, None, None, 1.0, not args.deterministic)
+    change_freq = _HelperChangeFreq(dest_img, mos_bgr)
 
     with mp.Pool(4) as pool:
-        futures1 = [pool.apply_async(_helper_change_colorspace, (colorspace,)) for colorspace in all_colorspaces]
-        futures2 = [pool.apply_async(_helper_change_freq, (freq,)) for freq in all_freqs]
-        futures2.append(pool.apply_async(_helper_even))
+        futures1 = [pool.apply_async(change_cp, (colorspace,)) for colorspace in all_colorspaces]
+        futures2 = [pool.apply_async(change_freq, (freq,)) for freq in all_freqs]
+        futures2.append(pool.apply_async(mos_fair.process_dest_img, (dest_img,)))
         
         def collect_imgs(fname, params, futures, fs):
             result_imgs = []
@@ -920,6 +931,40 @@ def frame_process(mos: MosaicUnfair, blend_func: BlendFunc, blending_level: floa
         out_q.put((i, process_frame(frame, mos, blend_func, blending_level)))
 
 
+def enable_gpu():
+    global cupy_available, cp, fast_sq_euclidean, fast_cityblock, fast_chebyshev
+    try:
+        import cupy as cp
+        cupy_available = True
+
+        @cp.fuse
+        def fast_sq_euclidean(Asq, Bsq, AB):
+            return Asq + Bsq - 2*AB
+
+        fast_cityblock = cp.ReductionKernel(
+            'T x, T y',  # input params
+            'T z',  # output params
+            'abs(x - y)',  # map
+            'a + b',  # reduce
+            'z = a',  # post-reduction map
+            '0',  # identity value
+            'fast_cityblock'  # kernel name
+        )
+
+        fast_chebyshev = cp.ReductionKernel(
+            'T x, T y',  # input params
+            'T z',  # output params
+            'abs(x - y)',  # map
+            'max(a, b)',  # reduce
+            'z = a',  # post-reduction map
+            '0',  # identity value
+            'fast_chebyshev'  # kernel name
+        )
+
+    except ImportError:
+        print("Warning: GPU acceleration enabled with --gpu but cupy cannot be imported. Make sure that you have cupy properly installed. ")
+
+
 def main(args):
     global LIMIT
     num_process = max(1, args.num_process)
@@ -963,37 +1008,7 @@ def main(args):
         dest_shape = dest_img.shape
 
     if args.gpu:
-        global cupy_available, cp, fast_sq_euclidean, fast_cityblock, fast_chebyshev
-        try:
-            import cupy as cp
-            cupy_available = True
-
-            @cp.fuse
-            def fast_sq_euclidean(Asq, Bsq, AB):
-                return Asq + Bsq - 2*AB
-
-            fast_cityblock = cp.ReductionKernel(
-                'T x, T y',  # input params
-                'T z',  # output params
-                'abs(x - y)',  # map
-                'a + b',  # reduce
-                'z = a',  # post-reduction map
-                '0',  # identity value
-                'fast_cityblock'  # kernel name
-            )
-
-            fast_chebyshev = cp.ReductionKernel(
-                'T x, T y',  # input params
-                'T z',  # output params
-                'abs(x - y)',  # map
-                'max(a, b)',  # reduce
-                'z = a',  # post-reduction map
-                '0',  # identity value
-                'fast_chebyshev'  # kernel name
-            )
-
-        except ImportError:
-            print("Warning: GPU acceleration enabled with --gpu but cupy cannot be imported. Make sure that you have cupy properly installed. ")
+        enable_gpu()
 
     if args.exp:
         assert not args.salient
