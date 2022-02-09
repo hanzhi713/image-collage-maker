@@ -32,8 +32,11 @@
     - [Option 2.2: Best fit (unfair tile usage)](#option-22-best-fit-unfair-tile-usage)
     - [Option 2.3 Display salient object only](#option-23-display-salient-object-only)
     - [Blending Options](#blending-options)
-    - [Note on performance and GPU acceleration](#note-on-performance-and-gpu-acceleration)
   - [Option 3: Photomosaic Video](#option-3-photomosaic-video)
+  - [Performance, multiprocessing and GPU acceleration](#performance-multiprocessing-and-gpu-acceleration)
+    - [Computational complexity](#computational-complexity)
+    - [Multiprocessing](#multiprocessing)
+    - [GPU acceleration](#gpu-acceleration)
   - [All command line options](#all-command-line-options)
 - [Utility Script: download profile pictures of your WeChat friends](#utility-script-download-profile-pictures-of-your-wechat-friends)
   - [Groupchat Members](#groupchat-members)
@@ -193,7 +196,13 @@ python make_img.py --path img/zhou --dest_img examples/dest.jpg --size 25 --dup 
 
 ### Option 3: Photomosaic Video
 
-It is possible to make a photomosaic video simply by repeating the methods listed in Option 2 to every certain frame of the video. You can pass the path of the video with `--dest_img` and add the `--video` flag to tell the program it is a video. This is much faster than processing the video manually frame by frame (e.g. pass different `dest_img` each time), because a lot of information is cached and can be reused between frames. 
+![photomosaic-video](examples/v.gif)
+
+It is possible to make a photomosaic video simply by repeating the methods listed in Option 2 to every certain frame of the video. You can pass the path of the video with `--dest_img` and add the `--video` flag to tell the program it is a video. This is much faster than processing the video manually frame by frame (e.g. pass different `dest_img` each time), because a lot of information is cached and can be reused between frames. Example:
+
+```bash
+python make_img.py --path img/catsdogs --dest_img img/2out.mp4 --size 20 --unfair --max_width 100 --freq_mul 2 --out v_freq_2.mp4 --gpu --video --skip_frame 2
+```
 
 Do note that some options are not supported, and some options are slower than other. Generally, saliency is not recommended to use on videos due to its long computational time and difficulty to tune. Each frame might need its own threshold. 
 
