@@ -128,10 +128,12 @@ This fitting option ensures that each tile is used for the same amount of times.
 > a few tiles might be used one more time than others. This may happen when the number of tiles is not an integer multiple of the blocks of the destination image. 
 
 ```bash
-python make_img.py --path img/zhou --dest_img examples/dest.jpg --size 25 --dup 8 --out examples/fair-dup-10.png
+python make_img.py --path img/zhou --dest_img examples/dest.jpg --size 25 --dup 6 --out examples/fair-dup-10.png
 ```
 
-```--dup 6``` specifies that each tile needs to be used 6 times (i.e. duplicates the set of tiles 6 times). Increase that number if you don't have enough source tiles or you want a better fitting result. Note that a large number of tiles may result in long computational time. To make sure the computation completes within a reasonable amount of time, it is recommended that you use less than 6000 tiles after duplication. Tile number larger than 6000 will probably takes longer than a minute to compute. Note that this recommended limit does **not** apply for the best fit option (see section below). 
+`--dup 6` specifies that each tile needs to be used 6 times (i.e. duplicates the set of tiles 6 times). Increase that number if you don't have enough source tiles or you want a better fitting result. This can be a non integer too. For example, `--dup 0.5` means only 50% of the tiles will be used, and `--dup 2.5` means all tiles on average will be used 2.5 times (half of the tiles will be used 2 times and the other half will be used 3 times). 
+
+To make sure the computation completes within a reasonable amount of time, it is recommended that you use less than 6000 tiles after duplication. Tile number larger than 6000 will probably takes longer than a minute to compute. Note that this recommended limit does **not** apply for the best fit option (see section below). 
 
 | Original                                    | Fitting Result                                     |
 | ------------------------------------------- | -------------------------------------------------- |
@@ -242,7 +244,7 @@ The `--num_process` option specifies the number of processes (cpu cores) to use.
 
 #### GPU acceleration
 
-GPU acceleration can be enabled with the `--gpu` flag. However, note it can only provide the listed speedup if `nm` **is large**, typically **>= 10^10**. Another way to judge whether GPU acceleration could be useful is observe the `Distance matrix size` message from the log. Typically, `Distance matrix size` **>= 100MB** work great on GPU. 
+For command line, GPU acceleration can be enabled with the `--gpu` flag. For GUI (`gui.py`), it will be automatically enabled if you have `cupy` installed. However, note it can only provide the listed speedup if `nm` **is large**, typically **>= 10^10**. Another way to judge whether GPU acceleration could be useful is observe the `Distance matrix size` message from the log. Typically, `Distance matrix size` **>= 100MB** work great on GPU. 
 
 ### All command line options
 

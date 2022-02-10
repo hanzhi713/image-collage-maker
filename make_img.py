@@ -345,6 +345,11 @@ def dup_to_meet_total(imgs: List[np.ndarray], total: int):
     note that this function modifies imgs in place
     """
     orig_len = len(imgs)
+    if total < orig_len:
+        print(f"{total} tiles will be used 1 time. {orig_len - total}/{orig_len} tiles will not be used. ")
+        del imgs[total:]
+        return imgs
+    
     full_count = total // orig_len
     remaining = total % orig_len
 
@@ -567,24 +572,9 @@ class MosaicFair(MosaicCommon):
             dup = np.prod(grid) // len(imgs) + 1
         else:
             # Compute the grid size based on the number images that we have
-            grid = calc_grid_size(dest_shape[1],  dest_shape[0], round(len(imgs) * dup), imgs[0].shape)
+            grid = calc_grid_size(dest_shape[1], dest_shape[0], round(len(imgs) * dup), imgs[0].shape)
         total = np.prod(grid)
-
-        imgs = imgs.copy()
-        if dup < 1:
-            if total > len(imgs):
-                extras = total - len(imgs)
-                print(f"{extras} tiles will be used 1 more time than others.")
-                imgs.append(imgs[:extras])
-            else:
-                del imgs[total:]
-        else:
-            if total > len(imgs) * dup:
-                dup_to_meet_total(imgs, total)
-            elif total < len(imgs) * dup: # should only happen when grid is explicitly specified
-                imgs *= dup
-                print(f"{len(imgs) - total} tiles will be used 1 less time than others.")
-                del imgs[total:]
+        imgs = dup_to_meet_total(imgs.copy(), total)
         
         if total > 10000:
             print("Warning: this may take longer than 5 minutes to compute")
@@ -637,7 +627,8 @@ class MosaicUnfair(MosaicCommon):
         self.freq_mul = freq_mul
         self.lower_thresh = lower_thresh
         self.randomize = randomize
-
+        
+        self.saliency = None
         if lower_thresh is not None and background is not None:
             self.saliency = cv2.saliency.StaticSaliencyFineGrained_create()
             self.imgs = self.imgs.copy()
@@ -941,7 +932,7 @@ def frame_process(mos: MosaicUnfair, blend_func: BlendFunc, blending_level: floa
         out_q.put((i, process_frame(frame, mos, blend_func, blending_level)))
 
 
-def enable_gpu():
+def enable_gpu(show_warning=True):
     global cupy_available, cp, fast_sq_euclidean, fast_cityblock, fast_chebyshev
     try:
         import cupy as cp
@@ -972,15 +963,12 @@ def enable_gpu():
         )
 
     except ImportError:
-        print("Warning: GPU acceleration enabled with --gpu but cupy cannot be imported. Make sure that you have cupy properly installed. ")
+        if show_warning:
+            print("Warning: GPU acceleration enabled with --gpu but cupy cannot be imported. Make sure that you have cupy properly installed. ")
 
 
 def check_dup_valid(dup):
     assert dup > 0, "dup must be a positive integer or a real number between 0 and 1"
-    if dup >= 1:
-        rounded = round(dup)
-        assert dup == rounded, "dup must be a positive integer or a real number between 0 and 1"
-        return rounded
     return dup
 
 

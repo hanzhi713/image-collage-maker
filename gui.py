@@ -422,12 +422,15 @@ if __name__ == "__main__":
            command=load_dest_img).grid(row=2, columnspan=2, pady=(3, 2))
 
     result_collage = None
-    def change_alpha(_=None):
+    def change_alpha(_=None, show=True):
         if result_collage is not None and dest_img is not None:
             if colorization_opt.get() == "brightness":
-                show_img(mkg.brightness_blend(result_collage, dest_img, 1 - alpha_scale.get() / 100), False)
+                img = mkg.brightness_blend(result_collage, dest_img, 1 - alpha_scale.get() / 100)
             else:
-                show_img(mkg.alpha_blend(result_collage, dest_img, 1 - alpha_scale.get() / 100), False)
+                img = mkg.alpha_blend(result_collage, dest_img, 1 - alpha_scale.get() / 100)
+            if show:
+                show_img(img)
+            return img
     
     # right collage option panel ROW 3:
     LabelWithTooltip(right_col_opt_panel, text="Color Blend:", tooltip=mkg.PARAMS.blending.help).grid(
@@ -489,7 +492,7 @@ if __name__ == "__main__":
     # collage even panel ROW 1
     LabelWithTooltip(collage_even_panel, text="Duplicates:", tooltip=mkg.PARAMS.dup.help).grid(row=1, column=0, sticky="W")
     dup = DoubleVar()
-    dup.set(1)
+    dup.set(1.0)
     Entry(collage_even_panel, textvariable=dup, width=5).grid(row=1, column=1, sticky="W")
     # ----------------------- end collage even panel ------------------------
 
@@ -525,10 +528,7 @@ if __name__ == "__main__":
                 assert 0.0 < lower_thresh < 1.0, "saliency threshold must be between 0 and 1"
             else:
                 lower_thresh = None
-            
-            alpha = 1 - alpha_scale.get() / 100.0
-            assert 0.0 <= alpha <= 1.0
-            
+
             if even.get() == "even":
                 _dup = mkg.check_dup_valid(dup.get())
                 
@@ -554,7 +554,7 @@ if __name__ == "__main__":
                 global result_collage
                 try:
                     result_collage = action()
-                    return mkg.alpha_blend(result_collage, dest_img, alpha) 
+                    return change_alpha(show=False)
                 except AssertionError as e:
                     return messagebox.showerror("Error", e)
                 except:
@@ -690,10 +690,12 @@ if __name__ == "__main__":
 
     root.bind("<Configure>", canvas_resize)
     out_wrapper = log_entry
+    mkg.enable_gpu(False)
+
     sys.stdout = out_wrapper
     sys.stderr = out_wrapper
-    mkg.enable_gpu()
 
+    # mainly for debugging purposes
     if cmd_args.D:
         file_path.set(cmd_args.src)
         print("Loading tiles from", cmd_args.src)
