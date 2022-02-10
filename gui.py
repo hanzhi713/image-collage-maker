@@ -488,7 +488,7 @@ if __name__ == "__main__":
 
     # collage even panel ROW 1
     LabelWithTooltip(collage_even_panel, text="Duplicates:", tooltip=mkg.PARAMS.dup.help).grid(row=1, column=0, sticky="W")
-    dup = IntVar()
+    dup = DoubleVar()
     dup.set(1)
     Entry(collage_even_panel, textvariable=dup, width=5).grid(row=1, column=1, sticky="W")
     # ----------------------- end collage even panel ------------------------
@@ -530,17 +530,17 @@ if __name__ == "__main__":
             assert 0.0 <= alpha <= 1.0
             
             if even.get() == "even":
-                assert dup.get() > 0, "Duplication must be a positive number"
+                _dup = mkg.check_dup_valid(dup.get())
                 
                 if is_salient.get():
                     def action():
-                        return mkg.calc_salient_col_even(
-                            dest_img, imgs, dup.get(), colorspace.get(), dist_metric.get(), 
-                            lower_thresh, salient_bg_color, out_wrapper)
+                        return mkg.MosaicFairSalient(
+                            dest_img, imgs, _dup, colorspace.get(), dist_metric.get(), 
+                            lower_thresh, salient_bg_color, out_wrapper).process_dest_img(dest_img)
 
                 else:               
                     def action():
-                        return mkg.MosaicFair(dest_img.shape, imgs, dup.get(), 
+                        return mkg.MosaicFair(dest_img.shape, imgs, _dup, 
                             colorspace.get(), dist_metric.get()).process_dest_img(dest_img, out_wrapper)
             else:
                 assert max_width.get() > 0, "Max width must be a positive number"
@@ -589,6 +589,7 @@ if __name__ == "__main__":
     def init_change_thresh(_):
         for f in change_thresh_queue:
             f.cancel()
+        change_thresh_queue.clear()
         fut = pool.submit(change_thresh)
         change_thresh_queue.append(fut)
     

@@ -50,7 +50,7 @@ class PARAMS:
              "If two numbers are specified, they are treated as width and height. "
              "If one number is specified, the number is treated as the width"
              "and the height is inferred from the aspect ratios of the images provided. ")
-    quiet = _PARAMETER(type=bool, default=False, help="Print progress message to console")
+    quiet = _PARAMETER(type=bool, default=False, help="Do not print progress message to console")
     auto_rotate = _PARAMETER(type=int, default=0, choices=[-1, 0, 1],
         help="Options to auto rotate tiles to best match the specified tile size. 0: do not auto rotate. "
              "1: attempt to rotate counterclockwise by 90 degrees. -1: attempt to rotate clockwise by 90 degrees")
@@ -95,7 +95,8 @@ class PARAMS:
         help="Do not randomize the tiles. This option is only valid if unfair option is enabled")
 
     # --- fair tile assignment options ---
-    dup = _PARAMETER(type=int, default=1, help="Duplicate the set of tiles by how many times")
+    dup = _PARAMETER(type=float, default=1, 
+        help="If a positive integer: duplicate the set of tiles by how many times. If a real number between 0 and 1: the proportion of tiles to use.")
 
     # ---- saliency detection options ---
     salient = _PARAMETER(type=bool, default=False, help="Make photomosaic for salient objects only")
@@ -497,7 +498,7 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, c
     height, width, _ = dest_img.shape
 
     # this is just the initial (minimum) grid size
-    total = len(imgs) * dup
+    total = round(len(imgs) * dup)
     grid = calc_grid_size(width, height, total, imgs[0].shape)
     _, orig_thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((dest_img * 255).astype(np.uint8))
     
@@ -547,10 +548,12 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, c
 
 class MosaicFairSalient:
     def __init__(self, *args, **kwargs) -> None:
-        self.collage = calc_salient_col_even(*args, **kwargs)
+        self.args = args
+        self.kwargs = kwargs
     
-    def process_dest_img(self, dest_img):
-        return self.collage
+    def process_dest_img(self, dest_img: np.ndarray) -> np.ndarray:
+        return calc_salient_col_even(dest_img, *self.args[1:], **self.kwargs)
+
 
 class MosaicFair(MosaicCommon):
     def __init__(self, dest_shape: Tuple[int, int, int], imgs: List[np.ndarray], dup=1, colorspace="lab", 
@@ -564,16 +567,24 @@ class MosaicFair(MosaicCommon):
             dup = np.prod(grid) // len(imgs) + 1
         else:
             # Compute the grid size based on the number images that we have
-            grid = calc_grid_size(dest_shape[1],  dest_shape[0], len(imgs) * dup, imgs[0].shape)
+            grid = calc_grid_size(dest_shape[1],  dest_shape[0], round(len(imgs) * dup), imgs[0].shape)
         total = np.prod(grid)
 
         imgs = imgs.copy()
-        if total > len(imgs) * dup:
-            dup_to_meet_total(imgs, total)
-        elif total < len(imgs) * dup: # should only happen when grid is explicitly specified
-            imgs *= dup
-            print(f"{len(imgs) - total} tiles will be used 1 less time than others.")
-            del imgs[total:]
+        if dup < 1:
+            if total > len(imgs):
+                extras = total - len(imgs)
+                print(f"{extras} tiles will be used 1 more time than others.")
+                imgs.append(imgs[:extras])
+            else:
+                del imgs[total:]
+        else:
+            if total > len(imgs) * dup:
+                dup_to_meet_total(imgs, total)
+            elif total < len(imgs) * dup: # should only happen when grid is explicitly specified
+                imgs *= dup
+                print(f"{len(imgs) - total} tiles will be used 1 less time than others.")
+                del imgs[total:]
         
         if total > 10000:
             print("Warning: this may take longer than 5 minutes to compute")
@@ -627,16 +638,16 @@ class MosaicUnfair(MosaicCommon):
         self.lower_thresh = lower_thresh
         self.randomize = randomize
 
-        self.salient = lower_thresh is not None and background is not None
-        if self.salient:
+        if lower_thresh is not None and background is not None:
+            self.saliency = cv2.saliency.StaticSaliencyFineGrained_create()
             self.imgs = self.imgs.copy()
             self.imgs.append(get_background_tile(imgs[0].shape, background))
         self.combine_imgs()
 
     def process_dest_img(self, dest_img: np.ndarray, file=None):
-        if self.salient:
+        if self.saliency is not None:
             dest_img = cv2.resize(dest_img, self.target_sz, interpolation=cv2.INTER_LINEAR)
-            _, thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((dest_img * 255).astype(np.uint8))
+            _, thresh_map = self.saliency.computeSaliency((dest_img * 255).astype(np.uint8))
             ridx, cidx, thresh_map = compute_block_map(thresh_map, self.block_width, self.block_height, self.lower_thresh)
             dest_img = self.dest_to_flat_blocks_mask(dest_img, self.lower_thresh, ridx, cidx, thresh_map)
         else:
@@ -696,7 +707,7 @@ class MosaicUnfair(MosaicCommon):
         pbar.close()
 
         assignment = to_cpu(assignment)
-        if self.salient:
+        if self.saliency is not None:
             full_assignment = np.full(self.grid[::-1], len(self.imgs) - 1, dtype=np.int32)
             full_assignment[ridx, cidx] = assignment
             assignment = full_assignment
@@ -852,7 +863,6 @@ class _HelperChangeColorspace:
         self.args[3] = colorspace
         return MosaicUnfair(*self.args).process_dest_img(self.dest_img)
 
-
 def unfair_exp(dest_img: np.ndarray, args, imgs):
     import matplotlib.pyplot as plt
     all_colorspaces = PARAMS.colorspace.choices
@@ -891,16 +901,16 @@ def unfair_exp(dest_img: np.ndarray, args, imgs):
         # plt.show()
 
 
-def sort_exp(args, imgs):
-    with mp.Pool(4) as pool:
-        n = len(PARAMS.sort.choices)
-        for sort_method, (grid, sorted_imgs) in zip(PARAMS.sort.choices, pool.starmap(sort_collage, 
+def sort_exp(pool, args, imgs):
+    n = len(PARAMS.sort.choices)
+    for sort_method, (grid, sorted_imgs) in zip(
+        PARAMS.sort.choices, pool.starmap(sort_collage, 
             zip(itertools.repeat(imgs, n), 
             itertools.repeat(args.ratio, n), 
             PARAMS.sort.choices, 
             itertools.repeat(args.rev_sort, n))
-            )):
-            save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, sort_method)
+        )):
+        save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, sort_method)
 
 
 def frame_generator(ret, frame, dest_video, skip_frame):
@@ -965,6 +975,15 @@ def enable_gpu():
         print("Warning: GPU acceleration enabled with --gpu but cupy cannot be imported. Make sure that you have cupy properly installed. ")
 
 
+def check_dup_valid(dup):
+    assert dup > 0, "dup must be a positive integer or a real number between 0 and 1"
+    if dup >= 1:
+        rounded = round(dup)
+        assert dup == rounded, "dup must be a positive integer or a real number between 0 and 1"
+        return rounded
+    return dup
+
+
 def main(args):
     global LIMIT
     num_process = max(1, args.num_process)
@@ -972,8 +991,6 @@ def main(args):
         LIMIT = (args.mem_limit // num_process) * 2**20
     else:
         LIMIT = args.mem_limit * 2**20
-    if args.quiet:
-        sys.stdout = open(os.devnull, "w")
 
     if len(args.out) > 0:
         folder, file_name = os.path.split(args.out)
@@ -981,17 +998,21 @@ def main(args):
             assert os.path.isdir(folder), "The output path {} does not exist!".format(folder)
         # ext = os.path.splitext(file_name)[-1]
         # assert ext.lower() == ".jpg" or ext.lower() == ".png", "The file extension must be .jpg or .png"
+    if args.quiet:
+        sys.stdout = open(os.devnull, "w")
+    
+    dup = check_dup_valid(args.dup)
 
-    pool = mp.Pool(max(1, num_process))
-    imgs = read_images(args.path, args.size, args.recursive, pool, args.resize_opt, args.auto_rotate)
-    pool.close()
-    if len(args.dest_img) == 0:
-        if args.exp:
-            sort_exp(args, imgs)
-        else:
-            grid, sorted_imgs = sort_collage(imgs, args.ratio, args.sort, args.rev_sort)
-            save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
-        return
+    with mp.Pool(max(1, num_process)) as pool:
+        imgs = read_images(args.path, args.size, args.recursive, pool, args.resize_opt, args.auto_rotate)
+        
+        if len(args.dest_img) == 0:
+            if args.exp:
+                sort_exp(pool, args, imgs)
+            else:
+                grid, sorted_imgs = sort_collage(imgs, args.ratio, args.sort, args.rev_sort)
+                save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
+            return
 
     assert os.path.isfile(args.dest_img)
     if args.video:
@@ -1022,16 +1043,14 @@ def main(args):
                 dest_shape, imgs, args.max_width, args.colorspace, args.metric,
                 args.lower_thresh, args.background, args.freq_mul, not args.deterministic)
         else:
-            mos = MosaicFairSalient(
-                dest_img, imgs, args.dup, args.colorspace,
-                args.metric, args.lower_thresh, args.background)
+            mos = MosaicFairSalient(dest_shape, imgs, dup, args.colorspace, args.metric, args.lower_thresh, args.background)
     else:
         if args.unfair:
             mos = MosaicUnfair(
                 dest_shape, imgs, args.max_width, args.colorspace, args.metric, 
                 None, None, args.freq_mul, not args.deterministic)
         else:
-            mos = MosaicFair(dest_shape, imgs, args.dup, args.colorspace, args.metric)
+            mos = MosaicFair(dest_shape, imgs, dup, args.colorspace, args.metric)
     
     if args.blending == "alpha":
         blend_func = alpha_blend
