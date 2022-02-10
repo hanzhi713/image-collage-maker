@@ -96,7 +96,7 @@ class PARAMS:
 
     # --- fair tile assignment options ---
     dup = _PARAMETER(type=float, default=1, 
-        help="If a positive integer: duplicate the set of tiles by how many times. If a real number between 0 and 1: the proportion of tiles to use.")
+        help="If a positive integer: duplicate the set of tiles by how many times. Can be a fraction")
 
     # ---- saliency detection options ---
     salient = _PARAMETER(type=bool, default=False, help="Make photomosaic for salient objects only")
