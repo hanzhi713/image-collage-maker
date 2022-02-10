@@ -833,7 +833,7 @@ def read_img_other(args: Tuple[str, Tuple[int, int], int]):
             img = np.rot90(img, k=rot)
     return cv2.resize(img, img_size, interpolation=cv2.INTER_AREA)
 
-# pickable helper classes for unfair exp
+# pickleable helper classes for unfair exp
 class _HelperChangeFreq:
     def __init__(self, dest_img: np.ndarray, mos: MosaicUnfair) -> None:
         self.mos = mos
@@ -1042,7 +1042,7 @@ def main(args):
         th, tw, _ = mos.imgs[0].shape
         res = (tw * mos.grid[0], th * mos.grid[1])
         print("Photomosaic video resolution:", res)
-        video_writer = cv2.VideoWriter(args.out, cv2.VideoWriter_fourcc(*"mp4v"), round(dest_video.get(cv2.CAP_PROP_FPS) / args.skip_frame), res)
+        video_writer = cv2.VideoWriter(args.out, cv2.VideoWriter_fourcc(*"mp4v"), dest_video.get(cv2.CAP_PROP_FPS) / args.skip_frame, res)
         frames_gen = frame_generator(ret, frame, dest_video, args.skip_frame)
         if args.gpu:
             null = open(os.devnull, "w")
