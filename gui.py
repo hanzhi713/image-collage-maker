@@ -692,9 +692,6 @@ if __name__ == "__main__":
     out_wrapper = log_entry
     mkg.enable_gpu(False)
 
-    sys.stdout = out_wrapper
-    sys.stderr = out_wrapper
-
     # mainly for debugging purposes
     if cmd_args.D:
         file_path.set(cmd_args.src)
@@ -710,4 +707,6 @@ if __name__ == "__main__":
         sort_button.config(state='enabled')
         collage_button.config(state='enabled')
 
+    sys.stdout = out_wrapper
+    sys.stderr = out_wrapper
     root.mainloop()

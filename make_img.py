@@ -114,7 +114,25 @@ class PARAMS:
     video = _PARAMETER(type=bool, default=False, help="Make a photomosaic video from dest_img which is assumed to be a video")
     skip_frame = _PARAMETER(type=int, default=1, help="Make a photomosaic every this number of frames")
 
+# from numpy documentation
+# https://numpy.org/doc/stable/user/basics.subclassing.html#simple-example-adding-an-extra-attribute-to-ndarray
+class InfoArray(np.ndarray):
+    def __new__(cls, input_array, info=None):
+        # Input array is an already formed ndarray instance
+        # We first cast to be our class type
+        obj = np.asarray(input_array).view(cls)
+        # add the new attribute to the created instance
+        obj.info = info
+        # Finally, we must return the newly created object:
+        return obj
 
+    def __array_finalize__(self, obj):
+        # see InfoArray.__array_finalize__ for comments
+        if obj is None: return
+        self.info = getattr(obj, 'info', None)
+
+
+ImgList = List[InfoArray]
 cupy_available = False
 
 
@@ -203,7 +221,7 @@ def calc_grid_size(rw: int, rh: int, num_imgs: int, shape: Tuple[int, int, int])
     return grid
 
 
-def make_collage(grid: Grid, sorted_imgs: List[np.ndarray], rev=False, file=None) -> np.ndarray:
+def make_collage(grid: Grid, sorted_imgs: ImgList, rev=False, file=None) -> np.ndarray:
     """
     :param grid: grid size
     :param sorted_imgs: list of images sorted in correct position
@@ -220,6 +238,11 @@ def make_collage(grid: Grid, sorted_imgs: List[np.ndarray], rev=False, file=None
         print(f"Note: {len(sorted_imgs) - total} tiles will be dropped from the grid.")
         del sorted_imgs[total:]
     
+    print(type(sorted_imgs[0]))
+    with open("tile-row-order.csv", "w") as f:
+        f.write(f"Grid dimension: {grid}\n")
+        f.write("\n".join([img.info for img in sorted_imgs]))
+
     combined_img = np.asarray(sorted_imgs)
     combined_img.shape = (*grid[::-1], *sorted_imgs[0].shape)
     if rev:
@@ -251,7 +274,7 @@ def brightness_blend(combined_img: np.ndarray, dest_img: np.ndarray, alpha=0.9):
     return combined_img
 
 
-def sort_collage(imgs: List[np.ndarray], ratio: Grid, sort_method="pca_lab", rev_sort=False) -> Tuple[Grid, np.ndarray]:
+def sort_collage(imgs: ImgList, ratio: Grid, sort_method="pca_lab", rev_sort=False) -> Tuple[Grid, np.ndarray]:
     """
     :param imgs: list of images
     :param ratio: The aspect ratio of the collage
@@ -334,13 +357,13 @@ def compute_block_map(thresh_map: np.ndarray, block_width: int, block_height: in
     return row_idx, col_idx, thresh_map
 
 
-def get_background_tile(shape: Tuple[int], background: BackgroundRGB) -> np.ndarray:
+def get_background_tile(shape: Tuple[int], background: BackgroundRGB):
     bg = np.asarray(background[::-1], dtype=np.float32)
     bg *= 1 / 255.0
-    return np.full(shape, bg, dtype=np.float32)
+    return InfoArray(np.full(shape, bg, dtype=np.float32), f"background-{'-'.join(str(a) for a in background)}")
 
 
-def dup_to_meet_total(imgs: List[np.ndarray], total: int):
+def dup_to_meet_total(imgs: ImgList, total: int):
     """
     note that this function modifies imgs in place
     """
@@ -411,7 +434,7 @@ class CachedCDist:
 
 
 class MosaicCommon:
-    def __init__(self, imgs: List[np.ndarray], colorspace="lab") -> None:
+    def __init__(self, imgs: ImgList, colorspace="lab") -> None:
         self.imgs = imgs
         self.normalize_first = False
         if colorspace == "bgr":
@@ -490,8 +513,8 @@ class MosaicCommon:
         return cp.asarray(dest_img)
 
 
-def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspace="lab", 
-                          metric="euclidean", lower_thresh=0.5, background=(255, 255, 255), v=None) -> Tuple[Grid, List[np.ndarray]]:
+def calc_salient_col_even(dest_img: np.ndarray, imgs: ImgList, dup=1, colorspace="lab", 
+                          metric="euclidean", lower_thresh=0.5, background=(255, 255, 255), v=None) -> Tuple[Grid, ImgList]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels constitute of salient objects of the
     target image, with the restriction that every image should be used the same amount of times
@@ -561,7 +584,7 @@ class MosaicFairSalient:
 
 
 class MosaicFair(MosaicCommon):
-    def __init__(self, dest_shape: Tuple[int, int, int], imgs: List[np.ndarray], dup=1, colorspace="lab", 
+    def __init__(self, dest_shape: Tuple[int, int, int], imgs: ImgList, dup=1, colorspace="lab", 
             metric="euclidean", grid=None) -> None:
         """
         Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
@@ -591,7 +614,7 @@ class MosaicFair(MosaicCommon):
 
 
 class MosaicUnfair(MosaicCommon):
-    def __init__(self, dest_shape: Tuple[int, int, int], imgs: List[np.ndarray], max_width, colorspace, metric, lower_thresh, background, freq_mul, randomize) -> None:
+    def __init__(self, dest_shape: Tuple[int, int, int], imgs: ImgList, max_width, colorspace, metric, lower_thresh, background, freq_mul, randomize) -> None:
         # Because we don't have a fixed total amount of images as we can used a single image
         # for arbitrary amount of times, we need user to specify the maximum width in order to determine the grid size.
         dh, dw, _ = dest_shape
@@ -735,7 +758,7 @@ def get_size(img):
         return -1, -1
 
 
-def read_images(pic_path: str, img_size: List[int], recursive, pool: mp.Pool, flag="stretch", auto_rotate=0) -> List[np.ndarray]:
+def read_images(pic_path: str, img_size: List[int], recursive, pool: mp.Pool, flag="stretch", auto_rotate=0) -> ImgList:
     assert os.path.isdir(pic_path), "Directory " + pic_path + "is non-existent"
     files = []
     print("Scanning files...")
@@ -819,7 +842,7 @@ def read_img_center(args: Tuple[str, Tuple[int, int], int]):
     img = img[:, margin:w - margin + add, :]
     if cond:
         img = img.transpose((1, 0, 2))
-    return cv2.resize(img, img_size, interpolation=cv2.INTER_AREA)
+    return InfoArray(cv2.resize(img, img_size, interpolation=cv2.INTER_AREA), img_file)
 
 
 def read_img_other(args: Tuple[str, Tuple[int, int], int]):
@@ -833,7 +856,7 @@ def read_img_other(args: Tuple[str, Tuple[int, int], int]):
         h, w, _ = img.shape
         if abs(h / w - ratio) < abs(w / h - ratio):
             img = np.rot90(img, k=rot)
-    return cv2.resize(img, img_size, interpolation=cv2.INTER_AREA)
+    return InfoArray(cv2.resize(img, img_size, interpolation=cv2.INTER_AREA), img_file)
 
 # pickleable helper classes for unfair exp
 class _HelperChangeFreq:
