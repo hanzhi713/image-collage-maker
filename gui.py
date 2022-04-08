@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import *
 from tkinter import filedialog, messagebox, colorchooser
 from tkinter.ttk import *
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 import multiprocessing as mp
 from multiprocessing import freeze_support, cpu_count
 import argparse
@@ -11,6 +11,7 @@ import math
 import sys
 import os
 import time
+from typing import Tuple, Union
 
 import cv2
 import numpy as np
@@ -165,11 +166,18 @@ if __name__ == "__main__":
     result_img = None
     # ------------------ end left panel ------------------------
 
-    def show_img(img: np.ndarray, printDone: bool = True) -> None:
-        global result_img
+    def show_img(img: Union[np.ndarray, Future, Tuple[np.ndarray, str], None], printDone: bool = True) -> None:
+        """
+        display an image in the canvas and set the global variable result_img to img
+        """
+        global result_img, result_tile_info
         if img is None:
             return
-
+        if type(img) == Future:
+            img = img.result()
+        if type(img) == tuple:
+            img, result_tile_info = img
+        
         result_img = img
         width, height = canvas.winfo_width(), canvas.winfo_height()
         img_h, img_w, _ = img.shape
@@ -186,6 +194,7 @@ if __name__ == "__main__":
         canvas.delete("all")
         canvas.create_image((width - w) // 2, (height - h) // 2, image=root.preview, anchor=NW)
         save_button.config(state='enabled')
+        tile_save_button.config(state='disabled' if result_tile_info is None else 'enabled')
         if printDone:
             print("Done")
 
@@ -269,7 +278,7 @@ if __name__ == "__main__":
 
     
     def reload_images():
-        pool.submit(load_img_action).add_done_callback(lambda f: show_img(f.result()))
+        pool.submit(load_img_action).add_done_callback(show_img)
 
 
     def load_images():
@@ -289,7 +298,7 @@ if __name__ == "__main__":
             reload_img_button.config(state='enabled')
             sort_button.config(state='enabled')
             collage_button.config(state='enabled')
-            show_img(f.result())
+            show_img(f)
 
         print("Loading tiles from", fp)
         file_path.set(fp)
@@ -376,7 +385,7 @@ if __name__ == "__main__":
             except:
                 messagebox.showerror("Error", traceback.format_exc())
 
-        pool.submit(action).add_done_callback(lambda f: show_img(f.result()))
+        pool.submit(action).add_done_callback(show_img)
 
     # right sort option panel ROW 4:
     sort_button = Button(right_sort_opt_panel, text="Generate sorted image", command=generate_sorted_image)
@@ -399,7 +408,7 @@ if __name__ == "__main__":
 
 
     def load_dest_img():
-        global dest_img
+        global dest_img, result_tile_info
         if imgs is None:
             return messagebox.showerror("Empty set", "Please first load tiles")
 
@@ -411,8 +420,9 @@ if __name__ == "__main__":
             try:
                 print("Destination image loaded from", fp)
                 dest_img = mkg.imread(fp)
-                show_img(dest_img, False)
                 dest_img_path.set(fp)
+                result_tile_info = None
+                show_img(dest_img, False)
             except:
                 messagebox.showerror("Error reading file", traceback.format_exc())
 
@@ -422,6 +432,7 @@ if __name__ == "__main__":
            command=load_dest_img).grid(row=2, columnspan=2, pady=(3, 2))
 
     result_collage = None
+    result_tile_info = None
     def change_alpha(_=None, show=True):
         if result_collage is not None and dest_img is not None:
             if colorization_opt.get() == "brightness":
@@ -537,7 +548,6 @@ if __name__ == "__main__":
                         return mkg.MosaicFairSalient(
                             dest_img, imgs, _dup, colorspace.get(), dist_metric.get(), 
                             lower_thresh, salient_bg_color, out_wrapper).process_dest_img(dest_img)
-
                 else:               
                     def action():
                         return mkg.MosaicFair(dest_img.shape, imgs, _dup, 
@@ -553,14 +563,14 @@ if __name__ == "__main__":
             def wrapper():
                 global result_collage
                 try:
-                    result_collage = action()
-                    return change_alpha(show=False)
+                    result_collage, tile_info = action()
+                    return change_alpha(show=False), tile_info
                 except AssertionError as e:
                     return messagebox.showerror("Error", e)
                 except:
                     messagebox.showerror("Error", traceback.format_exc())
 
-            pool.submit(wrapper).add_done_callback(lambda f: show_img(f.result()))
+            pool.submit(wrapper).add_done_callback(show_img)
 
         except AssertionError as e:
             return messagebox.showerror("Error", e)
@@ -645,17 +655,40 @@ if __name__ == "__main__":
         dir_name = os.path.dirname(fp)
         if fp is not None and len(fp) > 0 and os.path.isdir(dir_name):
             save_img_init_dir = dir_name
-            print("Saving image to", fp)
             try:
                 mkg.imwrite(fp, result_img)
-                print("Saved!")
+                print("Image saved to", fp)
+            except:
+                messagebox.showerror("Error", traceback.format_exc())
+
+
+    def save_tile_info():
+        global save_img_init_dir
+        if result_tile_info is None:
+            messagebox.showerror("Error", "You need to make a collage/photomosaic first!")
+            return
+        
+        fp = filedialog.asksaveasfilename(initialdir=save_img_init_dir, title="Save your collage",
+                                          filetypes=(("csv file", "*.csv"), ("text file", "*.txt")),
+                                          defaultextension=".csv", initialfile="tile_info.csv")
+        dir_name = os.path.dirname(fp)
+        if fp is not None and len(fp) > 0 and os.path.isdir(dir_name):
+            save_img_init_dir = dir_name
+            try:
+                with open(fp, "w") as f:
+                    f.write(result_tile_info)
+                print("Tile info saved to", fp)
             except:
                 messagebox.showerror("Error", traceback.format_exc())
 
     # right panel ROW 10:
     save_button = Button(right_panel, text=" Save image ", command=save_img)
     save_button.config(state='disabled')
-    save_button.grid(row=10, columnspan=2)
+    save_button.grid(row=10, columnspan=2, pady=(0, 4))
+
+    tile_save_button = Button(right_panel, text=" Save tile info ", command=save_tile_info)
+    tile_save_button.config(state='disabled')
+    tile_save_button.grid(row=11, columnspan=2)
     # -------------------------- end right panel -----------------------------------
 
     # make the window appear at the center
@@ -685,8 +718,7 @@ if __name__ == "__main__":
                 width=event.width - right_panel_width - 20, 
                 height=event.height - log_entry.winfo_height() - 15)
             canvas.update()
-            if result_img is not None:
-                show_img(result_img, False)
+            show_img(result_img, False)
 
     root.bind("<Configure>", canvas_resize)
     out_wrapper = log_entry
@@ -696,7 +728,7 @@ if __name__ == "__main__":
     if cmd_args.D:
         file_path.set(cmd_args.src)
         print("Loading tiles from", cmd_args.src)
-        pool.submit(load_img_action).add_done_callback(lambda f: show_img(f.result()))
+        pool.submit(load_img_action).add_done_callback(show_img)
 
         print("Destination image loaded from", cmd_args.collage)
         dest_img = mkg.imread(cmd_args.collage)

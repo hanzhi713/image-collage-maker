@@ -65,9 +65,11 @@ class PARAMS:
              "Also note: enabling GPU acceleration will disable multiprocessing on CPU for videos"
     )
     mem_limit = _PARAMETER(type=int, default=4096, 
-        help="The APPROXIMATE memory limit in MB when computing a photomosaic. Applicable to both CPU and GPU computing. "
+        help="The APPROXIMATE memory limit in MB when computing a photomosaic in unfair mode. Applicable both CPU and GPU computing. "
              "If you run into memory issues when using GPU, try reduce this memory limit")
-
+    tile_info_out = _PARAMETER(type=str, default="",
+        help="Path to save the list of tile filenames for the collage/photomosaic. If empty, it will not be saved.")
+    
     # ---------------- sort collage options ------------------
     ratio = _PARAMETER(type=int, default=(16, 9), help="Aspect ratio of the output image", nargs=2)
     sort = _PARAMETER(type=str, default="bgr_sum", help="Sort method to use", choices=[
@@ -114,10 +116,9 @@ class PARAMS:
     video = _PARAMETER(type=bool, default=False, help="Make a photomosaic video from dest_img which is assumed to be a video")
     skip_frame = _PARAMETER(type=int, default=1, help="Make a photomosaic every this number of frames")
 
-# from numpy documentation
-# https://numpy.org/doc/stable/user/basics.subclassing.html#simple-example-adding-an-extra-attribute-to-ndarray
+# https://stackoverflow.com/questions/26598109/preserve-custom-attributes-when-pickling-subclass-of-numpy-array
 class InfoArray(np.ndarray):
-    def __new__(cls, input_array, info=None):
+    def __new__(cls, input_array, info=''):
         # Input array is an already formed ndarray instance
         # We first cast to be our class type
         obj = np.asarray(input_array).view(cls)
@@ -130,6 +131,19 @@ class InfoArray(np.ndarray):
         # see InfoArray.__array_finalize__ for comments
         if obj is None: return
         self.info = getattr(obj, 'info', None)
+
+    def __reduce__(self):
+        # Get the parent's __reduce__ tuple
+        pickled_state = super(InfoArray, self).__reduce__()
+        # Create our own tuple to pass to __setstate__
+        new_state = pickled_state[2] + (self.info,)
+        # Return a tuple that replaces the parent's __setstate__ tuple with our own
+        return (pickled_state[0], pickled_state[1], new_state)
+
+    def __setstate__(self, state):
+        self.info = state[-1]  # Set the info attribute
+        # Call the parent's __setstate__ with the other tuple elements.
+        super(InfoArray, self).__setstate__(state[0:-1])
 
 
 ImgList = List[InfoArray]
@@ -237,19 +251,14 @@ def make_collage(grid: Grid, sorted_imgs: ImgList, rev=False, file=None) -> np.n
     elif len(sorted_imgs) > total:
         print(f"Note: {len(sorted_imgs) - total} tiles will be dropped from the grid.")
         del sorted_imgs[total:]
-    
-    print(type(sorted_imgs[0]))
-    with open("tile-row-order.csv", "w") as f:
-        f.write(f"Grid dimension: {grid}\n")
-        f.write("\n".join([img.info for img in sorted_imgs]))
 
-    combined_img = np.asarray(sorted_imgs)
+    combined_img = np.asarray([img.view(np.float32) for img in sorted_imgs])
     combined_img.shape = (*grid[::-1], *sorted_imgs[0].shape)
     if rev:
         combined_img[1::2] = combined_img[1::2, ::-1]
     combined_img = combined_img.transpose((0, 2, 1, 3, 4))
     combined_img = combined_img.reshape(np.prod(combined_img.shape[:2]), -1, 3)
-    return combined_img
+    return combined_img, f"Grid dimension: {grid}\n" + '\n'.join([img.info for img in sorted_imgs])
 
 
 def alpha_blend(combined_img: np.ndarray, dest_img: np.ndarray, alpha=0.9):
@@ -453,13 +462,14 @@ class MosaicCommon:
             raise ValueError("Unknown colorspace " + colorspace)
 
     def combine_imgs(self):
-        self.combined_img = np.asarray(self.imgs)
+        self.combined_img = np.asarray([img.view(np.float32) for img in self.imgs])
 
     def make_photomosaic(self, assignment: np.ndarray):
-        assignment.shape = self.grid[::-1]
-        combined_img = self.combined_img[assignment, :, : , :].transpose((0, 2, 1, 3, 4))
-        return combined_img.reshape(np.prod(combined_img.shape[:2]), -1, 3)
-        
+        grid_assignment = assignment.reshape(self.grid[::-1])
+        combined_img = self.combined_img[grid_assignment, :, : , :].transpose((0, 2, 1, 3, 4))
+        return combined_img.reshape(np.prod(combined_img.shape[:2]), -1, 3), \
+               f"Grid dimension: {self.grid}\n" + '\n'.join([img.info for img in self.imgs])
+
     def convert_colorspace(self, img: np.ndarray):
         if self.flag is None:
             return
@@ -579,7 +589,7 @@ class MosaicFairSalient:
         self.args = args
         self.kwargs = kwargs
     
-    def process_dest_img(self, dest_img: np.ndarray) -> np.ndarray:
+    def process_dest_img(self, dest_img: np.ndarray):
         return calc_salient_col_even(dest_img, *self.args[1:], **self.kwargs)
 
 
@@ -858,6 +868,7 @@ def read_img_other(args: Tuple[str, Tuple[int, int], int]):
             img = np.rot90(img, k=rot)
     return InfoArray(cv2.resize(img, img_size, interpolation=cv2.INTER_AREA), img_file)
 
+
 # pickleable helper classes for unfair exp
 class _HelperChangeFreq:
     def __init__(self, dest_img: np.ndarray, mos: MosaicUnfair) -> None:
@@ -897,7 +908,7 @@ def unfair_exp(dest_img: np.ndarray, args, imgs):
         def collect_imgs(fname, params, futures, fs):
             result_imgs = []
             for i in range(len(params)):
-                result_imgs.append(futures[i].get())
+                result_imgs.append(futures[i].get()[0])
                 pbar.update()
             
             plt.figure(figsize=(len(params) * 10, 12))
@@ -924,7 +935,7 @@ def sort_exp(pool, args, imgs):
             PARAMS.sort.choices, 
             itertools.repeat(args.rev_sort, n))
         )):
-        save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, sort_method)
+        save_img(make_collage(grid, sorted_imgs, args.rev_row)[0], args.out, sort_method)
 
 
 def frame_generator(ret, frame, dest_video, skip_frame):
@@ -941,7 +952,7 @@ BlendFunc = Callable[[np.ndarray, np.ndarray, int], np.ndarray]
 
 def process_frame(frame: np.ndarray, mos: MosaicUnfair, blend_func: BlendFunc, blending_level: float, file=None):
     frame = frame * np.float32(1/255.0)
-    collage = mos.process_dest_img(frame, file=file)
+    collage = mos.process_dest_img(frame, file=file)[0]
     collage = blend_func(collage, frame, 1.0 - blending_level)
     collage *= 255.0
     return collage.astype(np.uint8)
@@ -1017,12 +1028,15 @@ def main(args):
     with mp.Pool(max(1, num_process)) as pool:
         imgs = read_images(args.path, args.size, args.recursive, pool, args.resize_opt, args.auto_rotate)
         
-        if len(args.dest_img) == 0:
+        if len(args.dest_img) == 0: # sort mode
             if args.exp:
                 sort_exp(pool, args, imgs)
             else:
-                grid, sorted_imgs = sort_collage(imgs, args.ratio, args.sort, args.rev_sort)
-                save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
+                collage, tile_info = make_collage(*sort_collage(imgs, args.ratio, args.sort, args.rev_sort), args.rev_row)
+                save_img(collage, args.out, "")
+                if args.tile_info_out:
+                    with open(args.tile_info_out, "w", encoding="utf-8") as f:
+                        f.write(tile_info)
             return
 
     assert os.path.isfile(args.dest_img)
@@ -1075,10 +1089,9 @@ def main(args):
         video_writer = cv2.VideoWriter(args.out, cv2.VideoWriter_fourcc(*"mp4v"), dest_video.get(cv2.CAP_PROP_FPS) / args.skip_frame, res)
         frames_gen = frame_generator(ret, frame, dest_video, args.skip_frame)
         if args.gpu:
-            null = open(os.devnull, "w")
-            for frame in tqdm(frames_gen, desc="[Computing frames]", unit="frame"):
-                video_writer.write(process_frame(frame, mos, blend_func, args.blending_level, null))
-            null.close()
+            with open(os.devnull, "w") as null:
+                for frame in tqdm(frames_gen, desc="[Computing frames]", unit="frame"):
+                    video_writer.write(process_frame(frame, mos, blend_func, args.blending_level, null))
         else:
             in_q = mp.Queue(1)
             out_q = mp.Queue()
@@ -1118,10 +1131,14 @@ def main(args):
         frames_gen.close()
         video_writer.release()
     else:
-        collage = mos.process_dest_img(dest_img)
+        collage, tile_info = mos.process_dest_img(dest_img)
+        print(tile_info)
         collage = blend_func(collage, dest_img, 1.0 - args.blending_level)
         save_img(collage, args.out, "")
-    
+        if args.tile_info_out:
+            with open(args.tile_info_out, "w", encoding="utf-8") as f:
+                f.write(tile_info)
+
     pool.close()
 
 if __name__ == "__main__":
