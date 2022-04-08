@@ -607,7 +607,7 @@ class MosaicUnfair(MosaicCommon):
         # number of rows in the cost matrix
         # note here we compute the cost matrix chunk by chunk to limit memory usage
         # a bit like sklearn.metrics.pairwise_distances_chunked
-        num_rows = np.prod(grid)
+        num_rows = int(np.prod(grid))
         num_cols = img_keys.shape[0]
         print(f"Distance matrix size: {(num_rows, num_cols)} = {num_rows * num_cols * 4 / 2**20}MB")
         self.row_stride = (LIMIT - (img_keys.size + num_rows * (1 + self.flat_block_size)) * 4) // (num_cols * 4)
@@ -783,7 +783,10 @@ def imread(filename: str) -> np.ndarray:
     """
     like cv2.imread, but can read images whose path contain unicode characters
     """
-    img = cv2.imdecode(np.fromfile(filename, np.uint8), cv2.IMREAD_COLOR)
+    f = np.fromfile(filename, np.uint8)
+    if not f.size:
+        return None
+    img = cv2.imdecode(f, cv2.IMREAD_COLOR)
     if img is None:
         return img
     img = img.astype(np.float32)
