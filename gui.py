@@ -675,7 +675,7 @@ if __name__ == "__main__":
         if fp is not None and len(fp) > 0 and os.path.isdir(dir_name):
             save_img_init_dir = dir_name
             try:
-                with open(fp, "w") as f:
+                with open(fp, "w", encoding="utf-8") as f:
                     f.write(result_tile_info)
                 print("Tile info saved to", fp)
             except:
