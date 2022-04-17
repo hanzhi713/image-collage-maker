@@ -468,7 +468,7 @@ class MosaicCommon:
         grid_assignment = assignment.reshape(self.grid[::-1])
         combined_img = self.combined_img[grid_assignment, :, : , :].transpose((0, 2, 1, 3, 4))
         return combined_img.reshape(np.prod(combined_img.shape[:2]), -1, 3), \
-               f"Grid dimension: {self.grid}\n" + '\n'.join([img.info for img in self.imgs])
+               f"Grid dimension: {self.grid}\n" + '\n'.join([self.imgs[i].info for i in assignment])
 
     def convert_colorspace(self, img: np.ndarray):
         if self.flag is None:
