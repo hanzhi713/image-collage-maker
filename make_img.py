@@ -8,7 +8,7 @@ import itertools
 import traceback
 import multiprocessing as mp
 from fractions import Fraction
-from typing import Any, Callable, List, Tuple
+from typing import Any, Callable, List, Tuple, Type
 from collections import defaultdict
 
 from io_utils import stdout_redirector, JVOutWrapper
@@ -768,6 +768,27 @@ def get_size(img):
         return -1, -1
 
 
+def get_size_slow(img):
+    try:
+        return imread(img).shape[1::-1]
+    except:
+        return -1, -1
+
+
+def infer_size(pool: Type[mp.Pool], files: List[str], infer_func: Callable[[str], Tuple[int, int]], i_type: str):
+    sizes = defaultdict(int)
+    for w, h in tqdm(pool.imap_unordered(infer_func, files, chunksize=64), 
+        total=len(files), desc=f"[Inferring size ({i_type})]", ncols=pbar_ncols):
+        if h == 0: # skip zero size images
+            continue
+        sizes[Fraction(w, h)] += 1
+    if Fraction(-1, -1) in sizes:
+        del sizes[Fraction(-1, -1)]
+    sizes = [(args[1], args[0].numerator / args[0].denominator) for args in sizes.items()]
+    sizes.sort()
+    return sizes
+
+
 def read_images(pic_path: str, img_size: List[int], recursive, pool: mp.Pool, flag="stretch", auto_rotate=0) -> ImgList:
     assert os.path.isdir(pic_path), "Directory " + pic_path + "is non-existent"
     files = []
@@ -779,14 +800,11 @@ def read_images(pic_path: str, img_size: List[int], recursive, pool: mp.Pool, fl
             break
 
     if len(img_size) == 1:
-        sizes = defaultdict(int)
-        for w, h in tqdm(pool.imap_unordered(get_size, files, chunksize=64), 
-            total=len(files), desc="[Inferring size]", ncols=pbar_ncols):
-            sizes[Fraction(w, h)] += 1
-        if Fraction(-1, -1) in sizes:
-            del sizes[Fraction(-1, -1)]
-        sizes = [(args[1], args[0].numerator / args[0].denominator) for args in sizes.items()]
-        sizes.sort()
+        sizes = infer_size(pool, files, get_size, "fast")
+        if len(sizes) == 0:
+            print("Warning: unable to infer image size through metadata. Will try reading the entire image (slow!)")
+            sizes = infer_size(pool, files, get_size_slow, "slow")
+            assert len(sizes) > 0, "Fail to infer size. All of your images are in an unsupported format!"
 
         # print("Aspect ratio (width / height, sorted by frequency) statistics:")
         # for freq, ratio in sizes:

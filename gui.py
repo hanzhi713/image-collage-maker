@@ -273,6 +273,8 @@ if __name__ == "__main__":
                 tile_height.set(shape[0])
             grid = mkg.calc_grid_size(16, 10, len(imgs), shape)
             return mkg.make_collage(grid, imgs.copy(), False)
+        except AssertionError as e:
+            messagebox.showerror("Error", str(e))
         except:
             messagebox.showerror("Error", traceback.format_exc())
 
