@@ -765,14 +765,14 @@ def get_size(img):
     try:
         return imagesize.get(img)
     except:
-        return -1, -1
+        return 0, 0
 
 
-def get_size_slow(img):
-    try:
-        return imread(img).shape[1::-1]
-    except:
-        return -1, -1
+def get_size_slow(filename: str):
+    img = imread_uint8(filename)
+    if img is None:
+        return 0, 0
+    return img.shape[1::-1]
 
 
 def infer_size(pool: Type[mp.Pool], files: List[str], infer_func: Callable[[str], Tuple[int, int]], i_type: str):
@@ -782,8 +782,6 @@ def infer_size(pool: Type[mp.Pool], files: List[str], infer_func: Callable[[str]
         if h == 0: # skip zero size images
             continue
         sizes[Fraction(w, h)] += 1
-    if Fraction(-1, -1) in sizes:
-        del sizes[Fraction(-1, -1)]
     sizes = [(args[1], args[0].numerator / args[0].denominator) for args in sizes.items()]
     sizes.sort()
     return sizes
@@ -830,11 +828,15 @@ def read_images(pic_path: str, img_size: List[int], recursive, pool: mp.Pool, fl
     return result
 
 
+def imread_uint8(filename: str) -> np.ndarray:
+    return cv2.imdecode(np.fromfile(filename, np.uint8), cv2.IMREAD_COLOR)
+
+
 def imread(filename: str) -> np.ndarray:
     """
     like cv2.imread, but can read images whose path contain unicode characters
     """
-    img = cv2.imdecode(np.fromfile(filename, np.uint8), cv2.IMREAD_COLOR)
+    img = imread_uint8(filename)
     if img is None:
         return img
     img = img.astype(np.float32)
