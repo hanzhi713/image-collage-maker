@@ -5,7 +5,7 @@ tests/
 build/
 *.spec
 __pycache__/
-test*.sh
+*test*.sh
 .mypy_cache/
 result.png
 .pylintrc

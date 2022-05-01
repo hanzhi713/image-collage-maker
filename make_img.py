@@ -8,7 +8,7 @@ import itertools
 import traceback
 import multiprocessing as mp
 from fractions import Fraction
-from typing import Any, Callable, List, Tuple
+from typing import Any, Callable, List, Tuple, Type
 from collections import defaultdict
 
 from io_utils import stdout_redirector, JVOutWrapper
@@ -65,9 +65,11 @@ class PARAMS:
              "Also note: enabling GPU acceleration will disable multiprocessing on CPU for videos"
     )
     mem_limit = _PARAMETER(type=int, default=4096, 
-        help="The APPROXIMATE memory limit in MB when computing a photomosaic. Applicable to both CPU and GPU computing. "
+        help="The APPROXIMATE memory limit in MB when computing a photomosaic in unfair mode. Applicable both CPU and GPU computing. "
              "If you run into memory issues when using GPU, try reduce this memory limit")
-
+    tile_info_out = _PARAMETER(type=str, default="",
+        help="Path to save the list of tile filenames for the collage/photomosaic. If empty, it will not be saved.")
+    
     # ---------------- sort collage options ------------------
     ratio = _PARAMETER(type=int, default=(16, 9), help="Aspect ratio of the output image", nargs=2)
     sort = _PARAMETER(type=str, default="bgr_sum", help="Sort method to use", choices=[
@@ -114,7 +116,37 @@ class PARAMS:
     video = _PARAMETER(type=bool, default=False, help="Make a photomosaic video from dest_img which is assumed to be a video")
     skip_frame = _PARAMETER(type=int, default=1, help="Make a photomosaic every this number of frames")
 
+# https://stackoverflow.com/questions/26598109/preserve-custom-attributes-when-pickling-subclass-of-numpy-array
+class InfoArray(np.ndarray):
+    def __new__(cls, input_array, info=''):
+        # Input array is an already formed ndarray instance
+        # We first cast to be our class type
+        obj = np.asarray(input_array).view(cls)
+        # add the new attribute to the created instance
+        obj.info = info
+        # Finally, we must return the newly created object:
+        return obj
 
+    def __array_finalize__(self, obj):
+        # see InfoArray.__array_finalize__ for comments
+        if obj is None: return
+        self.info = getattr(obj, 'info', None)
+
+    def __reduce__(self):
+        # Get the parent's __reduce__ tuple
+        pickled_state = super(InfoArray, self).__reduce__()
+        # Create our own tuple to pass to __setstate__
+        new_state = pickled_state[2] + (self.info,)
+        # Return a tuple that replaces the parent's __setstate__ tuple with our own
+        return (pickled_state[0], pickled_state[1], new_state)
+
+    def __setstate__(self, state):
+        self.info = state[-1]  # Set the info attribute
+        # Call the parent's __setstate__ with the other tuple elements.
+        super(InfoArray, self).__setstate__(state[0:-1])
+
+
+ImgList = List[InfoArray]
 cupy_available = False
 
 
@@ -203,7 +235,7 @@ def calc_grid_size(rw: int, rh: int, num_imgs: int, shape: Tuple[int, int, int])
     return grid
 
 
-def make_collage(grid: Grid, sorted_imgs: List[np.ndarray], rev=False, file=None) -> np.ndarray:
+def make_collage(grid: Grid, sorted_imgs: ImgList, rev=False, file=None) -> np.ndarray:
     """
     :param grid: grid size
     :param sorted_imgs: list of images sorted in correct position
@@ -219,14 +251,14 @@ def make_collage(grid: Grid, sorted_imgs: List[np.ndarray], rev=False, file=None
     elif len(sorted_imgs) > total:
         print(f"Note: {len(sorted_imgs) - total} tiles will be dropped from the grid.")
         del sorted_imgs[total:]
-    
-    combined_img = np.asarray(sorted_imgs)
+
+    combined_img = np.asarray([img.view(np.float32) for img in sorted_imgs])
     combined_img.shape = (*grid[::-1], *sorted_imgs[0].shape)
     if rev:
         combined_img[1::2] = combined_img[1::2, ::-1]
     combined_img = combined_img.transpose((0, 2, 1, 3, 4))
     combined_img = combined_img.reshape(np.prod(combined_img.shape[:2]), -1, 3)
-    return combined_img
+    return combined_img, f"Grid dimension: {grid}\n" + '\n'.join([img.info for img in sorted_imgs])
 
 
 def alpha_blend(combined_img: np.ndarray, dest_img: np.ndarray, alpha=0.9):
@@ -251,7 +283,7 @@ def brightness_blend(combined_img: np.ndarray, dest_img: np.ndarray, alpha=0.9):
     return combined_img
 
 
-def sort_collage(imgs: List[np.ndarray], ratio: Grid, sort_method="pca_lab", rev_sort=False) -> Tuple[Grid, np.ndarray]:
+def sort_collage(imgs: ImgList, ratio: Grid, sort_method="pca_lab", rev_sort=False) -> Tuple[Grid, np.ndarray]:
     """
     :param imgs: list of images
     :param ratio: The aspect ratio of the collage
@@ -334,13 +366,13 @@ def compute_block_map(thresh_map: np.ndarray, block_width: int, block_height: in
     return row_idx, col_idx, thresh_map
 
 
-def get_background_tile(shape: Tuple[int], background: BackgroundRGB) -> np.ndarray:
+def get_background_tile(shape: Tuple[int], background: BackgroundRGB):
     bg = np.asarray(background[::-1], dtype=np.float32)
     bg *= 1 / 255.0
-    return np.full(shape, bg, dtype=np.float32)
+    return InfoArray(np.full(shape, bg, dtype=np.float32), f"background-{'-'.join(str(a) for a in background)}")
 
 
-def dup_to_meet_total(imgs: List[np.ndarray], total: int):
+def dup_to_meet_total(imgs: ImgList, total: int):
     """
     note that this function modifies imgs in place
     """
@@ -411,7 +443,7 @@ class CachedCDist:
 
 
 class MosaicCommon:
-    def __init__(self, imgs: List[np.ndarray], colorspace="lab") -> None:
+    def __init__(self, imgs: ImgList, colorspace="lab") -> None:
         self.imgs = imgs
         self.normalize_first = False
         if colorspace == "bgr":
@@ -430,13 +462,14 @@ class MosaicCommon:
             raise ValueError("Unknown colorspace " + colorspace)
 
     def combine_imgs(self):
-        self.combined_img = np.asarray(self.imgs)
+        self.combined_img = np.asarray([img.view(np.float32) for img in self.imgs])
 
     def make_photomosaic(self, assignment: np.ndarray):
-        assignment.shape = self.grid[::-1]
-        combined_img = self.combined_img[assignment, :, : , :].transpose((0, 2, 1, 3, 4))
-        return combined_img.reshape(np.prod(combined_img.shape[:2]), -1, 3)
-        
+        grid_assignment = assignment.reshape(self.grid[::-1])
+        combined_img = self.combined_img[grid_assignment, :, : , :].transpose((0, 2, 1, 3, 4))
+        return combined_img.reshape(np.prod(combined_img.shape[:2]), -1, 3), \
+               f"Grid dimension: {self.grid}\n" + '\n'.join([self.imgs[i].info for i in assignment])
+
     def convert_colorspace(self, img: np.ndarray):
         if self.flag is None:
             return
@@ -490,8 +523,8 @@ class MosaicCommon:
         return cp.asarray(dest_img)
 
 
-def calc_salient_col_even(dest_img: np.ndarray, imgs: List[np.ndarray], dup=1, colorspace="lab", 
-                          metric="euclidean", lower_thresh=0.5, background=(255, 255, 255), v=None) -> Tuple[Grid, List[np.ndarray]]:
+def calc_salient_col_even(dest_img: np.ndarray, imgs: ImgList, dup=1, colorspace="lab", 
+                          metric="euclidean", lower_thresh=0.5, background=(255, 255, 255), v=None) -> Tuple[Grid, ImgList]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels constitute of salient objects of the
     target image, with the restriction that every image should be used the same amount of times
@@ -556,12 +589,12 @@ class MosaicFairSalient:
         self.args = args
         self.kwargs = kwargs
     
-    def process_dest_img(self, dest_img: np.ndarray) -> np.ndarray:
+    def process_dest_img(self, dest_img: np.ndarray):
         return calc_salient_col_even(dest_img, *self.args[1:], **self.kwargs)
 
 
 class MosaicFair(MosaicCommon):
-    def __init__(self, dest_shape: Tuple[int, int, int], imgs: List[np.ndarray], dup=1, colorspace="lab", 
+    def __init__(self, dest_shape: Tuple[int, int, int], imgs: ImgList, dup=1, colorspace="lab", 
             metric="euclidean", grid=None) -> None:
         """
         Compute the optimal assignment between the set of images provided and the set of pixels of the target image,
@@ -591,7 +624,7 @@ class MosaicFair(MosaicCommon):
 
 
 class MosaicUnfair(MosaicCommon):
-    def __init__(self, dest_shape: Tuple[int, int, int], imgs: List[np.ndarray], max_width, colorspace, metric, lower_thresh, background, freq_mul, randomize) -> None:
+    def __init__(self, dest_shape: Tuple[int, int, int], imgs: ImgList, max_width, colorspace, metric, lower_thresh, background, freq_mul, randomize) -> None:
         # Because we don't have a fixed total amount of images as we can used a single image
         # for arbitrary amount of times, we need user to specify the maximum width in order to determine the grid size.
         dh, dw, _ = dest_shape
@@ -732,10 +765,29 @@ def get_size(img):
     try:
         return imagesize.get(img)
     except:
-        return -1, -1
+        return 0, 0
 
 
-def read_images(pic_path: str, img_size: List[int], recursive, pool: mp.Pool, flag="stretch", auto_rotate=0) -> List[np.ndarray]:
+def get_size_slow(filename: str):
+    img = imread_uint8(filename)
+    if img is None:
+        return 0, 0
+    return img.shape[1::-1]
+
+
+def infer_size(pool: Type[mp.Pool], files: List[str], infer_func: Callable[[str], Tuple[int, int]], i_type: str):
+    sizes = defaultdict(int)
+    for w, h in tqdm(pool.imap_unordered(infer_func, files, chunksize=64), 
+        total=len(files), desc=f"[Inferring size ({i_type})]", ncols=pbar_ncols):
+        if h == 0: # skip zero size images
+            continue
+        sizes[Fraction(w, h)] += 1
+    sizes = [(args[1], args[0].numerator / args[0].denominator) for args in sizes.items()]
+    sizes.sort()
+    return sizes
+
+
+def read_images(pic_path: str, img_size: List[int], recursive, pool: mp.Pool, flag="stretch", auto_rotate=0) -> ImgList:
     assert os.path.isdir(pic_path), "Directory " + pic_path + "is non-existent"
     files = []
     print("Scanning files...")
@@ -746,14 +798,11 @@ def read_images(pic_path: str, img_size: List[int], recursive, pool: mp.Pool, fl
             break
 
     if len(img_size) == 1:
-        sizes = defaultdict(int)
-        for w, h in tqdm(pool.imap_unordered(get_size, files, chunksize=64), 
-            total=len(files), desc="[Inferring size]", ncols=pbar_ncols):
-            sizes[Fraction(w, h)] += 1
-        if Fraction(-1, -1) in sizes:
-            del sizes[Fraction(-1, -1)]
-        sizes = [(args[1], args[0].numerator / args[0].denominator) for args in sizes.items()]
-        sizes.sort()
+        sizes = infer_size(pool, files, get_size, "fast")
+        if len(sizes) == 0:
+            print("Warning: unable to infer image size through metadata. Will try reading the entire image (slow!)")
+            sizes = infer_size(pool, files, get_size_slow, "slow")
+            assert len(sizes) > 0, "Fail to infer size. All of your images are in an unsupported format!"
 
         # print("Aspect ratio (width / height, sorted by frequency) statistics:")
         # for freq, ratio in sizes:
@@ -779,16 +828,20 @@ def read_images(pic_path: str, img_size: List[int], recursive, pool: mp.Pool, fl
     return result
 
 
-def imread(filename: str) -> np.ndarray:
+def imread_uint8(filename: str) -> np.ndarray:
     """
     like cv2.imread, but can read images whose path contain unicode characters
     """
     f = np.fromfile(filename, np.uint8)
     if not f.size:
         return None
-    img = cv2.imdecode(f, cv2.IMREAD_COLOR)
+    return cv2.imdecode(f, cv2.IMREAD_COLOR)
+
+
+def imread(filename: str) -> np.ndarray:
+    img = imread_uint8(filename)
     if img is None:
-        return img
+        return None
     img = img.astype(np.float32)
     img *= 1 / 255.0
     return img
@@ -822,7 +875,7 @@ def read_img_center(args: Tuple[str, Tuple[int, int], int]):
     img = img[:, margin:w - margin + add, :]
     if cond:
         img = img.transpose((1, 0, 2))
-    return cv2.resize(img, img_size, interpolation=cv2.INTER_AREA)
+    return InfoArray(cv2.resize(img, img_size, interpolation=cv2.INTER_AREA), img_file)
 
 
 def read_img_other(args: Tuple[str, Tuple[int, int], int]):
@@ -836,7 +889,8 @@ def read_img_other(args: Tuple[str, Tuple[int, int], int]):
         h, w, _ = img.shape
         if abs(h / w - ratio) < abs(w / h - ratio):
             img = np.rot90(img, k=rot)
-    return cv2.resize(img, img_size, interpolation=cv2.INTER_AREA)
+    return InfoArray(cv2.resize(img, img_size, interpolation=cv2.INTER_AREA), img_file)
+
 
 # pickleable helper classes for unfair exp
 class _HelperChangeFreq:
@@ -877,7 +931,7 @@ def unfair_exp(dest_img: np.ndarray, args, imgs):
         def collect_imgs(fname, params, futures, fs):
             result_imgs = []
             for i in range(len(params)):
-                result_imgs.append(futures[i].get())
+                result_imgs.append(futures[i].get()[0])
                 pbar.update()
             
             plt.figure(figsize=(len(params) * 10, 12))
@@ -904,7 +958,7 @@ def sort_exp(pool, args, imgs):
             PARAMS.sort.choices, 
             itertools.repeat(args.rev_sort, n))
         )):
-        save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, sort_method)
+        save_img(make_collage(grid, sorted_imgs, args.rev_row)[0], args.out, sort_method)
 
 
 def frame_generator(ret, frame, dest_video, skip_frame):
@@ -921,7 +975,7 @@ BlendFunc = Callable[[np.ndarray, np.ndarray, int], np.ndarray]
 
 def process_frame(frame: np.ndarray, mos: MosaicUnfair, blend_func: BlendFunc, blending_level: float, file=None):
     frame = frame * np.float32(1/255.0)
-    collage = mos.process_dest_img(frame, file=file)
+    collage = mos.process_dest_img(frame, file=file)[0]
     collage = blend_func(collage, frame, 1.0 - blending_level)
     collage *= 255.0
     return collage.astype(np.uint8)
@@ -997,12 +1051,15 @@ def main(args):
     with mp.Pool(max(1, num_process)) as pool:
         imgs = read_images(args.path, args.size, args.recursive, pool, args.resize_opt, args.auto_rotate)
         
-        if len(args.dest_img) == 0:
+        if len(args.dest_img) == 0: # sort mode
             if args.exp:
                 sort_exp(pool, args, imgs)
             else:
-                grid, sorted_imgs = sort_collage(imgs, args.ratio, args.sort, args.rev_sort)
-                save_img(make_collage(grid, sorted_imgs, args.rev_row), args.out, "")
+                collage, tile_info = make_collage(*sort_collage(imgs, args.ratio, args.sort, args.rev_sort), args.rev_row)
+                save_img(collage, args.out, "")
+                if args.tile_info_out:
+                    with open(args.tile_info_out, "w", encoding="utf-8") as f:
+                        f.write(tile_info)
             return
 
     assert os.path.isfile(args.dest_img)
@@ -1055,10 +1112,9 @@ def main(args):
         video_writer = cv2.VideoWriter(args.out, cv2.VideoWriter_fourcc(*"mp4v"), dest_video.get(cv2.CAP_PROP_FPS) / args.skip_frame, res)
         frames_gen = frame_generator(ret, frame, dest_video, args.skip_frame)
         if args.gpu:
-            null = open(os.devnull, "w")
-            for frame in tqdm(frames_gen, desc="[Computing frames]", unit="frame"):
-                video_writer.write(process_frame(frame, mos, blend_func, args.blending_level, null))
-            null.close()
+            with open(os.devnull, "w") as null:
+                for frame in tqdm(frames_gen, desc="[Computing frames]", unit="frame"):
+                    video_writer.write(process_frame(frame, mos, blend_func, args.blending_level, null))
         else:
             in_q = mp.Queue(1)
             out_q = mp.Queue()
@@ -1098,10 +1154,14 @@ def main(args):
         frames_gen.close()
         video_writer.release()
     else:
-        collage = mos.process_dest_img(dest_img)
+        collage, tile_info = mos.process_dest_img(dest_img)
+        print(tile_info)
         collage = blend_func(collage, dest_img, 1.0 - args.blending_level)
         save_img(collage, args.out, "")
-    
+        if args.tile_info_out:
+            with open(args.tile_info_out, "w", encoding="utf-8") as f:
+                f.write(tile_info)
+
     pool.close()
 
 if __name__ == "__main__":
