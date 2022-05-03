@@ -3,7 +3,7 @@ name: Build executables
 on: [push]
 
 env:
-  VERSION: "4.1"
+  VERSION: "4.2"
 
 jobs:
   # in theory we can use build matrix, but it has some complications so I will just repeat here
