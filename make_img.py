@@ -93,6 +93,8 @@ class PARAMS:
     freq_mul = _PARAMETER(type=float, default=0.0, 
         help="Frequency multiplier to balance tile fairless and mosaic quality. Minimum: 0. "
              "More weight will be put on tile fairness when this number increases.")
+    dither = _PARAMETER(type=bool, default=False, 
+        help="Whether to enabled dithering. You must also specify --deterministic if enabled. ")
     deterministic = _PARAMETER(type=bool, default=False, 
         help="Do not randomize the tiles. This option is only valid if unfair option is enabled")
 
@@ -504,6 +506,7 @@ class MosaicCommon:
         img_keys.shape = (-1, self.flat_block_size)
         img_keys = cp.asarray(img_keys)
         self.cdist = CachedCDist(metric, img_keys)
+        self.img_keys = img_keys
         return img_keys
 
     def dest_to_flat_blocks(self, dest_img: np.ndarray):
@@ -624,7 +627,9 @@ class MosaicFair(MosaicCommon):
 
 
 class MosaicUnfair(MosaicCommon):
-    def __init__(self, dest_shape: Tuple[int, int, int], imgs: ImgList, max_width, colorspace, metric, lower_thresh, background, freq_mul, randomize) -> None:
+    def __init__(self, dest_shape: Tuple[int, int, int], imgs: ImgList, max_width: int, 
+                colorspace: str, metric: str, lower_thresh: float, background: BackgroundRGB, 
+                freq_mul: float, randomize: bool, dither: bool = False) -> None:
         # Because we don't have a fixed total amount of images as we can used a single image
         # for arbitrary amount of times, we need user to specify the maximum width in order to determine the grid size.
         dh, dw, _ = dest_shape
@@ -666,6 +671,12 @@ class MosaicUnfair(MosaicCommon):
             self.saliency = cv2.saliency.StaticSaliencyFineGrained_create()
             self.imgs = self.imgs.copy()
             self.imgs.append(get_background_tile(imgs[0].shape, background))
+        self.dither = dither
+        if dither:
+            if cp is not np:
+                print("Warning: Dithering is typically slower with --gpu enabled")
+            assert self.saliency is None, "Dithering is not supported in salient mode"
+            assert not randomize, "Dithering is not supported when randomization is enabled"
         self.combine_imgs()
 
     def process_dest_img(self, dest_img: np.ndarray, file=None):
@@ -679,6 +690,11 @@ class MosaicUnfair(MosaicCommon):
 
         total = dest_img.shape[0]
         assignment = cp.empty(total, dtype=cp.int32)
+        if self.dither:
+            dest_img.shape = (*self.grid[::-1], -1)
+            grid_assignment = assignment.reshape(self.grid[::-1])
+            coeffs = cp.array([0.4375, 0.1875, 0.3125, 0.0625])[..., cp.newaxis]
+
         pbar = tqdm(desc="[Computing assignments]", total=total, ncols=pbar_ncols, file=file)
         i = 0
         row_stride = self.row_stride
@@ -686,48 +702,110 @@ class MosaicUnfair(MosaicCommon):
             _indices = np.arange(0, total, dtype=np.int32)
             if self.randomize:
                 np.random.shuffle(_indices)
-            dest_img = dest_img[_indices] # reorder the rows of dest img
+                dest_img = dest_img[_indices] # reorder the rows of dest img
             indices_freq = self.indices_freq
             indices_freq.fill(0.0)
             freq_mul = self.freq_mul
-            while i < total - row_stride:
-                dist_mat = self.cdist(dest_img[i:i+row_stride])
-                dist_mat[self.row_range, cp.argsort(dist_mat, axis=1)] = self.temp
-                j = 0
-                while j < row_stride:
+            if self.dither:
+                for i in range(0, dest_img.shape[0] - 1):
+                    j = 0
+                    dist = self.cdist(dest_img[i, j:j+1])[0]
+                    dist[cp.argsort(dist)] = self.temp
+                    dist += indices_freq
+                    best_i = grid_assignment[i, j] = cp.argmin(dist)
+                    indices_freq[best_i] += freq_mul
+                    pbar.update()
+
+                    for j in range(1, dest_img.shape[1] - 1):
+                        block = dest_img[i, j]
+                        dist = self.cdist(block[cp.newaxis])[0]
+                        dist[cp.argsort(dist)] = self.temp
+                        dist += indices_freq
+                        best_i = grid_assignment[i, j] = cp.argmin(dist)
+                        indices_freq[best_i] += freq_mul
+
+                        quant_error = (block - self.img_keys[best_i])[cp.newaxis, ...] * coeffs
+                        dest_img[i, j + 1] += quant_error[0]
+                        dest_img[i + 1, j - 1:j + 2] += quant_error[1:]
+
+                        pbar.update()
+
+                    j += 1
+                    dist = self.cdist(dest_img[i, j:j+1])[0]
+                    dist[cp.argsort(dist)] = self.temp
+                    dist += indices_freq
+                    best_i = grid_assignment[i, j] = cp.argmin(dist)
+                    indices_freq[best_i] += freq_mul
+                    pbar.update()
+
+                # last row
+                dist_mat = self.cdist(dest_img[-1])
+                dist_mat[cp.arange(0, dest_img.shape[1], dtype=cp.int32)[:, cp.newaxis], cp.argsort(dist_mat, axis=1)] = self.temp
+                for j in range(0, dest_img.shape[1]):
                     row = dist_mat[j, :]
                     row += indices_freq
                     idx = cp.argmin(row)
-                    assignment[i] = idx
+                    grid_assignment[-1, j] = idx
                     indices_freq[idx] += freq_mul
-                    i += 1
-                    j += 1
                     pbar.update()
-            if i < total:
-                dist_mat = self.cdist(dest_img[i:])
-                dist_mat[self.row_range[:total - i], cp.argsort(dist_mat, axis=1)] = self.temp
-                j = 0
-                while i < total:
-                    row = dist_mat[j, :]
-                    row += indices_freq
-                    idx = cp.argmin(row)
-                    assignment[i] = idx
-                    indices_freq[idx] += freq_mul
-                    i += 1
-                    j += 1
-                    pbar.update()
-            assignment[_indices] = assignment.copy()
+            else:
+                while i < total - row_stride:
+                    dist_mat = self.cdist(dest_img[i:i+row_stride])
+                    dist_mat[self.row_range, cp.argsort(dist_mat, axis=1)] = self.temp
+                    j = 0
+                    while j < row_stride:
+                        row = dist_mat[j, :]
+                        row += indices_freq
+                        idx = cp.argmin(row)
+                        assignment[i] = idx
+                        indices_freq[idx] += freq_mul
+                        i += 1
+                        j += 1
+                        pbar.update()
+                if i < total:
+                    dist_mat = self.cdist(dest_img[i:])
+                    dist_mat[self.row_range[:total - i], cp.argsort(dist_mat, axis=1)] = self.temp
+                    j = 0
+                    while i < total:
+                        row = dist_mat[j, :]
+                        row += indices_freq
+                        idx = cp.argmin(row)
+                        assignment[i] = idx
+                        indices_freq[idx] += freq_mul
+                        i += 1
+                        j += 1
+                        pbar.update()
+                assignment[_indices] = assignment.copy()
         else:
-            while i < total - row_stride:
-                next_i = i + row_stride
-                dist_mat = self.cdist(dest_img[i:next_i])
-                cp.argmin(dist_mat, axis=1, out=assignment[i:next_i])
-                pbar.update(row_stride)
-                i = next_i
-            if i < total:
-                dist_mat = self.cdist(dest_img[i:])
-                cp.argmin(dist_mat, axis=1, out=assignment[i:])
-                pbar.update(total - i)
+            if self.dither:
+                for i in range(0, dest_img.shape[0] - 1):
+                    grid_assignment[i, 0] = cp.argmin(self.cdist(dest_img[i, 0:1])[0])
+                    pbar.update()
+                    for j in range(1, dest_img.shape[1] - 1):
+                        block = dest_img[i, j]
+                        dist_mat = self.cdist(block[cp.newaxis])
+                        best_i = cp.argmin(dist_mat[0])
+                        grid_assignment[i, j] = best_i
+                        quant_error = (block - self.img_keys[best_i])[cp.newaxis, ...] * coeffs
+                        dest_img[i, j + 1] += quant_error[0]
+                        dest_img[i + 1, j - 1:j + 2] += quant_error[1:]
+                        pbar.update()
+                    grid_assignment[i, -1] = cp.argmin(self.cdist(dest_img[i, -1:])[0])
+                    pbar.update()
+                # last row
+                cp.argmin(self.cdist(dest_img[-1]), axis=1, out=grid_assignment[-1])
+                pbar.update(dest_img.shape[1])
+            else:
+                while i < total - row_stride:
+                    next_i = i + row_stride
+                    dist_mat = self.cdist(dest_img[i:next_i])
+                    cp.argmin(dist_mat, axis=1, out=assignment[i:next_i])
+                    pbar.update(row_stride)
+                    i = next_i
+                if i < total:
+                    dist_mat = self.cdist(dest_img[i:])
+                    cp.argmin(dist_mat, axis=1, out=assignment[i:])
+                    pbar.update(total - i)
         pbar.close()
 
         assignment = to_cpu(assignment)

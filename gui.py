@@ -523,10 +523,26 @@ if __name__ == "__main__":
     freq_mul.set(1)
     Entry(collage_uneven_panel, textvariable=freq_mul, width=5).grid(row=2, column=1, sticky="W")
 
+    def dither_cb():
+        if dither.get():
+            deterministic.set(True)
+            deterministic_check.config(state='disabled')
+            is_salient.set(False)
+            is_salient_check.config(state='disabled')
+        else:
+            deterministic_check.config(state='enabled')
+            is_salient_check.config(state='enabled')
+
+    dither = BooleanVar()
+    dither.set(False)
+    CheckbuttonWithTooltip(collage_uneven_panel, text="Dithering", variable=dither, command=dither_cb,
+        tooltip=mkg.PARAMS.dither.help).grid(row=3, columnspan=2, sticky="W")
+
     deterministic = BooleanVar()
     deterministic.set(False)
-    CheckbuttonWithTooltip(collage_uneven_panel, text="Deterministic", variable=deterministic, 
-        tooltip=mkg.PARAMS.deterministic.help).grid(row=3, columnspan=2, sticky="w")
+    deterministic_check = CheckbuttonWithTooltip(collage_uneven_panel, text="Deterministic", 
+        variable=deterministic, tooltip=mkg.PARAMS.deterministic.help)
+    deterministic_check.grid(row=4, columnspan=2, sticky="w")
     # ----------------------- end collage uneven panel ----------------------
 
     def generate_collage():
@@ -560,7 +576,7 @@ if __name__ == "__main__":
 
                 def action():
                     return mkg.MosaicUnfair(dest_img.shape, imgs, max_width.get(), colorspace.get(), dist_metric.get(), 
-                        lower_thresh, salient_bg_color, freq_mul.get(), not deterministic.get()).process_dest_img(dest_img)
+                        lower_thresh, salient_bg_color, freq_mul.get(), not deterministic.get(), dither.get()).process_dest_img(dest_img)
 
             def wrapper():
                 global result_collage
@@ -724,7 +740,7 @@ if __name__ == "__main__":
 
     root.bind("<Configure>", canvas_resize)
     out_wrapper = log_entry
-    mkg.enable_gpu(False)
+    # mkg.enable_gpu(False)
 
     # mainly for debugging purposes
     if cmd_args.D:
