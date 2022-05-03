@@ -32,6 +32,7 @@
     - [Option 2.2: Best fit (unfair tile usage)](#option-22-best-fit-unfair-tile-usage)
     - [Option 2.3 Display salient object only](#option-23-display-salient-object-only)
     - [Blending Options](#blending-options)
+    - [Dithering](#dithering)
   - [Option 3: Photomosaic Video](#option-3-photomosaic-video)
   - [Performance, multiprocessing and GPU acceleration](#performance-multiprocessing-and-gpu-acceleration)
     - [Time and space complexity](#time-and-space-complexity)
@@ -201,6 +202,33 @@ python make_img.py --path img/zhou --dest_img examples/dest.jpg --size 25 --dup 
 | -------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------ |
 | <img src="examples/fair-dup-10.png" width="350px"> | <img src="examples/blend-alpha-0.25.png" width="350px"> | <img src="examples/blend-brightness-0.25.png" width="350px"> |
 
+#### Dithering
+
+> See https://en.wikipedia.org/wiki/Dither for a detailed explanation of dithering
+
+Dithering can be used to reduce color banding when there exists a color gradient. To enable dithering, add `--dither` flag. My implementation uses [Floyd–Steinberg dithering](https://en.wikipedia.org/wiki/Floyd%E2%80%93Steinberg_dithering). 
+
+```bash
+python make_img.py --path img/zhou --dest_img examples/dest2.jpg --size 10 --unfair --max_width 200 --freq_mul 0.0 --dither --out examples/dither.png
+```
+
+| Original image                               | Best fit, no dither                              | Best fit, dither                              |
+| -------------------------------------------- | ------------------------------------------------ | --------------------------------------------- |
+| <img src="examples/dest2.jpg" width="350px"> | <img src="examples/dither-no.png" width="350px"> | <img src="examples/dither.png" width="350px"> |
+
+While dithering works the best when `freq_mul` is set to zero, it can still work and provide some visual differences when `freq_mul > 0`. 
+
+```bash
+# dither when freq_mul is 0.1
+python make_img.py --path img/zhou --dest_img examples/dest2.jpg --size 10 --unfair --max_width 200 --freq_mul 0.1 --dither --deterministic --out examples/f-dither.png
+```
+
+| Original image                               | `freq_mul = 0.1`, no dither                              | `freq_mul = 0.1`, dither                              |
+| -------------------------------------------- | ------------------------------------------------ | --------------------------------------------- |
+| <img src="examples/dest2.jpg" width="350px"> | <img src="examples/f-dither-no.png" width="350px"> | <img src="examples/f-dither.png" width="350px"> |
+
+Note that dithering is **not supported** in fair mode, when randomization is enabled or when saliency is enabled. Also, dithering is not recommended to use with `--gpu`, or you may experience slow computation compared to CPU processing. 
+
 ### Option 3: Photomosaic Video
 
 ![photomosaic-video](examples/v.gif)
@@ -254,10 +282,10 @@ For command line, GPU acceleration can be enabled with the `--gpu` flag. For GUI
 $ python make_img.py -h
 usage: make_img.py [-h] [--path PATH] [--recursive] [--num_process NUM_PROCESS] [--out OUT] [--size SIZE [SIZE ...]] 
                    [--quiet] [--auto_rotate {-1,0,1}] [--resize_opt {center,stretch}] [--gpu] [--mem_limit MEM_LIMIT]
-                   [--tile_info_out TILE_INFO_OUT] [--ratio RATIO RATIO] [--sort {none,bgr_sum,av_hue,av_sat,av_lum,rand}]     
+                   [--tile_info_out TILE_INFO_OUT] [--ratio RATIO RATIO] [--sort {none,bgr_sum,av_hue,av_sat,av_lum,rand}]    
                    [--rev_row] [--rev_sort] [--dest_img DEST_IMG] [--colorspace {hsv,hsl,bgr,lab,luv}]
-                   [--metric {euclidean,cityblock,chebyshev,cosine}] [--unfair] [--max_width MAX_WIDTH] [--freq_mul FREQ_MUL]  
-                   [--deterministic] [--dup DUP] [--salient] [--lower_thresh LOWER_THRESH]
+                   [--metric {euclidean,cityblock,chebyshev,cosine}] [--unfair] [--max_width MAX_WIDTH]
+                   [--freq_mul FREQ_MUL] [--dither] [--deterministic] [--dup DUP] [--salient] [--lower_thresh LOWER_THRESH]   
                    [--background BACKGROUND BACKGROUND BACKGROUND] [--blending {alpha,brightness}]
                    [--blending_level BLENDING_LEVEL] [--video] [--skip_frame SKIP_FRAME] [--exp]
 
@@ -269,26 +297,28 @@ optional arguments:
                         Number of processes to use for parallelizable operations (default: 8)
   --out OUT             The filename of the output collage/photomosaic (default: result.png)
   --size SIZE [SIZE ...]
-                        Width and height of each tile in pixels in the resulting collage/photomosaic. If two numbers are       
-                        specified, they are treated as width and height. If one number is specified, the number is treated as  
-                        the widthand the height is inferred from the aspect ratios of the images provided. (default: (50,))    
+                        Width and height of each tile in pixels in the resulting collage/photomosaic. If two numbers are      
+                        specified, they are treated as width and height. If one number is specified, the number is treated    
+                        as the widthand the height is inferred from the aspect ratios of the images provided. (default:       
+                        (50,))
   --quiet               Do not print progress message to console (default: False)
   --auto_rotate {-1,0,1}
-                        Options to auto rotate tiles to best match the specified tile size. 0: do not auto rotate. 1: attempt  
-                        to rotate counterclockwise by 90 degrees. -1: attempt to rotate clockwise by 90 degrees (default: 0)   
+                        Options to auto rotate tiles to best match the specified tile size. 0: do not auto rotate. 1:
+                        attempt to rotate counterclockwise by 90 degrees. -1: attempt to rotate clockwise by 90 degrees       
+                        (default: 0)
   --resize_opt {center,stretch}
-                        How to resize each tile so they become square images. Center: crop a square in the center. Stretch:    
+                        How to resize each tile so they become square images. Center: crop a square in the center. Stretch:   
                         stretch the tile (default: center)
-  --gpu                 Use GPU acceleration. Requires cupy to be installed and a capable GPU. Note that USUALLY this is       
-                        useful when you: 1. only have few cpu cores, and 2. have a lot of tiles (typically > 10000) 3. and     
-                        are using the unfair mode. Also note: enabling GPU acceleration will disable multiprocessing on CPU    
+  --gpu                 Use GPU acceleration. Requires cupy to be installed and a capable GPU. Note that USUALLY this is      
+                        useful when you: 1. only have few cpu cores, and 2. have a lot of tiles (typically > 10000) 3. and    
+                        are using the unfair mode. Also note: enabling GPU acceleration will disable multiprocessing on CPU   
                         for videos (default: False)
   --mem_limit MEM_LIMIT
-                        The APPROXIMATE memory limit in MB when computing a photomosaic in unfair mode. Applicable both CPU    
+                        The APPROXIMATE memory limit in MB when computing a photomosaic in unfair mode. Applicable both CPU   
                         and GPU computing. If you run into memory issues when using GPU, try reduce this memory limit
                         (default: 4096)
   --tile_info_out TILE_INFO_OUT
-                        Path to save the list of tile filenames for the collage/photomosaic. If empty, it will not be saved.   
+                        Path to save the list of tile filenames for the collage/photomosaic. If empty, it will not be saved.  
                         (default: )
   --ratio RATIO RATIO   Aspect ratio of the output image (default: (16, 9))
   --sort {none,bgr_sum,av_hue,av_sat,av_lum,rand}
@@ -299,25 +329,27 @@ optional arguments:
   --colorspace {hsv,hsl,bgr,lab,luv}
                         The colorspace used to calculate the metric (default: lab)
   --metric {euclidean,cityblock,chebyshev,cosine}
-                        Distance metric used when evaluating the distance between two color vectors (default: euclidean)       
-  --unfair              Whether to allow each tile to be used different amount of times (unfair tile usage). (default: False)  
+                        Distance metric used when evaluating the distance between two color vectors (default: euclidean)      
+  --unfair              Whether to allow each tile to be used different amount of times (unfair tile usage). (default:        
+                        False)
   --max_width MAX_WIDTH
-                        Maximum width of the collage. This option is only valid if unfair option is enabled (default: 80)      
-  --freq_mul FREQ_MUL   Frequency multiplier to balance tile fairless and mosaic quality. Minimum: 0. More weight will be put  
-                        on tile fairness when this number increases. (default: 0.0)
-  --deterministic       Do not randomize the tiles. This option is only valid if unfair option is enabled (default: False)     
-  --dup DUP             If a positive integer: duplicate the set of tiles by how many times. Can be a fraction (default: 1)    
+                        Maximum width of the collage. This option is only valid if unfair option is enabled (default: 80)     
+  --freq_mul FREQ_MUL   Frequency multiplier to balance tile fairless and mosaic quality. Minimum: 0. More weight will be     
+                        put on tile fairness when this number increases. (default: 0.0)
+  --dither              Whether to enabled dithering. You must also specify --deterministic if enabled. (default: False)      
+  --deterministic       Do not randomize the tiles. This option is only valid if unfair option is enabled (default: False)    
+  --dup DUP             If a positive integer: duplicate the set of tiles by how many times. Can be a fraction (default: 1)   
   --salient             Make photomosaic for salient objects only (default: False)
   --lower_thresh LOWER_THRESH
-                        The threshold for saliency detection, between 0.0 (no object area = blank) and 1.0 (maximum object     
+                        The threshold for saliency detection, between 0.0 (no object area = blank) and 1.0 (maximum object    
                         area = original image) (default: 0.5)
   --background BACKGROUND BACKGROUND BACKGROUND
                         Background color in RGB for non salient part of the image (default: (255, 255, 255))
   --blending {alpha,brightness}
-                        The types of blending used. alpha: alpha (transparency) blending. Brightness: blending of brightness   
+                        The types of blending used. alpha: alpha (transparency) blending. Brightness: blending of brightness  
                         (lightness) channel in the HSL colorspace (default: alpha)
   --blending_level BLENDING_LEVEL
-                        Level of blending, between 0.0 (no blending) and 1.0 (maximum blending). Default is no blending        
+                        Level of blending, between 0.0 (no blending) and 1.0 (maximum blending). Default is no blending       
                         (default: 0.0)
   --video               Make a photomosaic video from dest_img which is assumed to be a video (default: False)
   --skip_frame SKIP_FRAME
