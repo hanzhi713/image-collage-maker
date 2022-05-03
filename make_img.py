@@ -667,16 +667,20 @@ class MosaicUnfair(MosaicCommon):
         self.randomize = randomize
         
         self.saliency = None
-        if lower_thresh is not None and background is not None:
-            self.saliency = cv2.saliency.StaticSaliencyFineGrained_create()
-            self.imgs = self.imgs.copy()
-            self.imgs.append(get_background_tile(imgs[0].shape, background))
         self.dither = dither
+        if lower_thresh is not None and background is not None:
+            if dither:
+                print("Warning: dithering is not supported in salient mode. It will be turned off.")
+            else:
+                self.saliency = cv2.saliency.StaticSaliencyFineGrained_create()
+                self.imgs = self.imgs.copy()
+                self.imgs.append(get_background_tile(imgs[0].shape, background))
         if dither:
             if cp is not np:
-                print("Warning: Dithering is typically slower with --gpu enabled")
-            assert self.saliency is None, "Dithering is not supported in salient mode"
-            assert not randomize, "Dithering is not supported when randomization is enabled"
+                print("Warning: dithering is typically slower with --gpu enabled")
+            if randomize:
+                print("Warning: dithering is not supported when randomization is enabled. Randomization will be turned off.")
+                self.randomize = False
         self.combine_imgs()
 
     def process_dest_img(self, dest_img: np.ndarray, file=None):
@@ -1167,14 +1171,14 @@ def main(args):
         if args.unfair:
             mos = MosaicUnfair(
                 dest_shape, imgs, args.max_width, args.colorspace, args.metric,
-                args.lower_thresh, args.background, args.freq_mul, not args.deterministic)
+                args.lower_thresh, args.background, args.freq_mul, not args.deterministic, args.dither)
         else:
             mos = MosaicFairSalient(dest_shape, imgs, dup, args.colorspace, args.metric, args.lower_thresh, args.background)
     else:
         if args.unfair:
             mos = MosaicUnfair(
                 dest_shape, imgs, args.max_width, args.colorspace, args.metric, 
-                None, None, args.freq_mul, not args.deterministic)
+                None, None, args.freq_mul, not args.deterministic, args.dither)
         else:
             mos = MosaicFair(dest_shape, imgs, dup, args.colorspace, args.metric)
     
@@ -1233,7 +1237,6 @@ def main(args):
         video_writer.release()
     else:
         collage, tile_info = mos.process_dest_img(dest_img)
-        print(tile_info)
         collage = blend_func(collage, dest_img, 1.0 - args.blending_level)
         save_img(collage, args.out, "")
         if args.tile_info_out:
