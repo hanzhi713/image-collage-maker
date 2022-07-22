@@ -507,8 +507,8 @@ class MosaicCommon:
     def make_photomosaic_mask(self, assignment, ridx, cidx):
         combined_img = np.zeros((*self.grid[::-1], *self.imgs[0].shape[:2], 4), dtype=np.float32)
         combined_img[ridx, cidx, :, :, :3] = self.combined_img[assignment]
+        combined_img[ridx, cidx, :, :, 3] = 1.0
         combined_img = combined_img.transpose((0, 2, 1, 3, 4)).reshape(self.grid[1] * self.imgs[0].shape[0], -1, 4)
-        print(combined_img.shape)
         return combined_img, f"Grid dimension: {self.grid}\nTile info not yet supported for masked photomosaic"
 
     def convert_colorspace(self, img: np.ndarray):
@@ -566,7 +566,7 @@ class MosaicCommon:
 
 
 def calc_salient_col_even(dest_img: np.ndarray, imgs: ImgList, dup=1, colorspace="lab", 
-                          metric="euclidean", lower_thresh=0.5, transparent=False, v=None) -> Tuple[Grid, ImgList]:
+                          metric="euclidean", lower_thresh=0.5, transparent=False, v=None):
     """
     Compute the optimal assignment between the set of images provided and the set of pixels constitute of salient objects of the
     target image, with the restriction that every image should be used the same amount of times
@@ -709,6 +709,7 @@ class MosaicUnfair(MosaicCommon):
         self.dither = dither
         _saliency_enabled = lower_thresh is not None
         if transparent:
+            self.lower_thresh = 0.5
             if dither:
                 print("Warning: dithering is not supported when transparency masking is on. Dithering will be turned off")
                 self.dither = False
@@ -733,9 +734,8 @@ class MosaicUnfair(MosaicCommon):
                 _, thresh_map = self.saliency.computeSaliency((dest_img * 255).astype(np.uint8))
             else:
                 dest_img, thresh_map = thresh_map_transp(dest_img)
-            thresh = 0.5 if self.transparent else self.lower_thresh
-            ridx, cidx, thresh_map = compute_block_map(thresh_map, self.block_width, self.block_height, thresh)
-            dest_img = self.dest_to_flat_blocks_mask(dest_img, thresh, ridx, cidx, thresh_map)
+            ridx, cidx, thresh_map = compute_block_map(thresh_map, self.block_width, self.block_height, self.lower_thresh)
+            dest_img = self.dest_to_flat_blocks_mask(dest_img, self.lower_thresh, ridx, cidx, thresh_map)
         else:
             # strip alpha in case a transparent image is passed in but --transparent flag is not enabled
             dest_img = self.dest_to_flat_blocks(strip_alpha(dest_img))
@@ -953,7 +953,7 @@ def read_images(pic_path: str, img_size: List[int], recursive, pool: mp.Pool, fl
             total=len(files), desc="[Reading files]", unit="file", ncols=pbar_ncols) 
                 if r is not None
     ]
-    print(f"Read {len(result)} images. {len(files) - len(result)} files cannot be decode as images.")
+    print(f"Read {len(result)} images. {len(files) - len(result)} files cannot be decoded as images.")
     return result
 
 
@@ -1204,6 +1204,8 @@ def main(args):
     else:
         dest_img = imread(args.dest_img, cv2.IMREAD_UNCHANGED)
         dest_shape = dest_img.shape
+        if args.transparent:
+            assert dest_shape[2] == 4, "--transparent flag can only be used for images with transparent background!"
         if dest_shape[2] == 4 and not args.transparent:
             print("Note: alpha channel detected. If you like to perform transparency masking, add the --transparent flag.")
             dest_img = strip_alpha(dest_img)
@@ -1219,17 +1221,18 @@ def main(args):
         return
     
     if args.salient or args.transparent:
+        lower_thresh = None if args.transparent else args.lower_thresh
         if args.unfair:
             mos = MosaicUnfair(
                 dest_shape, imgs, args.max_width, args.colorspace, args.metric,
-                args.lower_thresh, args.freq_mul, not args.deterministic, args.dither, args.transparent)
+                lower_thresh, args.freq_mul, not args.deterministic, args.dither, args.transparent)
         else:
-            mos = MosaicFairSalient(dest_shape, imgs, dup, args.colorspace, args.metric, args.lower_thresh, args.transparent)
+            mos = MosaicFairSalient(dest_shape, imgs, dup, args.colorspace, args.metric, lower_thresh, args.transparent)
     else:
         if args.unfair:
             mos = MosaicUnfair(
                 dest_shape, imgs, args.max_width, args.colorspace, args.metric, 
-                None, None, args.freq_mul, not args.deterministic, args.dither)
+                None, args.freq_mul, not args.deterministic, args.dither)
         else:
             mos = MosaicFair(dest_shape, imgs, dup, args.colorspace, args.metric)
     
