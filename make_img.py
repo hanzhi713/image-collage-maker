@@ -84,6 +84,10 @@ class PARAMS:
         help="The colorspace used to calculate the metric")
     metric = _PARAMETER(type=str, default="euclidean", choices=["euclidean", "cityblock", "chebyshev", "cosine"], 
         help="Distance metric used when evaluating the distance between two color vectors")
+    transparent = _PARAMETER(type=bool, default=False, 
+        help="Enable transparency masking. That is, tiles will not be place onto the transparent part of the destination image. "
+             "Your specified background color will fill into the transparent region of the resulting photomosaic. "
+             "Cannot be used together with --salient")
     
     # ---- unfair tile assignment options -----
     unfair = _PARAMETER(type=bool, default=False, 
@@ -418,6 +422,17 @@ def _other(A, B, dist_func, row_stride):
     return dist_mat
 
 
+def strip_alpha(dest_img: np.ndarray) -> np.ndarray:
+    if dest_img.shape[2] == 4:
+        return cv2.cvtColor(dest_img, cv2.COLOR_BGRA2BGR)
+    return dest_img
+
+
+def thresh_map_transp(dest_img: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    assert dest_img.shape[2] == 4
+    return cv2.cvtColor(dest_img, cv2.COLOR_BGRA2BGR), dest_img[:, :, 3] > 0.0
+
+
 class CachedCDist:
     def __init__(self, metric: str, B: np.ndarray):
         """
@@ -470,7 +485,7 @@ class MosaicCommon:
         grid_assignment = assignment.reshape(self.grid[::-1])
         combined_img = self.combined_img[grid_assignment, :, : , :].transpose((0, 2, 1, 3, 4))
         return combined_img.reshape(np.prod(combined_img.shape[:2]), -1, 3), \
-               f"Grid dimension: {self.grid}\n" + '\n'.join([self.imgs[i].info for i in assignment])
+               f"Grid dimension: {self.grid}\n" + '\n'.join([self.imgs[i].info for i in assignment.flatten()])
 
     def convert_colorspace(self, img: np.ndarray):
         if self.flag is None:
@@ -629,7 +644,7 @@ class MosaicFair(MosaicCommon):
 class MosaicUnfair(MosaicCommon):
     def __init__(self, dest_shape: Tuple[int, int, int], imgs: ImgList, max_width: int, 
                 colorspace: str, metric: str, lower_thresh: float, background: BackgroundRGB, 
-                freq_mul: float, randomize: bool, dither: bool = False) -> None:
+                freq_mul: float, randomize: bool, dither=False, transparent=False) -> None:
         # Because we don't have a fixed total amount of images as we can used a single image
         # for arbitrary amount of times, we need user to specify the maximum width in order to determine the grid size.
         dh, dw, _ = dest_shape
@@ -665,32 +680,45 @@ class MosaicUnfair(MosaicCommon):
         self.freq_mul = freq_mul
         self.lower_thresh = lower_thresh
         self.randomize = randomize
-        
-        self.saliency = None
+        self.transparent = transparent
+        self.saliency = False
         self.dither = dither
-        if lower_thresh is not None and background is not None:
+        _saliency_enabled = lower_thresh is not None and background is not None
+        if transparent:
             if dither:
-                print("Warning: dithering is not supported in salient mode. It will be turned off.")
-            else:
-                self.saliency = cv2.saliency.StaticSaliencyFineGrained_create()
-                self.imgs = self.imgs.copy()
-                self.imgs.append(get_background_tile(imgs[0].shape, background))
-        if dither:
+                print("Warning: dithering is not supported when transparency masking is on. Dithering will be turned off")
+                self.dither = False
+            if _saliency_enabled:
+                print("Warning: saliency is not supported when transparency masking is on. Saliency will be turned off")
+            self.imgs = self.imgs.copy()
+            self.imgs.append(get_background_tile(imgs[0].shape, background))
+        elif self.dither:
+            if _saliency_enabled:
+                print("Warning: saliency is not supported when dithering is on. Saliency will be turned off")
             if cp is not np:
                 print("Warning: dithering is typically slower with --gpu enabled")
             if randomize:
                 print("Warning: dithering is not supported when randomization is enabled. Randomization will be turned off.")
                 self.randomize = False
+        elif _saliency_enabled:
+            self.saliency = cv2.saliency.StaticSaliencyFineGrained_create()
+            self.imgs = self.imgs.copy()
+            self.imgs.append(get_background_tile(imgs[0].shape, background))
         self.combine_imgs()
 
     def process_dest_img(self, dest_img: np.ndarray, file=None):
-        if self.saliency is not None:
+        if self.saliency or self.transparent:
             dest_img = cv2.resize(dest_img, self.target_sz, interpolation=cv2.INTER_LINEAR)
-            _, thresh_map = self.saliency.computeSaliency((dest_img * 255).astype(np.uint8))
-            ridx, cidx, thresh_map = compute_block_map(thresh_map, self.block_width, self.block_height, self.lower_thresh)
-            dest_img = self.dest_to_flat_blocks_mask(dest_img, self.lower_thresh, ridx, cidx, thresh_map)
+            if self.saliency:
+                _, thresh_map = self.saliency.computeSaliency((dest_img * 255).astype(np.uint8))
+            else:
+                dest_img, thresh_map = thresh_map_transp(dest_img)
+            thresh = 0.5 if self.transparent else self.lower_thresh
+            ridx, cidx, thresh_map = compute_block_map(thresh_map, self.block_width, self.block_height, thresh)
+            dest_img = self.dest_to_flat_blocks_mask(dest_img, thresh, ridx, cidx, thresh_map)
         else:
-            dest_img = self.dest_to_flat_blocks(dest_img)
+            # strip alpha in case a transparent image is passed in but --transparent flag is not enabled
+            dest_img = self.dest_to_flat_blocks(strip_alpha(dest_img))
 
         total = dest_img.shape[0]
         assignment = cp.empty(total, dtype=cp.int32)
@@ -813,7 +841,7 @@ class MosaicUnfair(MosaicCommon):
         pbar.close()
 
         assignment = to_cpu(assignment)
-        if self.saliency is not None:
+        if self.saliency or self.transparent:
             full_assignment = np.full(self.grid[::-1], len(self.imgs) - 1, dtype=np.int32)
             full_assignment[ridx, cidx] = assignment
             assignment = full_assignment
@@ -910,18 +938,18 @@ def read_images(pic_path: str, img_size: List[int], recursive, pool: mp.Pool, fl
     return result
 
 
-def imread_uint8(filename: str) -> np.ndarray:
+def imread_uint8(filename: str, flag=cv2.IMREAD_COLOR) -> np.ndarray:
     """
     like cv2.imread, but can read images whose path contain unicode characters
     """
     f = np.fromfile(filename, np.uint8)
     if not f.size:
         return None
-    return cv2.imdecode(f, cv2.IMREAD_COLOR)
+    return cv2.imdecode(f, flag)
 
 
-def imread(filename: str) -> np.ndarray:
-    img = imread_uint8(filename)
+def imread(filename: str, flag=cv2.IMREAD_COLOR) -> np.ndarray:
+    img = imread_uint8(filename, flag)
     if img is None:
         return None
     img = img.astype(np.float32)
@@ -1155,9 +1183,13 @@ def main(args):
         assert ret, f"unable to open video {args.dest_img}"
         dest_shape = frame.shape
     else:
-        dest_img = imread(args.dest_img)
+        dest_img = imread(args.dest_img, cv2.IMREAD_UNCHANGED)
         dest_shape = dest_img.shape
-
+        if dest_shape[2] == 4 and not args.transparent:
+            print("Note: alpha channel detected. If you like to perform transparency masking, add the --transparent flag.")
+            dest_img = strip_alpha(dest_img)
+            dest_shape = dest_img.shape
+    
     if args.gpu:
         enable_gpu()
 

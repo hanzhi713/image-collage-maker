@@ -163,6 +163,7 @@ if __name__ == "__main__":
     log_entry.config(yscrollcommand=scroll.set)
     scroll.grid(row=1, column=1, sticky="NSEW")
 
+    # used store a reference to the displayed image to we can save it
     result_img = None
     # ------------------ end left panel ------------------------
 
@@ -177,7 +178,7 @@ if __name__ == "__main__":
             img = img.result()
         if type(img) == tuple:
             img, result_tile_info = img
-        
+        img = mkg.strip_alpha(img)
         result_img = img
         width, height = canvas.winfo_width(), canvas.winfo_height()
         img_h, img_w, _ = img.shape
@@ -421,10 +422,12 @@ if __name__ == "__main__":
         if fp is not None and len(fp) > 0 and os.path.isfile(fp):
             try:
                 print("Destination image loaded from", fp)
-                dest_img = mkg.imread(fp)
+                dest_img = mkg.imread(fp, cv2.IMREAD_UNCHANGED)
                 dest_img_path.set(fp)
                 result_tile_info = None
                 show_img(dest_img, False)
+                transparent.set(dest_img.shape[2] == 4)
+                is_salient.set(not transparent.get())
             except:
                 messagebox.showerror("Error reading file", traceback.format_exc())
 
@@ -529,14 +532,18 @@ if __name__ == "__main__":
             deterministic_check.config(state='disabled')
             is_salient.set(False)
             is_salient_check.config(state='disabled')
+            transparent.set(False)
+            transparent_check.config(state='disabled')
         else:
             deterministic_check.config(state='enabled')
             is_salient_check.config(state='enabled')
+            transparent_check.config(state='enabled')
 
     dither = BooleanVar()
     dither.set(False)
-    CheckbuttonWithTooltip(collage_uneven_panel, text="Dithering", variable=dither, command=dither_cb,
-        tooltip=mkg.PARAMS.dither.help).grid(row=3, columnspan=2, sticky="W")
+    dither_check = CheckbuttonWithTooltip(collage_uneven_panel, text="Dithering", variable=dither, command=dither_cb,
+        tooltip=mkg.PARAMS.dither.help)
+    dither_check.grid(row=3, columnspan=2, sticky="W")
 
     deterministic = BooleanVar()
     deterministic.set(False)
@@ -576,7 +583,7 @@ if __name__ == "__main__":
 
                 def action():
                     return mkg.MosaicUnfair(dest_img.shape, imgs, max_width.get(), colorspace.get(), dist_metric.get(), 
-                        lower_thresh, salient_bg_color, freq_mul.get(), not deterministic.get(), dither.get()).process_dest_img(dest_img)
+                        lower_thresh, salient_bg_color, freq_mul.get(), not deterministic.get(), dither.get(), transparent.get()).process_dest_img(dest_img)
 
             def wrapper():
                 global result_collage
@@ -598,9 +605,11 @@ if __name__ == "__main__":
 
     def attach_salient_opt():
         if is_salient.get():
-            salient_opt_panel.grid(row=13, columnspan=2, pady=2, sticky="w")
+            salient_opt_panel.grid(row=14, columnspan=2, pady=2, sticky="w")
+            bg_opt_panel.grid(row=15, columnspan=2, pady=2, sticky="w")
         else:
             salient_opt_panel.grid_remove()
+            bg_opt_panel.grid_remove()
 
     # right collage option panel ROW 12
     is_salient = BooleanVar()
@@ -609,8 +618,24 @@ if __name__ == "__main__":
                 variable=is_salient, command=attach_salient_opt)
     is_salient_check.grid(row=12, columnspan=2, sticky="w")
 
+    def transp_cb():
+        if transparent.get():
+            is_salient.set(False)
+            is_salient_check.config(state='disabled')
+            dither.set(False)
+            dither_check.config(state='disabled')
+            bg_opt_panel.grid(row=15, columnspan=2, pady=2, sticky="w")
+        else:
+            is_salient_check.config(state='enabled')
+            dither_check.config(state='enabled')
+            bg_opt_panel.grid_remove()
+
     # right collage option panel ROW 13
-    salient_opt_panel = PanedWindow(right_col_opt_panel)
+    transparent = BooleanVar()
+    transparent.set(False)
+    transparent_check = CheckbuttonWithTooltip(right_col_opt_panel, text="Transparency masking", 
+        variable=transparent, tooltip=mkg.PARAMS.transparent.help, command=transp_cb)
+    transparent_check.grid(row=13, columnspan=2, sticky="w")
 
     change_thresh_queue = []
 
@@ -629,11 +654,16 @@ if __name__ == "__main__":
             tmp_dest_img = dest_img.copy()
             tmp_dest_img[thresh_map < lower_thresh] = np.asarray(salient_bg_color[::-1], dtype=np.float32) / 255.0
             show_img(tmp_dest_img, False)
-            
+    
+    # right collage option panel ROW 14
+    salient_opt_panel = PanedWindow(right_col_opt_panel)
     Label(salient_opt_panel, text="Saliency threshold: ").grid(row=0, column=0, sticky="w")
     saliency_thresh_scale = Scale(salient_opt_panel, from_=1.0, to=99.0, orient=HORIZONTAL, length=150, command=init_change_thresh)
     saliency_thresh_scale.set(50.0)
     saliency_thresh_scale.grid(row=1, columnspan=2, sticky="W")
+
+    # right collage option panel ROW 15
+    bg_opt_panel = PanedWindow(right_col_opt_panel)
     salient_bg_color = (255, 255, 255)
 
     def change_bg_color():
@@ -645,14 +675,14 @@ if __name__ == "__main__":
             salient_bg_chooser["bg"] = hex_color
             salient_bg_chooser.update()
 
-    salient_bg_chooser = tk.Button(salient_opt_panel, text="Select Background Color",
+    salient_bg_chooser = tk.Button(bg_opt_panel, text="Select Background Color",
                                    command=change_bg_color, bg="#FFFFFF")
-    salient_bg_chooser.grid(row=2, columnspan=2, pady=(3, 1))
+    salient_bg_chooser.grid(row=0, columnspan=2, pady=(3, 1))
 
-    # right collage option panel ROW 14
+    # right collage option panel ROW 16
     collage_button = Button(right_col_opt_panel, text=" Generate Collage ", command=generate_collage)
     collage_button.config(state='disabled')
-    collage_button.grid(row=14, columnspan=2, pady=(3, 5))
+    collage_button.grid(row=16, columnspan=2, pady=(3, 5))
     # ------------------------ end right collage option panel --------------------
 
     # right panel ROW 9:
@@ -749,7 +779,7 @@ if __name__ == "__main__":
         pool.submit(load_img_action).add_done_callback(show_img)
 
         print("Destination image loaded from", cmd_args.collage)
-        dest_img = mkg.imread(cmd_args.collage)
+        dest_img = mkg.imread(cmd_args.collage, cv2.IMREAD_UNCHANGED)
         show_img(dest_img, False)
         dest_img_path.set(cmd_args.collage)
 
@@ -757,6 +787,6 @@ if __name__ == "__main__":
         sort_button.config(state='enabled')
         collage_button.config(state='enabled')
 
-    sys.stdout = out_wrapper
-    sys.stderr = out_wrapper
+    # sys.stdout = out_wrapper
+    # sys.stderr = out_wrapper
     root.mainloop()
