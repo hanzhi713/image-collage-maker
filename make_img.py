@@ -85,8 +85,7 @@ class PARAMS:
     metric = _PARAMETER(type=str, default="euclidean", choices=["euclidean", "cityblock", "chebyshev", "cosine"], 
         help="Distance metric used when evaluating the distance between two color vectors")
     transparent = _PARAMETER(type=bool, default=False, 
-        help="Enable transparency masking. That is, tiles will not be place onto the transparent part of the destination image. "
-             "Your specified background color will fill into the transparent region of the resulting photomosaic. "
+        help="Enable transparency masking. The transparent regions of the destination image will be maintained in the photomosaic"
              "Cannot be used together with --salient")
     
     # ---- unfair tile assignment options -----
@@ -110,8 +109,6 @@ class PARAMS:
     salient = _PARAMETER(type=bool, default=False, help="Make photomosaic for salient objects only")
     lower_thresh = _PARAMETER(type=float, default=0.5, 
         help="The threshold for saliency detection, between 0.0 (no object area = blank) and 1.0 (maximum object area = original image)")
-    background = _PARAMETER(nargs=3, type=int, default=(255, 255, 255), 
-        help="Background color in RGB for non salient part of the image")
 
     # ---- blending options ---
     blending = _PARAMETER(type=str, default="alpha", choices=["alpha", "brightness"], 
@@ -250,43 +247,72 @@ def make_collage(grid: Grid, sorted_imgs: ImgList, rev=False, file=None) -> np.n
     """
     print("Aligning images on the grid...", file=file)
     total = np.prod(grid)
-    if len(sorted_imgs) < total:
-        diff = total - len(sorted_imgs)
-        print(f"Note: {diff} white tiles will be added to the grid.")
-        sorted_imgs.extend([get_background_tile(sorted_imgs[0].shape, (255, 255, 255))] * diff)
+    diff = total - len(sorted_imgs)
+    if diff > 0:
+        tile_info = f"Grid dimension: {grid}\n" + '\n'.join([img.info for img in sorted_imgs])
+        print(f"Note: {diff} transparent tiles will be added to the grid.")
+        for i in range(len(sorted_imgs)): # add alpha channel for all tiles
+            sorted_imgs[i] = cv2.cvtColor(sorted_imgs[i], cv2.COLOR_BGR2BGRA)
+        sorted_imgs.extend([np.zeros_like(sorted_imgs[0])] * diff)
+        tile_info += '\nbackground' * diff
     elif len(sorted_imgs) > total:
         print(f"Note: {len(sorted_imgs) - total} tiles will be dropped from the grid.")
         del sorted_imgs[total:]
+        tile_info = f"Grid dimension: {grid}\n" + '\n'.join([img.info for img in sorted_imgs])
 
     combined_img = np.asarray([img.view(np.float32) for img in sorted_imgs])
     combined_img.shape = (*grid[::-1], *sorted_imgs[0].shape)
     if rev:
         combined_img[1::2] = combined_img[1::2, ::-1]
     combined_img = combined_img.transpose((0, 2, 1, 3, 4))
-    combined_img = combined_img.reshape(np.prod(combined_img.shape[:2]), -1, 3)
-    return combined_img, f"Grid dimension: {grid}\n" + '\n'.join([img.info for img in sorted_imgs])
+    combined_img = combined_img.reshape(np.prod(combined_img.shape[:2]), -1, sorted_imgs[0].shape[2])
+    return combined_img, tile_info
 
 
 def alpha_blend(combined_img: np.ndarray, dest_img: np.ndarray, alpha=0.9):
-    dest_img = cv2.resize(dest_img, combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR)
-    dest_img *= 1 - alpha
-    combined_img = combined_img * alpha # copy
-    combined_img += dest_img
-    return combined_img
+    if dest_img.shape[2] == 4:
+        dest_img = dest_img.copy()
+        dest_img[:, :, :3] *= (1 - alpha)
+        dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGRA2BGR)
+        dest_img = cv2.resize(dest_img, combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR)
+        combined_img = combined_img.copy()
+        combined_img[:, :, :3] *= alpha
+        combined_img[:, :, :3] += dest_img
+        return combined_img
+    else:
+        dest_img = cv2.resize(dest_img * (1 - alpha), combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR)
+        dest_img += combined_img * alpha
+        return dest_img
 
 
 def brightness_blend(combined_img: np.ndarray, dest_img: np.ndarray, alpha=0.9):
     """
     blend the 2 imgs in the lightness channel (L in HSL)
     """
-    dest_img = cv2.resize(dest_img, combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR)
-    cv2.cvtColor(dest_img, cv2.COLOR_BGR2HLS, dst=dest_img)
-    dest_img[:, :, 1] *= 1 - alpha
-    combined_img = cv2.cvtColor(combined_img, cv2.COLOR_BGR2HLS)
-    combined_img[:, :, 1] *= alpha
-    combined_img[:, :, 1] += dest_img[:, :, 1]
-    cv2.cvtColor(combined_img, cv2.COLOR_HLS2BGR, dst=combined_img)
-    return combined_img
+    if dest_img.shape[2] == 4:
+        dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2HLS)
+        dest_img = cv2.resize(dest_img, combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR)
+        dest_img[:, :, 1] *= 1 - alpha
+        combined_img_hls = cv2.cvtColor(combined_img[:, :, :3], cv2.COLOR_BGR2HLS)
+        combined_img_hls[:, :, 1] *= alpha
+        combined_img_hls[:, :, 1] += dest_img[:, :, 1]
+        combined_img = combined_img.copy()
+        combined_img[:, :, :3] = cv2.cvtColor(combined_img_hls, cv2.COLOR_HLS2BGR)
+        return combined_img
+        # combined_img = combined_img.copy()
+        # cv2.cvtColor(combined_img, cv2.COLOR_BGR2HLS, dst=combined_img)
+        # combined_img[:, :, 1] *= alpha
+        # combined_img[:, :, 1] += dest_img[:, :, 1]
+        # cv2.cvtColor(combined_img[:, :, :3], cv2.COLOR_HLS2BGR, dst=combined_img)
+        # return combined_img
+    else:
+        dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2HLS)
+        dest_img = cv2.resize(dest_img, combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR)
+        dest_img[:, :, 1] *= 1 - alpha
+        combined_img = cv2.cvtColor(combined_img, cv2.COLOR_BGR2HLS)
+        combined_img[:, :, 1] *= alpha
+        combined_img[:, :, 1] += dest_img[:, :, 1]
+        return cv2.cvtColor(combined_img, cv2.COLOR_HLS2BGR, dst=combined_img)
 
 
 def sort_collage(imgs: ImgList, ratio: Grid, sort_method="pca_lab", rev_sort=False) -> Tuple[Grid, np.ndarray]:
@@ -299,11 +325,6 @@ def sort_collage(imgs: ImgList, ratio: Grid, sort_method="pca_lab", rev_sort=Fal
     """
     t = time.time()
     grid = calc_grid_size(ratio[0], ratio[1], len(imgs), imgs[0].shape)
-    total = np.prod(grid)
-    if len(imgs) < total:
-        diff = total - len(imgs)
-        print(f"Note: {diff} white tiles will be added to the sorted collage.")
-        imgs = imgs + [get_background_tile(imgs[0].shape, (255, 255, 255))] * diff
 
     if sort_method == "none":
         return grid, imgs
@@ -372,12 +393,6 @@ def compute_block_map(thresh_map: np.ndarray, block_width: int, block_height: in
     return row_idx, col_idx, thresh_map
 
 
-def get_background_tile(shape: Tuple[int], background: BackgroundRGB):
-    bg = np.asarray(background[::-1], dtype=np.float32)
-    bg *= 1 / 255.0
-    return InfoArray(np.full(shape, bg, dtype=np.float32), f"background-{'-'.join(str(a) for a in background)}")
-
-
 def dup_to_meet_total(imgs: ImgList, total: int):
     """
     note that this function modifies imgs in place
@@ -422,14 +437,16 @@ def _other(A, B, dist_func, row_stride):
     return dist_mat
 
 
-def strip_alpha(dest_img: np.ndarray) -> np.ndarray:
+def strip_alpha(dest_img: np.ndarray, copy=False) -> np.ndarray:
     if dest_img.shape[2] == 4:
         return cv2.cvtColor(dest_img, cv2.COLOR_BGRA2BGR)
+    if copy:
+        return dest_img.copy()
     return dest_img
 
 
 def thresh_map_transp(dest_img: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    assert dest_img.shape[2] == 4
+    assert dest_img.shape[2] == 4, "You need an image with transparent background to do this"
     return cv2.cvtColor(dest_img, cv2.COLOR_BGRA2BGR), dest_img[:, :, 3] > 0.0
 
 
@@ -487,6 +504,13 @@ class MosaicCommon:
         return combined_img.reshape(np.prod(combined_img.shape[:2]), -1, 3), \
                f"Grid dimension: {self.grid}\n" + '\n'.join([self.imgs[i].info for i in assignment.flatten()])
 
+    def make_photomosaic_mask(self, assignment, ridx, cidx):
+        combined_img = np.zeros((*self.grid[::-1], *self.imgs[0].shape[:2], 4), dtype=np.float32)
+        combined_img[ridx, cidx, :, :, :3] = self.combined_img[assignment]
+        combined_img = combined_img.transpose((0, 2, 1, 3, 4)).reshape(self.grid[1] * self.imgs[0].shape[0], -1, 4)
+        print(combined_img.shape)
+        return combined_img, f"Grid dimension: {self.grid}\nTile info not yet supported for masked photomosaic"
+
     def convert_colorspace(self, img: np.ndarray):
         if self.flag is None:
             return
@@ -542,12 +566,12 @@ class MosaicCommon:
 
 
 def calc_salient_col_even(dest_img: np.ndarray, imgs: ImgList, dup=1, colorspace="lab", 
-                          metric="euclidean", lower_thresh=0.5, background=(255, 255, 255), v=None) -> Tuple[Grid, ImgList]:
+                          metric="euclidean", lower_thresh=0.5, transparent=False, v=None) -> Tuple[Grid, ImgList]:
     """
     Compute the optimal assignment between the set of images provided and the set of pixels constitute of salient objects of the
     target image, with the restriction that every image should be used the same amount of times
 
-    non salient part of the target image is filled with background color=background
+    non salient part of the target image will be transparent
     """
     t = time.time()
     print("Duplicating {} times".format(dup))
@@ -556,7 +580,12 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: ImgList, dup=1, colorspace
     # this is just the initial (minimum) grid size
     total = round(len(imgs) * dup)
     grid = calc_grid_size(width, height, total, imgs[0].shape)
-    _, orig_thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((dest_img * 255).astype(np.uint8))
+    if transparent:
+        dest_img, orig_thresh_map = thresh_map_transp(dest_img)
+        orig_thresh_map = orig_thresh_map.astype(np.float32)
+        lower_thresh = 0.5
+    else:
+        _, orig_thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((dest_img * 255).astype(np.uint8))
     
     bh_f = height / grid[1]
     bw_f = width / grid[0]
@@ -590,17 +619,13 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: ImgList, dup=1, colorspace
     print("Grid size:", mos.grid)
 
     mos.imgs_to_flat_blocks(metric)
-    mos.imgs.append(get_background_tile(imgs[0].shape, background))
     mos.combine_imgs()
     dest_img = cv2.resize(dest_img, thresh_map.shape[::-1], interpolation=cv2.INTER_AREA)
     dest_img = mos.dest_to_flat_blocks_mask(dest_img, lower_thresh, ridx, cidx, thresh_map)
     
-    cols = solve_lap(to_cpu(mos.cdist(dest_img).T), v)
-    assignment = np.full(mos.grid[::-1], len(mos.imgs) - 1, dtype=np.int32)
-    assignment[ridx, cidx] = cols
+    assignment = solve_lap(to_cpu(mos.cdist(dest_img).T), v)
     print("Time taken: {}s".format((np.round(time.time() - t, 2))))
-    return mos.make_photomosaic(assignment)
-
+    return mos.make_photomosaic_mask(assignment, ridx, cidx)
 
 class MosaicFairSalient:
     def __init__(self, *args, **kwargs) -> None:
@@ -636,15 +661,14 @@ class MosaicFair(MosaicCommon):
         self.combine_imgs()
 
     def process_dest_img(self, dest_img: np.ndarray, file=None):
-        dest_img = self.dest_to_flat_blocks(dest_img)
+        dest_img = self.dest_to_flat_blocks(strip_alpha(dest_img))
         cols = solve_lap(to_cpu(self.cdist(dest_img).T), file)
         return self.make_photomosaic(cols)
 
 
 class MosaicUnfair(MosaicCommon):
-    def __init__(self, dest_shape: Tuple[int, int, int], imgs: ImgList, max_width: int, 
-                colorspace: str, metric: str, lower_thresh: float, background: BackgroundRGB, 
-                freq_mul: float, randomize: bool, dither=False, transparent=False) -> None:
+    def __init__(self, dest_shape: Tuple[int, int, int], imgs: ImgList, max_width: int, colorspace: str, metric: str, 
+    lower_thresh: float, freq_mul: float, randomize: bool, dither=False, transparent=False) -> None:
         # Because we don't have a fixed total amount of images as we can used a single image
         # for arbitrary amount of times, we need user to specify the maximum width in order to determine the grid size.
         dh, dw, _ = dest_shape
@@ -683,15 +707,13 @@ class MosaicUnfair(MosaicCommon):
         self.transparent = transparent
         self.saliency = False
         self.dither = dither
-        _saliency_enabled = lower_thresh is not None and background is not None
+        _saliency_enabled = lower_thresh is not None
         if transparent:
             if dither:
                 print("Warning: dithering is not supported when transparency masking is on. Dithering will be turned off")
                 self.dither = False
             if _saliency_enabled:
                 print("Warning: saliency is not supported when transparency masking is on. Saliency will be turned off")
-            self.imgs = self.imgs.copy()
-            self.imgs.append(get_background_tile(imgs[0].shape, background))
         elif self.dither:
             if _saliency_enabled:
                 print("Warning: saliency is not supported when dithering is on. Saliency will be turned off")
@@ -702,8 +724,6 @@ class MosaicUnfair(MosaicCommon):
                 self.randomize = False
         elif _saliency_enabled:
             self.saliency = cv2.saliency.StaticSaliencyFineGrained_create()
-            self.imgs = self.imgs.copy()
-            self.imgs.append(get_background_tile(imgs[0].shape, background))
         self.combine_imgs()
 
     def process_dest_img(self, dest_img: np.ndarray, file=None):
@@ -842,9 +862,7 @@ class MosaicUnfair(MosaicCommon):
 
         assignment = to_cpu(assignment)
         if self.saliency or self.transparent:
-            full_assignment = np.full(self.grid[::-1], len(self.imgs) - 1, dtype=np.int32)
-            full_assignment[ridx, cidx] = assignment
-            assignment = full_assignment
+            return self.make_photomosaic_mask(assignment, ridx, cidx)
         return self.make_photomosaic(assignment)
 
 
@@ -852,6 +870,7 @@ def imwrite(filename: str, img: np.ndarray) -> None:
     ext = os.path.splitext(filename)[1]
     if img.dtype != np.uint8:
         img = (img * 255).astype(np.uint8)
+    print(img.shape)
     result, n = cv2.imencode(ext, img)
     assert result, "Error saving the collage"
     n.tofile(filename)
@@ -1199,13 +1218,13 @@ def main(args):
         unfair_exp(dest_img, args, imgs)        
         return
     
-    if args.salient:
+    if args.salient or args.transparent:
         if args.unfair:
             mos = MosaicUnfair(
                 dest_shape, imgs, args.max_width, args.colorspace, args.metric,
-                args.lower_thresh, args.background, args.freq_mul, not args.deterministic, args.dither)
+                args.lower_thresh, args.freq_mul, not args.deterministic, args.dither, args.transparent)
         else:
-            mos = MosaicFairSalient(dest_shape, imgs, dup, args.colorspace, args.metric, args.lower_thresh, args.background)
+            mos = MosaicFairSalient(dest_shape, imgs, dup, args.colorspace, args.metric, args.lower_thresh, args.transparent)
     else:
         if args.unfair:
             mos = MosaicUnfair(

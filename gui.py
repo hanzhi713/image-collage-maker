@@ -117,6 +117,19 @@ class RadiobuttonWithTooltip(Radiobutton):
         self._tp = CreateToolTip(self, _tp)
 
 
+class Debounce:
+    def __init__(self, action) -> None:
+        self.queue = []
+        self.action = action
+        self.pool = ThreadPoolExecutor(1)
+    
+    def __call__(self, *args, **kwds):
+        for f in self.queue:
+            f.cancel()
+        self.queue.clear()
+        self.queue.append(self.pool.submit(self.action))
+
+
 if __name__ == "__main__":
     freeze_support()
     pool = ThreadPoolExecutor(1)
@@ -178,8 +191,8 @@ if __name__ == "__main__":
             img = img.result()
         if type(img) == tuple:
             img, result_tile_info = img
-        img = mkg.strip_alpha(img)
         result_img = img
+        img = mkg.strip_alpha(img)
         width, height = canvas.winfo_width(), canvas.winfo_height()
         img_h, img_w, _ = img.shape
         w, h = limit_wh(img_w, img_h, width, height)
@@ -452,16 +465,17 @@ if __name__ == "__main__":
     LabelWithTooltip(right_col_opt_panel, text="Color Blend:", tooltip=mkg.PARAMS.blending.help).grid(
         row=3, column=0, sticky="W", padx=(0, 5))
 
+    change_alpha_debounced = Debounce(change_alpha)
     # right collage option panel ROW 4:
     colorization_opt = StringVar()
     colorization_opt.set("brightness")
-    RadiobuttonWithTooltip(right_col_opt_panel, text="Brightness", variable=colorization_opt, value="brightness", state=ACTIVE, command=change_alpha, 
+    RadiobuttonWithTooltip(right_col_opt_panel, text="Brightness", variable=colorization_opt, value="brightness", state=ACTIVE, command=change_alpha_debounced, 
         tooltip=mkg.PARAMS.blending.help).grid(row=4, column=0, sticky="W")
-    RadiobuttonWithTooltip(right_col_opt_panel, text="Alpha", variable=colorization_opt, value="alpha", command=change_alpha,
+    RadiobuttonWithTooltip(right_col_opt_panel, text="Alpha", variable=colorization_opt, value="alpha", command=change_alpha_debounced,
         tooltip=mkg.PARAMS.blending.help).grid(row=4, column=1, sticky="W")
 
     # right collage option panel ROW 5:
-    alpha_scale = Scale(right_col_opt_panel, from_=0.0, to=100.0, orient=HORIZONTAL, length=150, command=change_alpha)
+    alpha_scale = Scale(right_col_opt_panel, from_=0.0, to=100.0, orient=HORIZONTAL, length=150, command=change_alpha_debounced)
     alpha_scale.set(0)
     alpha_scale.grid(row=5, columnspan=2, sticky="W")
 
@@ -568,11 +582,11 @@ if __name__ == "__main__":
             if even.get() == "even":
                 _dup = mkg.check_dup_valid(dup.get())
                 
-                if is_salient.get():
+                if is_salient.get() or transparent.get():
                     def action():
                         return mkg.MosaicFairSalient(
                             dest_img, imgs, _dup, colorspace.get(), dist_metric.get(), 
-                            lower_thresh, salient_bg_color, out_wrapper).process_dest_img(dest_img)
+                            lower_thresh, transparent.get(), out_wrapper).process_dest_img(dest_img)
                 else:               
                     def action():
                         return mkg.MosaicFair(dest_img.shape, imgs, _dup, 
@@ -583,7 +597,7 @@ if __name__ == "__main__":
 
                 def action():
                     return mkg.MosaicUnfair(dest_img.shape, imgs, max_width.get(), colorspace.get(), dist_metric.get(), 
-                        lower_thresh, salient_bg_color, freq_mul.get(), not deterministic.get(), dither.get(), transparent.get()).process_dest_img(dest_img)
+                        lower_thresh, freq_mul.get(), not deterministic.get(), dither.get(), transparent.get()).process_dest_img(dest_img)
 
             def wrapper():
                 global result_collage
@@ -606,10 +620,8 @@ if __name__ == "__main__":
     def attach_salient_opt():
         if is_salient.get():
             salient_opt_panel.grid(row=14, columnspan=2, pady=2, sticky="w")
-            bg_opt_panel.grid(row=15, columnspan=2, pady=2, sticky="w")
         else:
             salient_opt_panel.grid_remove()
-            bg_opt_panel.grid_remove()
 
     # right collage option panel ROW 12
     is_salient = BooleanVar()
@@ -624,11 +636,9 @@ if __name__ == "__main__":
             is_salient_check.config(state='disabled')
             dither.set(False)
             dither_check.config(state='disabled')
-            bg_opt_panel.grid(row=15, columnspan=2, pady=2, sticky="w")
         else:
             is_salient_check.config(state='enabled')
             dither_check.config(state='enabled')
-            bg_opt_panel.grid_remove()
 
     # right collage option panel ROW 13
     transparent = BooleanVar()
@@ -637,47 +647,22 @@ if __name__ == "__main__":
         variable=transparent, tooltip=mkg.PARAMS.transparent.help, command=transp_cb)
     transparent_check.grid(row=13, columnspan=2, sticky="w")
 
-    change_thresh_queue = []
-
-    def init_change_thresh(_):
-        for f in change_thresh_queue:
-            f.cancel()
-        change_thresh_queue.clear()
-        fut = pool.submit(change_thresh)
-        change_thresh_queue.append(fut)
-    
     def change_thresh():
         if dest_img is not None:
             lower_thresh = saliency_thresh_scale.get() / 100
             assert 0.0 <= lower_thresh <= 1.0
-            _, thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((dest_img * 255).astype(np.uint8))
-            tmp_dest_img = dest_img.copy()
-            tmp_dest_img[thresh_map < lower_thresh] = np.asarray(salient_bg_color[::-1], dtype=np.float32) / 255.0
+            tmp_dest_img = mkg.strip_alpha(dest_img, copy=True)
+            _, thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((tmp_dest_img * 255).astype(np.uint8))
+            tmp_dest_img[thresh_map < lower_thresh] = np.asarray((1.0, 1.0, 1.0), dtype=np.float32)
             show_img(tmp_dest_img, False)
     
     # right collage option panel ROW 14
+    changed_thresh_debounced = Debounce(change_thresh)
     salient_opt_panel = PanedWindow(right_col_opt_panel)
     Label(salient_opt_panel, text="Saliency threshold: ").grid(row=0, column=0, sticky="w")
-    saliency_thresh_scale = Scale(salient_opt_panel, from_=1.0, to=99.0, orient=HORIZONTAL, length=150, command=init_change_thresh)
+    saliency_thresh_scale = Scale(salient_opt_panel, from_=1.0, to=99.0, orient=HORIZONTAL, length=150, command=changed_thresh_debounced)
     saliency_thresh_scale.set(50.0)
     saliency_thresh_scale.grid(row=1, columnspan=2, sticky="W")
-
-    # right collage option panel ROW 15
-    bg_opt_panel = PanedWindow(right_col_opt_panel)
-    salient_bg_color = (255, 255, 255)
-
-    def change_bg_color():
-        global salient_bg_color, last_resize_time
-        rbg_color, hex_color = colorchooser.askcolor(color=salient_bg_color)
-        if hex_color:
-            last_resize_time = time.time()
-            salient_bg_color = rbg_color
-            salient_bg_chooser["bg"] = hex_color
-            salient_bg_chooser.update()
-
-    salient_bg_chooser = tk.Button(bg_opt_panel, text="Select Background Color",
-                                   command=change_bg_color, bg="#FFFFFF")
-    salient_bg_chooser.grid(row=0, columnspan=2, pady=(3, 1))
 
     # right collage option panel ROW 16
     collage_button = Button(right_col_opt_panel, text=" Generate Collage ", command=generate_collage)
