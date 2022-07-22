@@ -772,6 +772,6 @@ if __name__ == "__main__":
         sort_button.config(state='enabled')
         collage_button.config(state='enabled')
 
-    # sys.stdout = out_wrapper
-    # sys.stderr = out_wrapper
+    sys.stdout = out_wrapper
+    sys.stderr = out_wrapper
     root.mainloop()
