@@ -41,7 +41,7 @@ class _PARAMETER:
 
 # We gather parameters here so they can be reused else where
 class PARAMS:
-    path = _PARAMETER(help="Path to the tiles", default=os.path.join(os.path.dirname(__file__), "img"), type=str)
+    path = _PARAMETER(help="Path to the tiles", type=str)
     recursive = _PARAMETER(type=bool, default=False, help="Whether to read the sub-folders for the specified path")
     num_process = _PARAMETER(type=int, default=mp.cpu_count() // 2, help="Number of processes to use for parallelizable operations")
     out = _PARAMETER(default="result.png", type=str, help="The filename of the output collage/photomosaic")
