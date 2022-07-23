@@ -1,20 +1,16 @@
 #!/bin/bash
 PLATFORM=$1
-PLATV=$2
-if [[ $2 != "" ]]; then
-    PLATV="-$2"
-fi
-NAME=photomosaic-maker-${VERSION}-${PLATFORM}${PLATV}-x64
+NAME=photomosaic-maker-${VERSION}-${PLATFORM}-x64
 
 rm -rf dist/*
 
-if [[ $PLATFORM == "windows" ]]; then
+if [[ $PLATFORM == windows* ]]; then
     ./Scripts/activate
     SUFFIX=".exe"
-elif [[ $PLATFORM == "macos" ]]; then
+elif [[ $PLATFORM == macos* ]]; then
     source collage/bin/activate
     SUFFIX=""
-elif [[ $PLATFORM == "ubuntu" ]]; then
+elif [[ $PLATFORM == ubuntu* ]]; then
     source collage/bin/activate
     SUFFIX=""
 else
