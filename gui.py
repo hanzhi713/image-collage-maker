@@ -458,7 +458,7 @@ if __name__ == "__main__":
             else:
                 img = mkg.alpha_blend(result_collage, dest_img, 1 - alpha_scale.get() / 100)
             if show:
-                show_img(img)
+                show_img(img, False)
             return img
     
     # right collage option panel ROW 3:

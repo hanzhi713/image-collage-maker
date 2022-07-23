@@ -279,6 +279,12 @@ def alpha_blend(combined_img: np.ndarray, dest_img: np.ndarray, alpha=0.9):
         combined_img[:, :, :3] *= alpha
         combined_img[:, :, :3] += dest_img
         return combined_img
+    elif combined_img.shape[2] == 4: # for non transparent dest but transparent photomosaic
+        dest_img = cv2.resize(dest_img * (1 - alpha), combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR)
+        combined_img = combined_img.copy()
+        combined_img[:, :, :3] *= alpha
+        combined_img[:, :, :3] += dest_img
+        return combined_img
     else:
         dest_img = cv2.resize(dest_img * (1 - alpha), combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR)
         dest_img += combined_img * alpha
@@ -289,26 +295,20 @@ def brightness_blend(combined_img: np.ndarray, dest_img: np.ndarray, alpha=0.9):
     """
     blend the 2 imgs in the lightness channel (L in HSL)
     """
-    if dest_img.shape[2] == 4:
+    if dest_img.shape[2] == 4 or combined_img.shape[2] == 4:
         dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2HLS)
-        dest_img = cv2.resize(dest_img, combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR)
         dest_img[:, :, 1] *= 1 - alpha
+        dest_img = cv2.resize(dest_img, combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR)
         combined_img_hls = cv2.cvtColor(combined_img[:, :, :3], cv2.COLOR_BGR2HLS)
         combined_img_hls[:, :, 1] *= alpha
         combined_img_hls[:, :, 1] += dest_img[:, :, 1]
         combined_img = combined_img.copy()
         combined_img[:, :, :3] = cv2.cvtColor(combined_img_hls, cv2.COLOR_HLS2BGR)
         return combined_img
-        # combined_img = combined_img.copy()
-        # cv2.cvtColor(combined_img, cv2.COLOR_BGR2HLS, dst=combined_img)
-        # combined_img[:, :, 1] *= alpha
-        # combined_img[:, :, 1] += dest_img[:, :, 1]
-        # cv2.cvtColor(combined_img[:, :, :3], cv2.COLOR_HLS2BGR, dst=combined_img)
-        # return combined_img
     else:
         dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2HLS)
-        dest_img = cv2.resize(dest_img, combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR)
         dest_img[:, :, 1] *= 1 - alpha
+        dest_img = cv2.resize(dest_img, combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR)
         combined_img = cv2.cvtColor(combined_img, cv2.COLOR_BGR2HLS)
         combined_img[:, :, 1] *= alpha
         combined_img[:, :, 1] += dest_img[:, :, 1]
@@ -555,8 +555,7 @@ class MosaicCommon:
         dest_img.shape = (self.grid[1], self.block_height, self.grid[0], self.block_width, 3)
         return dest_img.transpose((0, 2, 1, 3, 4)).reshape(-1, self.flat_block_size)
 
-    def dest_to_flat_blocks_mask(self, dest_img: np.ndarray, lower_thresh: int, ridx: np.ndarray, cidx: np.ndarray, thresh_map: np.ndarray):
-        dest_img[thresh_map < lower_thresh] = self.imgs[-1][0, 0, :]
+    def dest_to_flat_blocks_mask(self, dest_img: np.ndarray, ridx: np.ndarray, cidx: np.ndarray):
         self.convert_colorspace(dest_img)
         dest_img.shape = (self.grid[1], self.block_height, self.grid[0], self.block_width, 3)
         dest_img = dest_img[ridx, :, cidx, :, :]
@@ -585,6 +584,7 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: ImgList, dup=1, colorspace
         orig_thresh_map = orig_thresh_map.astype(np.float32)
         lower_thresh = 0.5
     else:
+        dest_img = strip_alpha(dest_img)
         _, orig_thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((dest_img * 255).astype(np.uint8))
     
     bh_f = height / grid[1]
@@ -597,17 +597,25 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: ImgList, dup=1, colorspace
         bh_delta = 1
         bw_delta = bh_f / bw_f
     
+    imgs = imgs.copy()
     while True:
         block_width = int(bw_f)
         block_height = int(bh_f)
+        if block_width <= 0 or block_height <= 0:
+            print(f"Warning: Salient area is too small to put down all tiles given the duplication factor of {dup}. "
+                  "You can try to increase the saliency threshold if this is not desired.")
+            block_width = max(block_width, 1)
+            block_height = max(block_height, 1)
+            ridx, cidx, thresh_map = compute_block_map(orig_thresh_map, block_width, block_height, lower_thresh)
+            break
         ridx, cidx, thresh_map = compute_block_map(orig_thresh_map, block_width, block_height, lower_thresh)
         if len(ridx) >= total:
             break
         bw_f -= bw_delta
         bh_f -= bh_delta
-        assert bw_f > 0 and bh_f > 0, "Salient area is too small to put down all tiles. Please try to increase the saliency threshold."
 
-    imgs = dup_to_meet_total(imgs.copy(), len(ridx))
+    print(len(ridx), lower_thresh)
+    dup_to_meet_total(imgs, len(ridx))
 
     mos = MosaicCommon(imgs, colorspace)
     mos.block_width = block_width
@@ -621,8 +629,7 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: ImgList, dup=1, colorspace
     mos.imgs_to_flat_blocks(metric)
     mos.combine_imgs()
     dest_img = cv2.resize(dest_img, thresh_map.shape[::-1], interpolation=cv2.INTER_AREA)
-    dest_img = mos.dest_to_flat_blocks_mask(dest_img, lower_thresh, ridx, cidx, thresh_map)
-    
+    dest_img = mos.dest_to_flat_blocks_mask(dest_img, ridx, cidx)
     assignment = solve_lap(to_cpu(mos.cdist(dest_img).T), v)
     print("Time taken: {}s".format((np.round(time.time() - t, 2))))
     return mos.make_photomosaic_mask(assignment, ridx, cidx)
@@ -735,7 +742,7 @@ class MosaicUnfair(MosaicCommon):
             else:
                 dest_img, thresh_map = thresh_map_transp(dest_img)
             ridx, cidx, thresh_map = compute_block_map(thresh_map, self.block_width, self.block_height, self.lower_thresh)
-            dest_img = self.dest_to_flat_blocks_mask(dest_img, self.lower_thresh, ridx, cidx, thresh_map)
+            dest_img = self.dest_to_flat_blocks_mask(dest_img, ridx, cidx)
         else:
             # strip alpha in case a transparent image is passed in but --transparent flag is not enabled
             dest_img = self.dest_to_flat_blocks(strip_alpha(dest_img))
@@ -870,7 +877,6 @@ def imwrite(filename: str, img: np.ndarray) -> None:
     ext = os.path.splitext(filename)[1]
     if img.dtype != np.uint8:
         img = (img * 255).astype(np.uint8)
-    print(img.shape)
     result, n = cv2.imencode(ext, img)
     assert result, "Error saving the collage"
     n.tofile(filename)
