@@ -6,12 +6,11 @@ env:
   VERSION: "5.0"
 
 jobs:
-  # in theory we can use build matrix, but it has some complications so I will just repeat here
   build-matrix:
-    runs-on: macos-10.15
     strategy:
       matrix:
         os: [ubuntu-18.04, ubuntu-20.04, windows-2019, macos-10.15, macos-11, macos-12]
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v2
     - uses: actions/setup-python@v2
@@ -21,6 +20,7 @@ jobs:
       run: |
         . ./build_scripts/install_dependencies.sh ${{ matrix.os }}
         . ./build_scripts/build.sh ${{ matrix.os }}
+      shell: bash
     - name: Release
       uses: softprops/action-gh-release@v1
       # if: startsWith(github.ref, 'refs/tags/')

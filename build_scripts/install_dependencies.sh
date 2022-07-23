@@ -2,7 +2,7 @@
 python3 -m venv collage
 PLATFORM=$1
 if [[ $PLATFORM == windows* ]]; then
-    ./Scripts/activate
+    ./collage/Scripts/activate
 elif [[ $PLATFORM == macos* ]]; then
     source collage/bin/activate
 elif [[ $PLATFORM == ubuntu* ]]; then

@@ -5,7 +5,7 @@ NAME=photomosaic-maker-${VERSION}-${PLATFORM}-x64
 rm -rf dist/*
 
 if [[ $PLATFORM == windows* ]]; then
-    ./Scripts/activate
+    ./collage/Scripts/activate
     SUFFIX=".exe"
 elif [[ $PLATFORM == macos* ]]; then
     source collage/bin/activate
