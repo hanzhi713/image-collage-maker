@@ -1,11 +1,11 @@
 #/bin/bash
 python3 -m venv collage
 PLATFORM=$1
-if [[ $PLATFORM == "windows" ]]; then
+if [[ $PLATFORM == windows* ]]; then
     ./Scripts/activate
-elif [[ $PLATFORM == "macos" ]]; then
+elif [[ $PLATFORM == macos* ]]; then
     source collage/bin/activate
-elif [[ $PLATFORM == "ubuntu" ]]; then
+elif [[ $PLATFORM == ubuntu* ]]; then
     source collage/bin/activate
 else
     echo "Unsupported platform: " $PLATFORM

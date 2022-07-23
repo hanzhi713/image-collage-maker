@@ -19,14 +19,13 @@ jobs:
         python-version: '3.9'
     - name: Build
       run: |
-        . ./build_scripts/install_dependencies.sh ${{ matrix.version }}
-        . ./build_scripts/build.sh ${{ matrix.version }}
+        . ./build_scripts/install_dependencies.sh ${{ matrix.os }}
+        . ./build_scripts/build.sh ${{ matrix.os }}
     - name: Release
       uses: softprops/action-gh-release@v1
       # if: startsWith(github.ref, 'refs/tags/')
       with:
         draft: true
-        files: |
-          ./dist/photomosaic-maker-${{ env.VERSION }}-${{ matrix.version }}-x64
-          ./dist/photomosaic-maker-${{ env.VERSION }}-${{ matrix.version }}-x64.tar.gz
-          ./photomosaic-maker-${{ env.VERSION }}-${{ matrix.version }}-x64-build.tar.gz
+        files: | # ./photomosaic-maker-${{ env.VERSION }}-${{ matrix.version }}-x64-build.tar.gz
+          ./dist/photomosaic-maker-${{ env.VERSION }}-${{ matrix.os }}-x64
+          ./dist/photomosaic-maker-${{ env.VERSION }}-${{ matrix.os }}-x64.tar.gz
