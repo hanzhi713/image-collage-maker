@@ -10,6 +10,9 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-18.04, ubuntu-20.04, windows-2019, macos-10.15, macos-11, macos-12]
+        include:
+          - os: windows-2019
+            suffix: .exe
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v2
@@ -27,5 +30,5 @@ jobs:
       with:
         draft: true
         files: | # ./photomosaic-maker-${{ env.VERSION }}-${{ matrix.version }}-x64-build.tar.gz
-          ./dist/photomosaic-maker-${{ env.VERSION }}-${{ matrix.os }}-x64
+          ./dist/photomosaic-maker-${{ env.VERSION }}-${{ matrix.os }}-x64${{ matrix.suffix }}
           ./dist/photomosaic-maker-${{ env.VERSION }}-${{ matrix.os }}-x64.tar.gz
