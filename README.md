@@ -191,8 +191,8 @@ python make_img.py --path img/zhou --dest_img examples/messi.jpg --size 25 --sal
 
 If your destination image has transparent regions, you can add `--transparent` flag to only put tiles for the non transparent part. In this way, the transparent regions are maintained in the resulting photomosaic. Note that this option is not compatible with `--dithering` and `--salient`. 
 
-| Original                                     | Unfair-Fitting Result                               | Fair-Fitting Result                               |
-| -------------------------------------------- | --------------------------------------------------- | ------------------------------------------------- |
+| Original                                           | Unfair-Fitting Result (`freq_mul=0.5`)                    | Fair-Fitting Result                                |
+| -------------------------------------------------- | --------------------------------------------------------- | -------------------------------------------------- |
 | <img src="examples/dest-transp.png" width="350px"> | <img src="examples/transp-unfair-freq.png" width="350px"> | <img src="examples/transp-fair.png" width="350px"> |
 
 
@@ -233,8 +233,8 @@ While dithering works the best when `freq_mul` is set to zero, it can still work
 python make_img.py --path img/zhou --dest_img examples/dest2.jpg --size 10 --unfair --max_width 200 --freq_mul 0.1 --dither --deterministic --out examples/f-dither.png
 ```
 
-| Original image                               | `freq_mul = 0.1`, no dither                              | `freq_mul = 0.1`, dither                              |
-| -------------------------------------------- | ------------------------------------------------ | --------------------------------------------- |
+| Original image                               | `freq_mul = 0.1`, no dither                        | `freq_mul = 0.1`, dither                        |
+| -------------------------------------------- | -------------------------------------------------- | ----------------------------------------------- |
 | <img src="examples/dest2.jpg" width="350px"> | <img src="examples/f-dither-no.png" width="350px"> | <img src="examples/f-dither.png" width="350px"> |
 
 Note that dithering is **not supported** in fair mode, when randomization is enabled or when saliency is enabled. Also, dithering is not recommended to use with `--gpu`, or you may experience slow computation compared to CPU processing. 
