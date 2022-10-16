@@ -54,7 +54,7 @@ class PARAMS:
     auto_rotate = _PARAMETER(type=int, default=0, choices=[-1, 0, 1],
         help="Options to auto rotate tiles to best match the specified tile size. 0: do not auto rotate. "
              "1: attempt to rotate counterclockwise by 90 degrees. -1: attempt to rotate clockwise by 90 degrees")
-    resize_opt = _PARAMETER(type=str, default="center", choices=["center", "stretch"], 
+    resize_opt = _PARAMETER(type=str, default="center", choices=["center", "stretch", "fit"], 
         help="How to resize each tile so they become square images. "
              "Center: crop a square in the center. Stretch: stretch the tile")
     gpu = _PARAMETER(type=bool, default=False, 
@@ -950,10 +950,15 @@ def read_images(pic_path: str, img_size: List[int], recursive, pool: mp.Pool, fl
         assert len(img_size) == 2
         img_size = (img_size[0], img_size[0])
 
+    read_img = read_img_other
+    if flag == "center":
+        read_img = read_img_center
+    if flag == "fit":
+        read_img = read_img_fit
     result = [
         r for r in tqdm(
             pool.imap_unordered(
-                read_img_center if flag == "center" else read_img_other, 
+                read_img, 
                 zip(files, itertools.repeat(img_size, len(files)), itertools.repeat(auto_rotate, len(files))), 
             chunksize=32), 
             total=len(files), desc="[Reading files]", unit="file", ncols=pbar_ncols) 
@@ -1025,6 +1030,59 @@ def read_img_other(args: Tuple[str, Tuple[int, int], int]):
         if abs(h / w - ratio) < abs(w / h - ratio):
             img = np.rot90(img, k=rot)
     return InfoArray(cv2.resize(img, img_size, interpolation=cv2.INTER_AREA), img_file)
+
+def resizeAndPad(img, size, padColor=255):
+
+    h, w = img.shape[:2]
+    sh, sw = size
+
+    # interpolation method
+    if h > sh or w > sw: # shrinking image
+        interp = cv2.INTER_AREA
+
+    else: # stretching image
+        interp = cv2.INTER_CUBIC
+
+    # aspect ratio of image
+    aspect = float(w)/h 
+    saspect = float(sw)/sh
+
+    if (saspect > aspect) or ((saspect == 1) and (aspect <= 1)):  # new horizontal image
+        new_h = sh
+        new_w = np.round(new_h * aspect).astype(int)
+        pad_horz = float(sw - new_w) / 2
+        pad_left, pad_right = np.floor(pad_horz).astype(int), np.ceil(pad_horz).astype(int)
+        pad_top, pad_bot = 0, 0
+
+    elif (saspect < aspect) or ((saspect == 1) and (aspect >= 1)):  # new vertical image
+        new_w = sw
+        new_h = np.round(float(new_w) / aspect).astype(int)
+        pad_vert = float(sh - new_h) / 2
+        pad_top, pad_bot = np.floor(pad_vert).astype(int), np.ceil(pad_vert).astype(int)
+        pad_left, pad_right = 0, 0
+
+    # set pad color
+    if len(img.shape) == 3 and not isinstance(padColor, (list, tuple, np.ndarray)): # color image but only one color provided
+        padColor = [padColor]*3
+
+    # scale and pad
+    scaled_img = cv2.resize(img, (new_w, new_h), interpolation=interp)
+    scaled_img = cv2.copyMakeBorder(scaled_img, pad_top, pad_bot, pad_left, pad_right, borderType=cv2.BORDER_CONSTANT, value=padColor)
+
+    return scaled_img
+
+def read_img_fit(args: Tuple[str, Tuple[int, int], int]):
+    img_file, img_size, rot = args
+    img = imread(img_file)
+    if img is None:
+        return img
+    
+    if rot != 0:
+        ratio = img_size[0] / img_size[1]
+        h, w, _ = img.shape
+        if abs(h / w - ratio) < abs(w / h - ratio):
+            img = np.rot90(img, k=rot)
+    return InfoArray(resizeAndPad(img, img_size), img_file)
 
 
 # pickleable helper classes for unfair exp
