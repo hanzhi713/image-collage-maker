@@ -263,7 +263,7 @@ if __name__ == "__main__":
     resize_opt.set("center")
     LabelWithTooltip(right_panel, text="Resize option: ", tooltip=mkg.PARAMS.resize_opt.help).grid(
         row=3, column=0, sticky="W")
-    OptionMenu(right_panel, resize_opt, "", "center", "stretch").grid(
+    OptionMenu(right_panel, resize_opt, "", *mkg.PARAMS.resize_opt.choices).grid(
         row=3, column=1, sticky="W")
 
     # right panel ROW 4
@@ -755,7 +755,7 @@ if __name__ == "__main__":
 
     root.bind("<Configure>", canvas_resize)
     out_wrapper = log_entry
-    # mkg.enable_gpu(False)
+    mkg.enable_gpu(False)
 
     # mainly for debugging purposes
     if cmd_args.D:

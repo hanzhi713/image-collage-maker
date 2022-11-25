@@ -55,13 +55,13 @@ class PARAMS:
         help="Options to auto rotate tiles to best match the specified tile size. 0: do not auto rotate. "
              "1: attempt to rotate counterclockwise by 90 degrees. -1: attempt to rotate clockwise by 90 degrees")
     resize_opt = _PARAMETER(type=str, default="center", choices=["center", "stretch", "fit"], 
-        help="How to resize each tile so they become square images. "
-             "Center: crop a square in the center. Stretch: stretch the tile")
+        help="How to resize each tile so they have the desired aspect ratio and size"
+             "Center: crop a square in the center. Stretch: stretch the tile. Fit: pad the tiles")
     gpu = _PARAMETER(type=bool, default=False, 
         help="Use GPU acceleration. Requires cupy to be installed and a capable GPU. Note that USUALLY this is useful when you: "
-             "1. only have few cpu cores, and "
-             "2. have a lot of tiles (typically > 10000) "
-             "3. and are using the unfair mode. "
+             "1. have a lot of tiles (typically > 10000), and"
+             "2. are using the unfair mode, and"
+             "3. (for photomosaic videos only) only have few cpu cores"
              "Also note: enabling GPU acceleration will disable multiprocessing on CPU for videos"
     )
     mem_limit = _PARAMETER(type=int, default=4096, 
@@ -233,6 +233,7 @@ def calc_grid_size(rw: int, rh: int, num_imgs: int, shape: Tuple[int, int, int])
         possible_wh.append((width * tw / (th * height), width, height))
     dest_ratio = rw / rh
     grid = min(possible_wh, key=lambda x: (x[0] - dest_ratio) ** 2)[1:]
+    print("Tile shape:", (tw, th))
     print("Calculated grid size based on the aspect ratio of the destination image:", grid)
     print(f"Collage size will be {grid[0] * tw}x{grid[1] * th}. ")
     return grid
@@ -259,7 +260,8 @@ def make_collage(grid: Grid, sorted_imgs: ImgList, rev=False, file=None) -> np.n
         print(f"Note: {len(sorted_imgs) - total} tiles will be dropped from the grid.")
         del sorted_imgs[total:]
         tile_info = f"Grid dimension: {grid}\n" + '\n'.join([img.info for img in sorted_imgs])
-
+    else:
+        tile_info = f"Grid dimension: {grid}\n" + '\n'.join([img.info for img in sorted_imgs])
     combined_img = np.asarray([img.view(np.float32) for img in sorted_imgs])
     combined_img.shape = (*grid[::-1], *sorted_imgs[0].shape)
     if rev:
@@ -948,7 +950,7 @@ def read_images(pic_path: str, img_size: List[int], recursive, pool: mp.Pool, fl
         print("Inferred tile size:", img_size)
     else:
         assert len(img_size) == 2
-        img_size = (img_size[0], img_size[0])
+        img_size = (img_size[0], img_size[1])
 
     read_img = read_img_other
     if flag == "center":
@@ -1031,10 +1033,10 @@ def read_img_other(args: Tuple[str, Tuple[int, int], int]):
             img = np.rot90(img, k=rot)
     return InfoArray(cv2.resize(img, img_size, interpolation=cv2.INTER_AREA), img_file)
 
-def resizeAndPad(img, size, padColor=255):
+def resizeAndPad(img, size, padColor=1.0):
 
     h, w = img.shape[:2]
-    sh, sw = size
+    sw, sh = size
 
     # interpolation method
     if h > sh or w > sw: # shrinking image
@@ -1044,22 +1046,23 @@ def resizeAndPad(img, size, padColor=255):
         interp = cv2.INTER_CUBIC
 
     # aspect ratio of image
-    aspect = float(w)/h 
-    saspect = float(sw)/sh
+    aspect = w / h 
+    saspect = sw / sh
 
-    if (saspect > aspect) or ((saspect == 1) and (aspect <= 1)):  # new horizontal image
+    if (saspect > aspect):  # new horizontal image
         new_h = sh
-        new_w = np.round(new_h * aspect).astype(int)
-        pad_horz = float(sw - new_w) / 2
-        pad_left, pad_right = np.floor(pad_horz).astype(int), np.ceil(pad_horz).astype(int)
+        new_w = round(new_h * aspect)
+        pad_horz = (sw - new_w) / 2
+        pad_left, pad_right = math.floor(pad_horz), math.ceil(pad_horz)
         pad_top, pad_bot = 0, 0
-
-    elif (saspect < aspect) or ((saspect == 1) and (aspect >= 1)):  # new vertical image
+    elif (saspect < aspect):  # new vertical image
         new_w = sw
-        new_h = np.round(float(new_w) / aspect).astype(int)
-        pad_vert = float(sh - new_h) / 2
-        pad_top, pad_bot = np.floor(pad_vert).astype(int), np.ceil(pad_vert).astype(int)
+        new_h = round(new_w / aspect)
+        pad_vert = (sh - new_h) / 2
+        pad_top, pad_bot = math.floor(pad_vert), math.ceil(pad_vert)
         pad_left, pad_right = 0, 0
+    else:
+        return cv2.resize(img, (sw, sh), interpolation=interp)
 
     # set pad color
     if len(img.shape) == 3 and not isinstance(padColor, (list, tuple, np.ndarray)): # color image but only one color provided
