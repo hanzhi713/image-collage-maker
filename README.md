@@ -69,18 +69,18 @@ You can either use our pre-built binaries from [release](https://github.com/hanz
 
 **If you need GPU acceleration or need to make [photomosaic videos](#option-3-photomosaic-video), please refer to the [Command line usage](#command-line-usage)**
 
-Binaries can be downloaded from [release](https://github.com/hanzhi713/image-collage-maker/releases). If it is desired, please run the python scripts directly (see section below).
+Binaries can be downloaded from [release](https://github.com/hanzhi713/image-collage-maker/releases).
 
 On Windows and MacOS, my program may be blocked because it is not signed (signing costs money!). Don't worry as there is no security risk. On MacOS or Linux, after downloading the binary, you may need to add executing permission. Open your terminal, go to the file's directory and type
 
 ```bash
-chmod +x ./photomosaic-maker-4.0-macos-x64
+chmod +x ./photomosaic-maker-5.1-macos-x64
 ```
 
 Then you can run from terminal as
 
 ```bash
-./photomosaic-maker-4.0-macos-x64
+./photomosaic-maker-5.1-macos-x64
 ```
 
 ### Running Python script directly
@@ -91,7 +91,7 @@ First, you need Python >= 3.7 with pip. You can install dependencies by running
 pip install -r requirements.txt
 ```
 
-If you want GPU acceleration, you need to install cupy. Consult the [cupy documentation](https://docs.cupy.dev/en/stable/install.html).
+If you want GPU acceleration, you need to install cupy. Please consult the [cupy documentation](https://docs.cupy.dev/en/stable/install.html).
 
 Then, you can either use GUI by running
 
@@ -99,7 +99,13 @@ Then, you can either use GUI by running
 python gui.py
 ```
 
-or you can refer to the command line usage below.  
+If you see errors like `No module named '_tkinter'`, you may need to install tkinter in your system like this (command will vary depending on the OS)
+
+```bash
+sudo apt-get install python3-tk
+```
+
+For command line usage and documentation regarding different photmosaic options, please refer to the section below.
 
 ## Command line usage
 
