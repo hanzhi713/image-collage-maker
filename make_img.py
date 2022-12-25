@@ -239,36 +239,61 @@ def calc_grid_size(rw: int, rh: int, num_imgs: int, shape: Tuple[int, int, int])
     return grid
 
 
-def make_collage(grid: Grid, sorted_imgs: ImgList, rev=False, file=None) -> np.ndarray:
+def make_collage_helper(grid: Grid, sorted_imgs: ImgList, rev=False, ridx=None, cidx=None):
+    # use an array of references to avoid copying individual tiles
+    grid = grid[::-1]
+    tw, th, tc = sorted_imgs[0].shape
+    combined_img = np.ones((grid[0] * th, grid[1] * tw, 4), dtype=np.float32)
+    tile_info = np.full(grid, "background", dtype=str)
+    if ridx is None or cidx is None:
+        pbar = tqdm(desc="[Aligning tiles]", total=len(sorted_imgs), ncols=pbar_ncols)
+        tiles = np.array([None] * len(sorted_imgs), dtype=object)
+        tiles[:] = sorted_imgs
+        tiles.shape = grid
+        if rev:
+            tiles[1::2] = tiles[1::2, ::-1]
+        for i in range(grid[0]):
+            for j in range(grid[1]):
+                combined_img[i * th:(i + 1)*th, j * tw:(j + 1)*tw, :tc] = tiles[i, j]
+                tile_info[i, j] = tiles[i, j].info
+                pbar.update()
+        pbar.close()
+    else:
+        assert not rev
+        for k in tqdm(range(len(ridx)), desc="[Aligning tiles]", ncols=pbar_ncols):
+            i = ridx[k]
+            j = cidx[k]
+            combined_img[i * th:(i + 1)*th, j * tw:(j + 1)*tw, :tc] = sorted_imgs[k]
+            tile_info[i, j] = sorted_imgs[k].info
+    return combined_img, f"Grid dimension: {grid[::-1]}\n" + '\n'.join(tile_info.flatten())
+
+
+# def make_collage_helper_vec(grid: Grid, sorted_imgs: ImgList, rev=False):
+#     combined_img = np.asarray([img.view(np.float32) for img in sorted_imgs])
+#     combined_img.shape = (*grid[::-1], *sorted_imgs[0].shape)
+#     if rev:
+#         combined_img[1::2] = combined_img[1::2, ::-1]
+#     combined_img = combined_img.transpose((0, 2, 1, 3, 4))
+#     combined_img = combined_img.reshape(np.prod(combined_img.shape[:2]), -1, sorted_imgs[0].shape[2])
+#     return combined_img
+
+
+def make_collage(grid: Grid, sorted_imgs: ImgList, rev=False):
     """
     :param grid: grid size
     :param sorted_imgs: list of images sorted in correct position
     :param rev: whether to have opposite alignment for consecutive rows
     :return: a collage
     """
-    print("Aligning images on the grid...", file=file)
     total = np.prod(grid)
     diff = total - len(sorted_imgs)
     if diff > 0:
-        tile_info = f"Grid dimension: {grid}\n" + '\n'.join([img.info for img in sorted_imgs])
         print(f"Note: {diff} transparent tiles will be added to the grid.")
-        for i in range(len(sorted_imgs)): # add alpha channel for all tiles
-            sorted_imgs[i] = cv2.cvtColor(sorted_imgs[i], cv2.COLOR_BGR2BGRA)
-        sorted_imgs.extend([np.zeros_like(sorted_imgs[0])] * diff)
-        tile_info += '\nbackground' * diff
+        sorted_imgs.extend([InfoArray(np.zeros_like(sorted_imgs[0]), 'background')] * diff)
     elif len(sorted_imgs) > total:
         print(f"Note: {len(sorted_imgs) - total} tiles will be dropped from the grid.")
         del sorted_imgs[total:]
-        tile_info = f"Grid dimension: {grid}\n" + '\n'.join([img.info for img in sorted_imgs])
-    else:
-        tile_info = f"Grid dimension: {grid}\n" + '\n'.join([img.info for img in sorted_imgs])
-    combined_img = np.asarray([img.view(np.float32) for img in sorted_imgs])
-    combined_img.shape = (*grid[::-1], *sorted_imgs[0].shape)
-    if rev:
-        combined_img[1::2] = combined_img[1::2, ::-1]
-    combined_img = combined_img.transpose((0, 2, 1, 3, 4))
-    combined_img = combined_img.reshape(np.prod(combined_img.shape[:2]), -1, sorted_imgs[0].shape[2])
-    return combined_img, tile_info
+    return make_collage_helper(grid, sorted_imgs, rev)
 
 
 def alpha_blend(combined_img: np.ndarray, dest_img: np.ndarray, alpha=0.9):
@@ -497,21 +522,11 @@ class MosaicCommon:
         else:
             raise ValueError("Unknown colorspace " + colorspace)
 
-    def combine_imgs(self):
-        self.combined_img = np.asarray([img.view(np.float32) for img in self.imgs])
-
     def make_photomosaic(self, assignment: np.ndarray):
-        grid_assignment = assignment.reshape(self.grid[::-1])
-        combined_img = self.combined_img[grid_assignment, :, : , :].transpose((0, 2, 1, 3, 4))
-        return combined_img.reshape(np.prod(combined_img.shape[:2]), -1, 3), \
-               f"Grid dimension: {self.grid}\n" + '\n'.join([self.imgs[i].info for i in assignment.flatten()])
+        return make_collage_helper(self.grid, [self.imgs[i] for i in assignment])
 
     def make_photomosaic_mask(self, assignment, ridx, cidx):
-        combined_img = np.zeros((*self.grid[::-1], *self.imgs[0].shape[:2], 4), dtype=np.float32)
-        combined_img[ridx, cidx, :, :, :3] = self.combined_img[assignment]
-        combined_img[ridx, cidx, :, :, 3] = 1.0
-        combined_img = combined_img.transpose((0, 2, 1, 3, 4)).reshape(self.grid[1] * self.imgs[0].shape[0], -1, 4)
-        return combined_img, f"Grid dimension: {self.grid}\nTile info not yet supported for masked photomosaic"
+        return make_collage_helper(self.grid, [self.imgs[i] for i in assignment], False, ridx, cidx)
 
     def convert_colorspace(self, img: np.ndarray):
         if self.flag is None:
@@ -629,7 +644,6 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: ImgList, dup=1, colorspace
     print("Grid size:", mos.grid)
 
     mos.imgs_to_flat_blocks(metric)
-    mos.combine_imgs()
     dest_img = cv2.resize(dest_img, thresh_map.shape[::-1], interpolation=cv2.INTER_AREA)
     dest_img = mos.dest_to_flat_blocks_mask(dest_img, ridx, cidx)
     assignment = solve_lap(to_cpu(mos.cdist(dest_img).T), v)
@@ -667,7 +681,6 @@ class MosaicFair(MosaicCommon):
         super().__init__(imgs, colorspace)
         self.compute_block_size(dest_shape, grid)
         self.imgs_to_flat_blocks(metric)
-        self.combine_imgs()
 
     def process_dest_img(self, dest_img: np.ndarray, file=None):
         dest_img = self.dest_to_flat_blocks(strip_alpha(dest_img))
@@ -734,7 +747,6 @@ class MosaicUnfair(MosaicCommon):
                 self.randomize = False
         elif _saliency_enabled:
             self.saliency = cv2.saliency.StaticSaliencyFineGrained_create()
-        self.combine_imgs()
 
     def process_dest_img(self, dest_img: np.ndarray, file=None):
         if self.saliency or self.transparent:
@@ -1172,12 +1184,16 @@ BlendFunc = Callable[[np.ndarray, np.ndarray, int], np.ndarray]
 def process_frame(frame: np.ndarray, mos: MosaicUnfair, blend_func: BlendFunc, blending_level: float, file=None):
     frame = frame * np.float32(1/255.0)
     collage = mos.process_dest_img(frame, file=file)[0]
-    collage = blend_func(collage, frame, 1.0 - blending_level)
+    if blending_level > 0.0:
+        collage = blend_func(collage, frame, 1.0 - blending_level)
     collage *= 255.0
     return collage.astype(np.uint8)
 
 
 def frame_process(mos: MosaicUnfair, blend_func: BlendFunc, blending_level: float, in_q: mp.Queue, out_q: mp.Queue):
+    """
+    Worker function that receives a frame from in_q, compute photomosaic and put it in out_q
+    """
     while True:
         i, frame = in_q.get()
         if i is None:
@@ -1243,7 +1259,9 @@ def main(args):
         sys.stdout = open(os.devnull, "w")
     
     dup = check_dup_valid(args.dup)
-
+    if len(args.dest_img) > 0:
+        assert os.path.isfile(args.dest_img), f"Non existent destination image {args.dest_img}" # early check
+    
     with mp.Pool(max(1, num_process)) as pool:
         imgs = read_images(args.path, args.size, args.recursive, pool, args.resize_opt, args.auto_rotate)
         
@@ -1258,7 +1276,6 @@ def main(args):
                         f.write(tile_info)
             return
 
-    assert os.path.isfile(args.dest_img)
     if args.video:
         assert not (args.salient and not args.unfair), "Sorry, making photomosaic video is unsupported with fair and salient option. "
         assert args.skip_frame >= 1, "skip frame must be at least 1"

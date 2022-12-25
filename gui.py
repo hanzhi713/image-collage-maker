@@ -192,7 +192,7 @@ if __name__ == "__main__":
         if type(img) == tuple:
             img, result_tile_info = img
         result_img = img
-        img = mkg.strip_alpha(img)
+        img = mkg.strip_alpha(img, copy=True)
         width, height = canvas.winfo_width(), canvas.winfo_height()
         img_h, img_w, _ = img.shape
         w, h = limit_wh(img_w, img_h, width, height)
@@ -200,7 +200,7 @@ if __name__ == "__main__":
             img = cv2.resize(img, (w, h), cv2.INTER_AREA)
         if img.dtype != np.uint8:
             assert img.dtype == np.float32
-            img = img * 255
+            img *= 255
             img = img.astype(np.uint8)
         _, data = cv2.imencode(".ppm", img)
         # prevent the image from being garbage-collected
