@@ -67,6 +67,7 @@ def stdout_redirector(stream: io.TextIOBase):
             flag = False
             poll_thread.join()
             os.dup2(copied.fileno(), stdout_fd)  # $ exec >&copied
+            stream.close()
 
 
 class JVOutWrapper:
@@ -104,7 +105,7 @@ class JVOutWrapper:
     def flush(self):
         pass
 
-    def finish(self):
+    def close(self):
         if self.tqdm:
             self.tqdm.n = self.tqdm.total
             self.tqdm.refresh()

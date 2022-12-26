@@ -243,39 +243,35 @@ def make_collage_helper(grid: Grid, sorted_imgs: ImgList, rev=False, ridx=None, 
     # use an array of references to avoid copying individual tiles
     grid = grid[::-1]
     tw, th, tc = sorted_imgs[0].shape
-    combined_img = np.ones((grid[0] * th, grid[1] * tw, 4), dtype=np.float32)
     tile_info = np.full(grid, "background", dtype=str)
     if ridx is None or cidx is None:
-        pbar = tqdm(desc="[Aligning tiles]", total=len(sorted_imgs), ncols=pbar_ncols)
+        combined_img = np.empty((grid[0] * th, grid[1] * tw, 4), dtype=np.uint8)
         tiles = np.array([None] * len(sorted_imgs), dtype=object)
         tiles[:] = sorted_imgs
         tiles.shape = grid
         if rev:
             tiles[1::2] = tiles[1::2, ::-1]
-        for i in range(grid[0]):
-            for j in range(grid[1]):
-                combined_img[i * th:(i + 1)*th, j * tw:(j + 1)*tw, :tc] = tiles[i, j]
-                tile_info[i, j] = tiles[i, j].info
-                pbar.update()
-        pbar.close()
+        
+        for i, j in tqdm(itertools.product(range(grid[0]), range(grid[1])), 
+            desc="[Aligning tiles]", ncols=pbar_ncols, total=np.prod(grid)):
+            tile = tiles[i, j]
+            # if this tile already have an alpha channel, use it
+            if tile.shape[2] == 4:
+                combined_img[i * th:(i + 1)*th, j * tw:(j + 1)*tw] = tile
+            else:
+                combined_img[i * th:(i + 1)*th, j * tw:(j + 1)*tw, :3] = tile
+                combined_img[i * th:(i + 1)*th, j * tw:(j + 1)*tw, 3] = 255
+            tile_info[i, j] = tile.info
     else:
         assert not rev
+        combined_img = np.full((grid[0] * th, grid[1] * tw, 4), [255, 255, 255, 0], dtype=np.uint8)
         for k in tqdm(range(len(ridx)), desc="[Aligning tiles]", ncols=pbar_ncols):
             i = ridx[k]
             j = cidx[k]
             combined_img[i * th:(i + 1)*th, j * tw:(j + 1)*tw, :tc] = sorted_imgs[k]
+            combined_img[i * th:(i + 1)*th, j * tw:(j + 1)*tw, 3] = 255
             tile_info[i, j] = sorted_imgs[k].info
     return combined_img, f"Grid dimension: {grid[::-1]}\n" + '\n'.join(tile_info.flatten())
-
-
-# def make_collage_helper_vec(grid: Grid, sorted_imgs: ImgList, rev=False):
-#     combined_img = np.asarray([img.view(np.float32) for img in sorted_imgs])
-#     combined_img.shape = (*grid[::-1], *sorted_imgs[0].shape)
-#     if rev:
-#         combined_img[1::2] = combined_img[1::2, ::-1]
-#     combined_img = combined_img.transpose((0, 2, 1, 3, 4))
-#     combined_img = combined_img.reshape(np.prod(combined_img.shape[:2]), -1, sorted_imgs[0].shape[2])
-#     return combined_img
 
 
 def make_collage(grid: Grid, sorted_imgs: ImgList, rev=False):
@@ -289,7 +285,8 @@ def make_collage(grid: Grid, sorted_imgs: ImgList, rev=False):
     diff = total - len(sorted_imgs)
     if diff > 0:
         print(f"Note: {diff} transparent tiles will be added to the grid.")
-        sorted_imgs.extend([InfoArray(np.zeros_like(sorted_imgs[0]), 'background')] * diff)
+        sorted_imgs.extend([InfoArray(
+            np.full((*sorted_imgs[0].shape[:2], 4), [255, 255, 255, 0], dtype=np.uint8), 'background')] * diff)
     elif len(sorted_imgs) > total:
         print(f"Note: {len(sorted_imgs) - total} tiles will be dropped from the grid.")
         del sorted_imgs[total:]
@@ -297,49 +294,35 @@ def make_collage(grid: Grid, sorted_imgs: ImgList, rev=False):
 
 
 def alpha_blend(combined_img: np.ndarray, dest_img: np.ndarray, alpha=0.9):
+    if alpha == 1.0:
+        return combined_img
     if dest_img.shape[2] == 4:
-        dest_img = dest_img.copy()
-        dest_img[:, :, :3] *= (1 - alpha)
         dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGRA2BGR)
-        dest_img = cv2.resize(dest_img, combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR)
-        combined_img = combined_img.copy()
-        combined_img[:, :, :3] *= alpha
-        combined_img[:, :, :3] += dest_img
-        return combined_img
-    elif combined_img.shape[2] == 4: # for non transparent dest but transparent photomosaic
-        dest_img = cv2.resize(dest_img * (1 - alpha), combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR)
-        combined_img = combined_img.copy()
-        combined_img[:, :, :3] *= alpha
-        combined_img[:, :, :3] += dest_img
-        return combined_img
-    else:
-        dest_img = cv2.resize(dest_img * (1 - alpha), combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR)
-        dest_img += combined_img * alpha
-        return dest_img
+    dest_img = dest_img * np.float32(1 - alpha)
+    dest_img = cv2.resize(dest_img, combined_img.shape[1::-1])
+    combined_img = combined_img * np.array([alpha, alpha, alpha, 1], dtype=np.float32).reshape(1, 1, 4)
+    combined_img[:, :, :3] += dest_img
+    return combined_img.astype(np.uint8)
 
 
 def brightness_blend(combined_img: np.ndarray, dest_img: np.ndarray, alpha=0.9):
     """
     blend the 2 imgs in the lightness channel (L in HSL)
     """
-    if dest_img.shape[2] == 4 or combined_img.shape[2] == 4:
-        dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2HLS)
-        dest_img[:, :, 1] *= 1 - alpha
-        dest_img = cv2.resize(dest_img, combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR)
-        combined_img_hls = cv2.cvtColor(combined_img[:, :, :3], cv2.COLOR_BGR2HLS)
-        combined_img_hls[:, :, 1] *= alpha
-        combined_img_hls[:, :, 1] += dest_img[:, :, 1]
-        combined_img = combined_img.copy()
-        combined_img[:, :, :3] = cv2.cvtColor(combined_img_hls, cv2.COLOR_HLS2BGR)
+    if alpha == 1.0:
         return combined_img
-    else:
-        dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2HLS)
-        dest_img[:, :, 1] *= 1 - alpha
-        dest_img = cv2.resize(dest_img, combined_img.shape[1::-1], interpolation=cv2.INTER_LINEAR)
-        combined_img = cv2.cvtColor(combined_img, cv2.COLOR_BGR2HLS)
-        combined_img[:, :, 1] *= alpha
-        combined_img[:, :, 1] += dest_img[:, :, 1]
-        return cv2.cvtColor(combined_img, cv2.COLOR_HLS2BGR, dst=combined_img)
+    if dest_img.shape[2] == 4:
+        dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGRA2BGR)
+    dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGR2HLS)
+    dest_l = dest_img[:, :, 1] * np.float32(1 - alpha)
+    dest_l = cv2.resize(dest_l, combined_img.shape[1::-1])
+    combined_img_hls = cv2.cvtColor(combined_img[:, :, :3], cv2.COLOR_BGR2HLS)
+    comb_l = combined_img_hls[:, :, 1] * np.float32(alpha)
+    comb_l += dest_l
+    combined_img_hls[:, :, 1] = comb_l
+    combined_img = combined_img.copy()
+    combined_img[:, :, :3] = cv2.cvtColor(combined_img_hls, cv2.COLOR_HLS2BGR)
+    return combined_img
 
 
 def sort_collage(imgs: ImgList, ratio: Grid, sort_method="pca_lab", rev_sort=False) -> Tuple[Grid, np.ndarray]:
@@ -375,7 +358,6 @@ def solve_lap(cost_matrix: np.ndarray, v=-1):
     wrapper = JVOutWrapper(v, pbar_ncols)
     with stdout_redirector(wrapper):
         _, cols, cost = lapjv(cost_matrix, verbose=1)
-        wrapper.finish()
     cost = cost[0]
     print("Total assignment cost:", cost)
     return cols
@@ -413,7 +395,7 @@ def compute_block_map(thresh_map: np.ndarray, block_width: int, block_height: in
     height, width = thresh_map.shape
     dst_size = (width - width % block_width, height - height % block_height)
     if thresh_map.shape[::-1] != dst_size:
-        thresh_map = cv2.resize(thresh_map, dst_size, interpolation=cv2.INTER_AREA)
+        thresh_map = cv2.resize(thresh_map, dst_size)
     row_idx, col_idx = np.nonzero(thresh_map.reshape(
         dst_size[1] // block_height, block_height, dst_size[0] // block_width, block_width).max(axis=(1, 3)) >= lower_thresh
     )
@@ -464,17 +446,15 @@ def _other(A, B, dist_func, row_stride):
     return dist_mat
 
 
-def strip_alpha(dest_img: np.ndarray, copy=False) -> np.ndarray:
+def strip_alpha(dest_img: np.ndarray) -> np.ndarray:
     if dest_img.shape[2] == 4:
         return cv2.cvtColor(dest_img, cv2.COLOR_BGRA2BGR)
-    if copy:
-        return dest_img.copy()
     return dest_img
 
 
 def thresh_map_transp(dest_img: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     assert dest_img.shape[2] == 4, "You need an image with transparent background to do this"
-    return cv2.cvtColor(dest_img, cv2.COLOR_BGRA2BGR), dest_img[:, :, 3] > 0.0
+    return strip_alpha(dest_img), dest_img[:, :, 3] > 0.0
 
 
 class CachedCDist:
@@ -554,10 +534,11 @@ class MosaicCommon:
         print(f"Resizing dest image from {dest_shape[1]}x{dest_shape[0]} to {self.target_sz[0]}x{self.target_sz[1]}")
 
     def imgs_to_flat_blocks(self, metric: str):
-        img_keys = np.zeros((len(self.imgs), self.block_height, self.block_width, 3), dtype=np.float32)
+        img_keys = np.zeros((len(self.imgs), self.block_height, self.block_width, 3), dtype=np.uint8)
         for i in range(len(self.imgs)):
-            cv2.resize(self.imgs[i], (self.block_width, self.block_height), dst=img_keys[i], interpolation=cv2.INTER_AREA)
+            cv2.resize(self.imgs[i], (self.block_width, self.block_height), dst=img_keys[i])
         img_keys.shape = (-1, self.block_width, 3)
+        img_keys = img_keys * np.float32(1 / 255.0)
         self.convert_colorspace(img_keys)
         img_keys.shape = (-1, self.flat_block_size)
         img_keys = cp.asarray(img_keys)
@@ -566,13 +547,15 @@ class MosaicCommon:
         return img_keys
 
     def dest_to_flat_blocks(self, dest_img: np.ndarray):
-        dest_img = cv2.resize(dest_img, self.target_sz, interpolation=cv2.INTER_LINEAR)
+        dest_img = cv2.resize(dest_img, self.target_sz)
+        dest_img = dest_img * np.float32(1 / 255.0)
         self.convert_colorspace(dest_img)
         dest_img = cp.asarray(dest_img)
         dest_img.shape = (self.grid[1], self.block_height, self.grid[0], self.block_width, 3)
         return dest_img.transpose((0, 2, 1, 3, 4)).reshape(-1, self.flat_block_size)
 
     def dest_to_flat_blocks_mask(self, dest_img: np.ndarray, ridx: np.ndarray, cidx: np.ndarray):
+        dest_img = dest_img * np.float32(1 / 255.0)
         self.convert_colorspace(dest_img)
         dest_img.shape = (self.grid[1], self.block_height, self.grid[0], self.block_width, 3)
         dest_img = dest_img[ridx, :, cidx, :, :]
@@ -602,7 +585,7 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: ImgList, dup=1, colorspace
         lower_thresh = 0.5
     else:
         dest_img = strip_alpha(dest_img)
-        _, orig_thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((dest_img * 255).astype(np.uint8))
+        _, orig_thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency(dest_img)
     
     bh_f = height / grid[1]
     bw_f = width / grid[0]
@@ -644,7 +627,7 @@ def calc_salient_col_even(dest_img: np.ndarray, imgs: ImgList, dup=1, colorspace
     print("Grid size:", mos.grid)
 
     mos.imgs_to_flat_blocks(metric)
-    dest_img = cv2.resize(dest_img, thresh_map.shape[::-1], interpolation=cv2.INTER_AREA)
+    dest_img = cv2.resize(dest_img, thresh_map.shape[::-1])
     dest_img = mos.dest_to_flat_blocks_mask(dest_img, ridx, cidx)
     assignment = solve_lap(to_cpu(mos.cdist(dest_img).T), v)
     print("Time taken: {}s".format((np.round(time.time() - t, 2))))
@@ -750,9 +733,10 @@ class MosaicUnfair(MosaicCommon):
 
     def process_dest_img(self, dest_img: np.ndarray, file=None):
         if self.saliency or self.transparent:
-            dest_img = cv2.resize(dest_img, self.target_sz, interpolation=cv2.INTER_LINEAR)
+            dest_img = cv2.resize(dest_img, self.target_sz)
             if self.saliency:
-                _, thresh_map = self.saliency.computeSaliency((dest_img * 255).astype(np.uint8))
+                dest_img = strip_alpha(dest_img)
+                _, thresh_map = self.saliency.computeSaliency(dest_img)
             else:
                 dest_img, thresh_map = thresh_map_transp(dest_img)
             ridx, cidx, thresh_map = compute_block_map(thresh_map, self.block_width, self.block_height, self.lower_thresh)
@@ -889,8 +873,6 @@ class MosaicUnfair(MosaicCommon):
 
 def imwrite(filename: str, img: np.ndarray) -> None:
     ext = os.path.splitext(filename)[1]
-    if img.dtype != np.uint8:
-        img = (img * 255).astype(np.uint8)
     result, n = cv2.imencode(ext, img)
     assert result, "Error saving the collage"
     n.tofile(filename)
@@ -918,7 +900,7 @@ def get_size(img):
 
 
 def get_size_slow(filename: str):
-    img = imread_uint8(filename)
+    img = imread(filename)
     if img is None:
         return 0, 0
     return img.shape[1::-1]
@@ -982,7 +964,7 @@ def read_images(pic_path: str, img_size: List[int], recursive, pool: mp.Pool, fl
     return result
 
 
-def imread_uint8(filename: str, flag=cv2.IMREAD_COLOR) -> np.ndarray:
+def imread(filename: str, flag=cv2.IMREAD_COLOR) -> np.ndarray:
     """
     like cv2.imread, but can read images whose path contain unicode characters
     """
@@ -990,15 +972,6 @@ def imread_uint8(filename: str, flag=cv2.IMREAD_COLOR) -> np.ndarray:
     if not f.size:
         return None
     return cv2.imdecode(f, flag)
-
-
-def imread(filename: str, flag=cv2.IMREAD_COLOR) -> np.ndarray:
-    img = imread_uint8(filename, flag)
-    if img is None:
-        return None
-    img = img.astype(np.float32)
-    img *= 1 / 255.0
-    return img
 
 
 def read_img_center(args: Tuple[str, Tuple[int, int], int]):
@@ -1029,7 +1002,7 @@ def read_img_center(args: Tuple[str, Tuple[int, int], int]):
     img = img[:, margin:w - margin + add, :]
     if cond:
         img = img.transpose((1, 0, 2))
-    return InfoArray(cv2.resize(img, img_size, interpolation=cv2.INTER_AREA), img_file)
+    return InfoArray(cv2.resize(img, img_size), img_file)
 
 
 def read_img_other(args: Tuple[str, Tuple[int, int], int]):
@@ -1043,19 +1016,12 @@ def read_img_other(args: Tuple[str, Tuple[int, int], int]):
         h, w, _ = img.shape
         if abs(h / w - ratio) < abs(w / h - ratio):
             img = np.rot90(img, k=rot)
-    return InfoArray(cv2.resize(img, img_size, interpolation=cv2.INTER_AREA), img_file)
+    return InfoArray(cv2.resize(img, img_size), img_file)
 
 def resizeAndPad(img, size, padColor=1.0):
 
     h, w = img.shape[:2]
     sw, sh = size
-
-    # interpolation method
-    if h > sh or w > sw: # shrinking image
-        interp = cv2.INTER_AREA
-
-    else: # stretching image
-        interp = cv2.INTER_CUBIC
 
     # aspect ratio of image
     aspect = w / h 
@@ -1074,14 +1040,14 @@ def resizeAndPad(img, size, padColor=1.0):
         pad_top, pad_bot = math.floor(pad_vert), math.ceil(pad_vert)
         pad_left, pad_right = 0, 0
     else:
-        return cv2.resize(img, (sw, sh), interpolation=interp)
+        return cv2.resize(img, (sw, sh))
 
     # set pad color
     if len(img.shape) == 3 and not isinstance(padColor, (list, tuple, np.ndarray)): # color image but only one color provided
         padColor = [padColor]*3
 
     # scale and pad
-    scaled_img = cv2.resize(img, (new_w, new_h), interpolation=interp)
+    scaled_img = cv2.resize(img, (new_w, new_h))
     scaled_img = cv2.copyMakeBorder(scaled_img, pad_top, pad_bot, pad_left, pad_right, borderType=cv2.BORDER_CONSTANT, value=padColor)
 
     return scaled_img
@@ -1182,12 +1148,10 @@ BlendFunc = Callable[[np.ndarray, np.ndarray, int], np.ndarray]
 
 
 def process_frame(frame: np.ndarray, mos: MosaicUnfair, blend_func: BlendFunc, blending_level: float, file=None):
-    frame = frame * np.float32(1/255.0)
     collage = mos.process_dest_img(frame, file=file)[0]
     if blending_level > 0.0:
         collage = blend_func(collage, frame, 1.0 - blending_level)
-    collage *= 255.0
-    return collage.astype(np.uint8)
+    return collage
 
 
 def frame_process(mos: MosaicUnfair, blend_func: BlendFunc, blending_level: float, in_q: mp.Queue, out_q: mp.Queue):
@@ -1287,13 +1251,11 @@ def main(args):
         dest_shape = frame.shape
     else:
         dest_img = imread(args.dest_img, cv2.IMREAD_UNCHANGED)
-        dest_shape = dest_img.shape
         if args.transparent:
-            assert dest_shape[2] == 4, "--transparent flag can only be used for images with transparent background!"
-        if dest_shape[2] == 4 and not args.transparent:
+            assert dest_img.shape[2] == 4, "--transparent flag can only be used for images with transparent background!"
+        if dest_img.shape[2] == 4 and not args.transparent:
             print("Note: alpha channel detected. If you like to perform transparency masking, add the --transparent flag.")
-            dest_img = strip_alpha(dest_img)
-            dest_shape = dest_img.shape
+        dest_shape = dest_img.shape
     
     if args.gpu:
         enable_gpu()

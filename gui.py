@@ -192,16 +192,13 @@ if __name__ == "__main__":
         if type(img) == tuple:
             img, result_tile_info = img
         result_img = img
-        img = mkg.strip_alpha(img, copy=True)
         width, height = canvas.winfo_width(), canvas.winfo_height()
         img_h, img_w, _ = img.shape
-        w, h = limit_wh(img_w, img_h, width, height)
+        img = mkg.strip_alpha(img)
         if img_h > height or img_w > width:
-            img = cv2.resize(img, (w, h), cv2.INTER_AREA)
-        if img.dtype != np.uint8:
-            assert img.dtype == np.float32
-            img *= 255
-            img = img.astype(np.uint8)
+            print("Resizing image to display it on GUI...")
+            w, h = limit_wh(img_w, img_h, width, height)
+            img = cv2.resize(img, (w, h))
         _, data = cv2.imencode(".ppm", img)
         # prevent the image from being garbage-collected
         root.preview = PhotoImage(data=data.tobytes())
@@ -651,9 +648,12 @@ if __name__ == "__main__":
         if dest_img is not None:
             lower_thresh = saliency_thresh_scale.get() / 100
             assert 0.0 <= lower_thresh <= 1.0
-            tmp_dest_img = mkg.strip_alpha(dest_img, copy=True)
-            _, thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency((tmp_dest_img * 255).astype(np.uint8))
-            tmp_dest_img[thresh_map < lower_thresh] = np.asarray((1.0, 1.0, 1.0), dtype=np.float32)
+            if dest_img.shape[2] == 4:
+                tmp_dest_img = cv2.cvtColor(dest_img, cv2.COLOR_BGRA2BGR)
+            else:
+                tmp_dest_img = dest_img.copy()
+            _, thresh_map = cv2.saliency.StaticSaliencyFineGrained_create().computeSaliency(tmp_dest_img)
+            tmp_dest_img[thresh_map < lower_thresh] = 255
             show_img(tmp_dest_img, False)
     
     # right collage option panel ROW 14
