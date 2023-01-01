@@ -239,10 +239,10 @@ def calc_grid_size(rw: int, rh: int, num_imgs: int, shape: Tuple[int, int, int])
     return grid
 
 
-def make_collage_helper(grid: Grid, sorted_imgs: ImgList, rev=False, ridx=None, cidx=None):
+def make_collage_helper(grid: Grid, sorted_imgs: ImgList, rev=False, ridx=None, cidx=None, file=None):
     # use an array of references to avoid copying individual tiles
     grid = grid[::-1]
-    tw, th, tc = sorted_imgs[0].shape
+    th, tw, tc = sorted_imgs[0].shape
     tile_info = np.full(grid, "background", dtype=str)
     if ridx is None or cidx is None:
         combined_img = np.empty((grid[0] * th, grid[1] * tw, 4), dtype=np.uint8)
@@ -253,7 +253,7 @@ def make_collage_helper(grid: Grid, sorted_imgs: ImgList, rev=False, ridx=None, 
             tiles[1::2] = tiles[1::2, ::-1]
         
         for i, j in tqdm(itertools.product(range(grid[0]), range(grid[1])), 
-            desc="[Aligning tiles]", ncols=pbar_ncols, total=np.prod(grid)):
+            desc="[Aligning tiles]", ncols=pbar_ncols, total=np.prod(grid), file=file):
             tile = tiles[i, j]
             # if this tile already have an alpha channel, use it
             if tile.shape[2] == 4:
@@ -265,7 +265,7 @@ def make_collage_helper(grid: Grid, sorted_imgs: ImgList, rev=False, ridx=None, 
     else:
         assert not rev
         combined_img = np.full((grid[0] * th, grid[1] * tw, 4), [255, 255, 255, 0], dtype=np.uint8)
-        for k in tqdm(range(len(ridx)), desc="[Aligning tiles]", ncols=pbar_ncols):
+        for k in tqdm(range(len(ridx)), desc="[Aligning tiles]", ncols=pbar_ncols, file=file):
             i = ridx[k]
             j = cidx[k]
             combined_img[i * th:(i + 1)*th, j * tw:(j + 1)*tw, :tc] = sorted_imgs[k]
@@ -502,11 +502,11 @@ class MosaicCommon:
         else:
             raise ValueError("Unknown colorspace " + colorspace)
 
-    def make_photomosaic(self, assignment: np.ndarray):
-        return make_collage_helper(self.grid, [self.imgs[i] for i in assignment])
+    def make_photomosaic(self, assignment: np.ndarray, file=None):
+        return make_collage_helper(self.grid, [self.imgs[i] for i in assignment], file=file)
 
-    def make_photomosaic_mask(self, assignment, ridx, cidx):
-        return make_collage_helper(self.grid, [self.imgs[i] for i in assignment], False, ridx, cidx)
+    def make_photomosaic_mask(self, assignment: np.ndarray, ridx: np.ndarray, cidx: np.ndarray, file=None):
+        return make_collage_helper(self.grid, [self.imgs[i] for i in assignment], False, ridx, cidx, file=file)
 
     def convert_colorspace(self, img: np.ndarray):
         if self.flag is None:
@@ -867,8 +867,8 @@ class MosaicUnfair(MosaicCommon):
 
         assignment = to_cpu(assignment)
         if self.saliency or self.transparent:
-            return self.make_photomosaic_mask(assignment, ridx, cidx)
-        return self.make_photomosaic(assignment)
+            return self.make_photomosaic_mask(assignment, ridx, cidx, file=file)
+        return self.make_photomosaic(assignment, file=file)
 
 
 def imwrite(filename: str, img: np.ndarray) -> None:
@@ -878,17 +878,17 @@ def imwrite(filename: str, img: np.ndarray) -> None:
     n.tofile(filename)
 
 
-def save_img(img: np.ndarray, path: str, suffix: str) -> None:
+def save_img(img: np.ndarray, path: str, suffix: str, file=None) -> None:
     if len(path) == 0:
         path = "result.png"
 
     if len(suffix) == 0:
-        print("Saving to", path)
+        print("Saving to", path, file=file)
         imwrite(path, img)
     else:
         file_path, ext = os.path.splitext(path)
-        path = file_path + "_{}".format(suffix) + "." + ext
-        print("Saving to", path)
+        path = f'{file_path}{suffix}{ext}'
+        print("Saving to", path, file=file)
         imwrite(path, img)
 
 
@@ -1154,15 +1154,18 @@ def process_frame(frame: np.ndarray, mos: MosaicUnfair, blend_func: BlendFunc, b
     return collage
 
 
-def frame_process(mos: MosaicUnfair, blend_func: BlendFunc, blending_level: float, in_q: mp.Queue, out_q: mp.Queue):
+def frame_process(mos: MosaicUnfair, blend_func: BlendFunc, blending_level: float, path: str, in_q: mp.Queue, out_q: mp.Queue):
     """
     Worker function that receives a frame from in_q, compute photomosaic and put it in out_q
     """
-    while True:
-        i, frame = in_q.get()
-        if i is None:
-            break
-        out_q.put((i, process_frame(frame, mos, blend_func, blending_level)))
+    with open(os.devnull, "w") as null:
+        while True:
+            i, frame = in_q.get()
+            if i is None:
+                break
+            out = process_frame(frame, mos, blend_func, blending_level)
+            save_img(out, path, f".{i}", file=null)
+            out_q.put(i)
 
 
 def enable_gpu(show_warning=True):
@@ -1217,8 +1220,8 @@ def main(args):
         folder, file_name = os.path.split(args.out)
         if len(folder) > 0:
             assert os.path.isdir(folder), "The output path {} does not exist!".format(folder)
-        # ext = os.path.splitext(file_name)[-1]
-        # assert ext.lower() == ".jpg" or ext.lower() == ".png", "The file extension must be .jpg or .png"
+        ext = os.path.splitext(file_name)[-1].lower()
+        assert ext == ".jpg" or ext == ".png" or ext == ".jpeg", "The file extension must be .jpg, .jpeg or .png"
     if args.quiet:
         sys.stdout = open(os.devnull, "w")
     
@@ -1291,50 +1294,39 @@ def main(args):
         th, tw, _ = mos.imgs[0].shape
         res = (tw * mos.grid[0], th * mos.grid[1])
         print("Photomosaic video resolution:", res)
-        video_writer = cv2.VideoWriter(args.out, cv2.VideoWriter_fourcc(*"mp4v"), dest_video.get(cv2.CAP_PROP_FPS) / args.skip_frame, res)
         frames_gen = frame_generator(ret, frame, dest_video, args.skip_frame)
         if args.gpu:
             with open(os.devnull, "w") as null:
-                for frame in tqdm(frames_gen, desc="[Computing frames]", unit="frame"):
-                    video_writer.write(process_frame(frame, mos, blend_func, args.blending_level, null))
+                for idx, frame in tqdm(enumerate(frames_gen), desc="[Computing frames]", unit="frame"):
+                    out = process_frame(frame, mos, blend_func, args.blending_level, null)
+                    save_img(out, args.out, f".{idx}", file=null)
         else:
-            in_q = mp.Queue(1)
+            in_q = mp.Queue()
             out_q = mp.Queue()
             processes = []
             for i in range(num_process):
-                p = mp.Process(target=frame_process, args=(mos, blend_func, args.blending_level, in_q, out_q)) 
+                p = mp.Process(target=frame_process, args=(mos, blend_func, args.blending_level, args.out, in_q, out_q)) 
                 p.start()
                 processes.append(p)
 
-            last_frame = 0
-            buffer = dict()
-            pbar = tqdm(desc="[Computing frames]", unit="frame")
+            with tqdm(desc="[Computing frames]", unit="frame") as pbar:
+                for i, frame in enumerate(frames_gen):
+                    in_q.put((i, frame))
+                    if not out_q.empty():
+                        out_q.get()
+                        pbar.update()
 
-            def check_queue():
-                nonlocal last_frame
-                while not out_q.empty():
-                    fid, collage = out_q.get()
-                    buffer[fid] = collage
-                while last_frame in buffer:
-                    collage = buffer[last_frame]
-                    del buffer[last_frame]
-                    last_frame += 1
-                    video_writer.write(collage)
+                while pbar.n <= i:
+                    out_q.get()
                     pbar.update()
 
-            for i, frame in enumerate(frames_gen):
-                in_q.put((i, frame))
-                check_queue()
-            while last_frame <= i:
-                check_queue()
-                
             for p in processes:
                 in_q.put((None, None))
+
             for p in processes:
                 p.join()
         
         frames_gen.close()
-        video_writer.release()
     else:
         collage, tile_info = mos.process_dest_img(dest_img)
         collage = blend_func(collage, dest_img, 1.0 - args.blending_level)
