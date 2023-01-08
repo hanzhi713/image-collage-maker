@@ -91,6 +91,12 @@ First, you need Python >= 3.7 with pip. You can install dependencies by running
 pip install -r requirements.txt
 ```
 
+Note: if have problems installing the packages due to missing dependencies, you can use this command (on Linux) to install them one by one. 
+
+```bash
+cat requirements.txt | xargs -n 1 pip install
+```
+
 If you want GPU acceleration, you need to install cupy. Please consult the [cupy documentation](https://docs.cupy.dev/en/stable/install.html).
 
 Then, you can either use GUI by running
