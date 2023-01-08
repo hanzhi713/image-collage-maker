@@ -240,18 +240,20 @@ def calc_grid_size(rw: int, rh: int, num_imgs: int, shape: Tuple[int, int, int])
 
 
 def make_collage_helper(grid: Grid, sorted_imgs: ImgList, rev=False, ridx=None, cidx=None, file=None):
-    # use an array of references to avoid copying individual tiles
     grid = grid[::-1]
     th, tw, tc = sorted_imgs[0].shape
     tile_info = np.full(grid, "background", dtype=str)
     if ridx is None or cidx is None:
         combined_img = np.empty((grid[0] * th, grid[1] * tw, 4), dtype=np.uint8)
+        # use an array of references to avoid copying individual tiles
         tiles = np.array([None] * len(sorted_imgs), dtype=object)
         tiles[:] = sorted_imgs
         tiles.shape = grid
         if rev:
             tiles[1::2] = tiles[1::2, ::-1]
         
+        # while we can use a few lines of transpose + reshape to do this, 
+        # we just use an ordinary for loop in order to show the progress
         for i, j in tqdm(itertools.product(range(grid[0]), range(grid[1])), 
             desc="[Aligning tiles]", ncols=pbar_ncols, total=np.prod(grid), file=file):
             tile = tiles[i, j]
