@@ -896,7 +896,8 @@ def save_img(img: np.ndarray, path: str, suffix: str, file=None) -> None:
 
 def get_size(img):
     try:
-        return imagesize.get(img)
+        w, h = imagesize.get(img)
+        return int(w), int(h)
     except:
         return 0, 0
 
@@ -912,7 +913,7 @@ def infer_size(pool: Type[mp.Pool], files: List[str], infer_func: Callable[[str]
     sizes = defaultdict(int)
     for w, h in tqdm(pool.imap_unordered(infer_func, files, chunksize=64), 
         total=len(files), desc=f"[Inferring size ({i_type})]", ncols=pbar_ncols):
-        if h == 0: # skip zero size images
+        if w == 0 or h == 0: # skip zero size images
             continue
         sizes[Fraction(w, h)] += 1
     sizes = [(args[1], args[0].numerator / args[0].denominator) for args in sizes.items()]
@@ -970,10 +971,13 @@ def imread(filename: str, flag=cv2.IMREAD_COLOR) -> np.ndarray:
     """
     like cv2.imread, but can read images whose path contain unicode characters
     """
-    f = np.fromfile(filename, np.uint8)
-    if not f.size:
+    try:
+        f = np.fromfile(filename, np.uint8)
+        if not f.size:
+            return None
+        return cv2.imdecode(f, flag)
+    except:
         return None
-    return cv2.imdecode(f, flag)
 
 
 def read_img_center(args: Tuple[str, Tuple[int, int], int]):
@@ -1165,7 +1169,7 @@ def frame_process(mos: MosaicUnfair, blend_func: BlendFunc, blending_level: floa
             i, frame = in_q.get()
             if i is None:
                 break
-            out = process_frame(frame, mos, blend_func, blending_level)
+            out = process_frame(frame, mos, blend_func, blending_level, file=null)
             save_img(out, path, f".{i}", file=null)
             out_q.put(i)
 
@@ -1301,7 +1305,7 @@ def main(args):
             with open(os.devnull, "w") as null:
                 for idx, frame in tqdm(enumerate(frames_gen), desc="[Computing frames]", unit="frame"):
                     out = process_frame(frame, mos, blend_func, args.blending_level, null)
-                    save_img(out, args.out, f".{idx}", file=null)
+                    save_img(out, args.out, f"_{idx}", file=null)
         else:
             in_q = mp.Queue()
             out_q = mp.Queue()

@@ -258,8 +258,10 @@ Note that dithering is **not supported** in fair mode, when randomization is ena
 It is possible to make a photomosaic video simply by repeating the methods listed in Option 2 to every certain frame (specified by `--skip_frame`) of the video. You can pass the path of the video with `--dest_img` and add the `--video` flag to tell the program it is a video. This is much faster than processing the video manually frame by frame (e.g. pass different `dest_img` each time), because a lot of information is cached and can be reused between frames. Example:
 
 ```bash
-python make_img.py --path img/catsdogs --dest_img img/2out.mp4 --size 20 --unfair --max_width 100 --freq_mul 2 --out v_freq_2.mp4 --gpu --video --skip_frame 2
+python make_img.py --path img/catsdogs --dest_img img/2out.mp4 --size 20 --unfair --max_width 100 --freq_mul 2 --out tests/video/frame.png --gpu --video --skip_frame 2
 ```
+
+Since photomosaic version 5.2, the output will be uncompressed individual frames rather than a video. This allows users to use custom video encoding format. 
 
 Do note that some options are not supported, and some options are slower than other. Generally, saliency is not recommended to use on videos due to its long computational time and difficulty to tune. Each frame might need its own threshold. 
 
