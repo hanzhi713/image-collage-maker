@@ -99,7 +99,7 @@ cat requirements.txt | xargs -n 1 pip install
 
 If you want GPU acceleration, you need to install cupy. Please consult the [cupy documentation](https://docs.cupy.dev/en/stable/install.html).
 
-Then, you can either use GUI by running
+Then, you can either use the GUI by running or refer to the commandline usage.
 
 ```bash
 python gui.py
@@ -305,43 +305,47 @@ For command line, GPU acceleration can be enabled with the `--gpu` flag. For GUI
 ```
 $ python make_img.py --help
 usage: make_img.py [-h] [--path PATH] [--recursive] [--num_process NUM_PROCESS] [--out OUT] [--size SIZE [SIZE ...]]
-                   [--quiet] [--auto_rotate {-1,0,1}] [--resize_opt {center,stretch}] [--gpu] [--mem_limit MEM_LIMIT]        
-                   [--tile_info_out TILE_INFO_OUT] [--ratio RATIO RATIO] [--sort {none,bgr_sum,av_hue,av_sat,av_lum,rand}]   
-                   [--rev_row] [--rev_sort] [--dest_img DEST_IMG] [--colorspace {hsv,hsl,bgr,lab,luv}]
-                   [--metric {euclidean,cityblock,chebyshev,cosine}] [--transparent] [--unfair] [--max_width MAX_WIDTH]      
-                   [--freq_mul FREQ_MUL] [--dither] [--deterministic] [--dup DUP] [--salient] [--lower_thresh LOWER_THRESH]  
-                   [--blending {alpha,brightness}] [--blending_level BLENDING_LEVEL] [--video] [--skip_frame SKIP_FRAME]     
-                   [--exp]
+                   [--quiet] [--auto_rotate {-1,0,1}] [--resize_opt {center,stretch,fit}] [--gpu]
+                   [--mem_limit MEM_LIMIT] [--tile_info_out TILE_INFO_OUT] [--ratio RATIO RATIO]
+                   [--sort {none,bgr_sum,av_hue,av_sat,av_lum,rand}] [--rev_row] [--rev_sort] [--dest_img DEST_IMG] 
+                   [--colorspace {hsv,hsl,bgr,lab,luv}] [--metric {euclidean,cityblock,chebyshev,cosine}]
+                   [--transparent] [--unfair] [--max_width MAX_WIDTH] [--freq_mul FREQ_MUL] [--dither]
+                   [--deterministic] [--dup DUP] [--salient] [--lower_thresh LOWER_THRESH]
+                   [--blending {alpha,brightness}] [--blending_level BLENDING_LEVEL] [--video]
+                   [--skip_frame SKIP_FRAME] [--exp]
 
 optional arguments:
   -h, --help            show this help message and exit
-  --path PATH           Path to the tiles (default: )
+  --path PATH           Path to the tiles (default: None)
   --recursive           Whether to read the sub-folders for the specified path (default: False)
   --num_process NUM_PROCESS
                         Number of processes to use for parallelizable operations (default: 8)
   --out OUT             The filename of the output collage/photomosaic (default: result.png)
   --size SIZE [SIZE ...]
-                        Width and height of each tile in pixels in the resulting collage/photomosaic. If two numbers are     
-                        specified, they are treated as width and height. If one number is specified, the number is treated as
-                        the widthand the height is inferred from the aspect ratios of the images provided. (default: (50,))  
+                        Width and height of each tile in pixels in the resulting collage/photomosaic. If two numbers   
+                        are specified, they are treated as width and height. If one number is specified, the number    
+                        is treated as the width and the height is inferred from the aspect ratios of the images        
+                        provided. (default: (50,))
   --quiet               Do not print progress message to console (default: False)
   --auto_rotate {-1,0,1}
-                        Options to auto rotate tiles to best match the specified tile size. 0: do not auto rotate. 1: attempt
-                        to rotate counterclockwise by 90 degrees. -1: attempt to rotate clockwise by 90 degrees (default: 0) 
-  --resize_opt {center,stretch}
-                        How to resize each tile so they become square images. Center: crop a square in the center. Stretch:    
-                        stretch the tile (default: center)
-  --gpu                 Use GPU acceleration. Requires cupy to be installed and a capable GPU. Note that USUALLY this is       
-                        useful when you: 1. only have few cpu cores, and 2. have a lot of tiles (typically > 10000) 3. and     
-                        are using the unfair mode. Also note: enabling GPU acceleration will disable multiprocessing on CPU    
-                        for videos (default: False)
+                        Options to auto rotate tiles to best match the specified tile size. 0: do not auto rotate. 1:  
+                        attempt to rotate counterclockwise by 90 degrees. -1: attempt to rotate clockwise by 90        
+                        degrees (default: 0)
+  --resize_opt {center,stretch,fit}
+                        How to resize each tile so they have the desired aspect ratio and size, which can be
+                        specified fully or partially by --size. Center: crop the largest rectangle from the center.    
+                        Stretch: stretch the tile. Fit: pad the tiles with white background (default: center)
+  --gpu                 Use GPU acceleration. Requires cupy to be installed and a capable GPU. Note that USUALLY this  
+                        is useful when you: 1. have a lot of tiles (typically > 10000), and2. are using the unfair     
+                        mode, and3. (for photomosaic videos only) only have few cpu coresAlso note: enabling GPU       
+                        acceleration will disable multiprocessing on CPU for videos (default: False)
   --mem_limit MEM_LIMIT
-                        The APPROXIMATE memory limit in MB when computing a photomosaic in unfair mode. Applicable both CPU    
-                        and GPU computing. If you run into memory issues when using GPU, try reduce this memory limit
-                        (default: 4096)
+                        The APPROXIMATE memory limit in MB when computing a photomosaic in unfair mode. Applicable     
+                        both CPU and GPU computing. If you run into memory issues when using GPU, try reduce this      
+                        memory limit (default: 4096)
   --tile_info_out TILE_INFO_OUT
-                        Path to save the list of tile filenames for the collage/photomosaic. If empty, it will not be saved.   
-                        (default: )
+                        Path to save the list of tile filenames for the collage/photomosaic. If empty, it will not be  
+                        saved. (default: )
   --ratio RATIO RATIO   Aspect ratio of the output image (default: (16, 9))
   --sort {none,bgr_sum,av_hue,av_sat,av_lum,rand}
                         Sort method to use (default: bgr_sum)
@@ -351,27 +355,33 @@ optional arguments:
   --colorspace {hsv,hsl,bgr,lab,luv}
                         The colorspace used to calculate the metric (default: lab)
   --metric {euclidean,cityblock,chebyshev,cosine}
-                        Distance metric used when evaluating the distance between two color vectors (default: euclidean)       
-  --transparent         Enable transparency masking. The transparent regions of the destination image will be maintained in    
-                        the photomosaicCannot be used together with --salient (default: False)
-  --unfair              Whether to allow each tile to be used different amount of times (unfair tile usage). (default: False)  
+                        Distance metric used when evaluating the distance between two color vectors (default:
+                        euclidean)
+  --transparent         Enable transparency masking. The transparent regions of the destination image will be
+                        maintained in the photomosaicCannot be used together with --salient (default: False)
+  --unfair              Whether to allow each tile to be used different amount of times (unfair tile usage).
+                        (default: False)
   --max_width MAX_WIDTH
-                        Maximum width of the collage. This option is only valid if unfair option is enabled (default: 80)      
-  --freq_mul FREQ_MUL   Frequency multiplier to balance tile fairless and mosaic quality. Minimum: 0. More weight will be put  
-                        on tile fairness when this number increases. (default: 0.0)
-  --dither              Whether to enabled dithering. You must also specify --deterministic if enabled. (default: False)       
-  --deterministic       Do not randomize the tiles. This option is only valid if unfair option is enabled (default: False)     
-  --dup DUP             If a positive integer: duplicate the set of tiles by how many times. Can be a fraction (default: 1)    
+                        Maximum width of the collage. This option is only valid if unfair option is enabled (default:  
+                        80)
+  --freq_mul FREQ_MUL   Frequency multiplier to balance tile fairless and mosaic quality. Minimum: 0. More weight      
+                        will be put on tile fairness when this number increases. (default: 0.0)
+  --dither              Whether to enabled dithering. You must also specify --deterministic if enabled. (default:      
+                        False)
+  --deterministic       Do not randomize the tiles. This option is only valid if unfair option is enabled (default:    
+                        False)
+  --dup DUP             If a positive integer: duplicate the set of tiles by how many times. Can be a fraction
+                        (default: 1)
   --salient             Make photomosaic for salient objects only (default: False)
   --lower_thresh LOWER_THRESH
-                        The threshold for saliency detection, between 0.0 (no object area = blank) and 1.0 (maximum object     
-                        area = original image) (default: 0.5)
+                        The threshold for saliency detection, between 0.0 (no object area = blank) and 1.0 (maximum    
+                        object area = original image) (default: 0.5)
   --blending {alpha,brightness}
-                        The types of blending used. alpha: alpha (transparency) blending. Brightness: blending of brightness   
-                        (lightness) channel in the HSL colorspace (default: alpha)
+                        The types of blending used. alpha: alpha (transparency) blending. Brightness: blending of      
+                        brightness (lightness) channel in the HSL colorspace (default: alpha)
   --blending_level BLENDING_LEVEL
-                        Level of blending, between 0.0 (no blending) and 1.0 (maximum blending). Default is no blending        
-                        (default: 0.0)
+                        Level of blending, between 0.0 (no blending) and 1.0 (maximum blending). Default is no
+                        blending (default: 0.0)
   --video               Make a photomosaic video from dest_img which is assumed to be a video (default: False)
   --skip_frame SKIP_FRAME
                         Make a photomosaic every this number of frames (default: 1)

@@ -8,7 +8,7 @@ import itertools
 import traceback
 import multiprocessing as mp
 from fractions import Fraction
-from typing import Any, Callable, List, Tuple, Type
+from typing import Any, Callable, List, Tuple
 from collections import defaultdict
 
 from io_utils import stdout_redirector, JVOutWrapper
@@ -48,15 +48,17 @@ class PARAMS:
     size = _PARAMETER(type=int, nargs="+", default=(50,), 
         help="Width and height of each tile in pixels in the resulting collage/photomosaic. "
              "If two numbers are specified, they are treated as width and height. "
-             "If one number is specified, the number is treated as the width"
+             "If one number is specified, the number is treated as the width "
              "and the height is inferred from the aspect ratios of the images provided. ")
     quiet = _PARAMETER(type=bool, default=False, help="Do not print progress message to console")
     auto_rotate = _PARAMETER(type=int, default=0, choices=[-1, 0, 1],
         help="Options to auto rotate tiles to best match the specified tile size. 0: do not auto rotate. "
              "1: attempt to rotate counterclockwise by 90 degrees. -1: attempt to rotate clockwise by 90 degrees")
     resize_opt = _PARAMETER(type=str, default="center", choices=["center", "stretch", "fit"], 
-        help="How to resize each tile so they have the desired aspect ratio and size"
-             "Center: crop a square in the center. Stretch: stretch the tile. Fit: pad the tiles")
+        help="How to resize each tile so they have the desired aspect ratio and size, "
+             "which can be specified fully or partially by --size. "
+             "Center: crop the largest rectangle from the center. Stretch: stretch the tile. "
+             "Fit: pad the tiles with white background")
     gpu = _PARAMETER(type=bool, default=False, 
         help="Use GPU acceleration. Requires cupy to be installed and a capable GPU. Note that USUALLY this is useful when you: "
              "1. have a lot of tiles (typically > 10000), and"
@@ -909,7 +911,7 @@ def get_size_slow(filename: str):
     return img.shape[1::-1]
 
 
-def infer_size(pool: Type[mp.Pool], files: List[str], infer_func: Callable[[str], Tuple[int, int]], i_type: str):
+def infer_size(pool, files: List[str], infer_func: Callable[[str], Tuple[int, int]], i_type: str):
     sizes = defaultdict(int)
     for w, h in tqdm(pool.imap_unordered(infer_func, files, chunksize=64), 
         total=len(files), desc=f"[Inferring size ({i_type})]", ncols=pbar_ncols):
@@ -921,7 +923,7 @@ def infer_size(pool: Type[mp.Pool], files: List[str], infer_func: Callable[[str]
     return sizes
 
 
-def read_images(pic_path: str, img_size: List[int], recursive, pool: mp.Pool, flag="stretch", auto_rotate=0) -> ImgList:
+def read_images(pic_path: str, img_size: List[int], recursive, pool, flag="stretch", auto_rotate=0) -> ImgList:
     assert os.path.isdir(pic_path), "Directory " + pic_path + "is non-existent"
     files = []
     print("Scanning files...")
@@ -981,7 +983,7 @@ def imread(filename: str, flag=cv2.IMREAD_COLOR) -> np.ndarray:
 
 
 def read_img_center(args: Tuple[str, Tuple[int, int], int]):
-    # crop the largest square from the center of a non-square image
+    # crop the largest rectangle from the center
     img_file, img_size, rot = args
     img = imread(img_file)
     if img is None:
