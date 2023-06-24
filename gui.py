@@ -193,11 +193,11 @@ if __name__ == "__main__":
             img, result_tile_info = img
         result_img = img
         width, height = canvas.winfo_width(), canvas.winfo_height()
-        img_h, img_w, _ = img.shape
+        h, w, _ = img.shape
         img = mkg.strip_alpha(img)
-        if img_h > height or img_w > width:
+        if h > height or w > width:
             print("Resizing image to display it on GUI...")
-            w, h = limit_wh(img_w, img_h, width, height)
+            w, h = limit_wh(w, h, width, height)
             img = cv2.resize(img, (w, h))
         _, data = cv2.imencode(".ppm", img)
         # prevent the image from being garbage-collected
