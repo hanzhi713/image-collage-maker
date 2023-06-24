@@ -13,4 +13,4 @@ else
 fi
 
 pip install numpy==1.24.3
-cat requirements.txt | xargs -n 1 pip install
+pip install -r requirements.txt
