@@ -11,6 +11,5 @@ else
     echo "Unsupported platform: " $PLATFORM
     exit 1
 fi
-
-pip install numpy==1.24.3
-pip install -r requirements.txt
+python -m pip install pip==21.2.4
+cat requirements.txt | xargs -n 1 pip install
